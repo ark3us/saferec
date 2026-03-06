@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <cache-path name="shared_files" path="recordings/" />
+    <cache-path name="merged_sharing" path="merged_sharing/" />
+    <external-path name="external_files" path="." />
+</paths>

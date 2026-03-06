@@ -1,0 +1,232 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/main"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/surface_dark"
+    tools:context=".MainActivity">
+
+    <!-- Camera preview — full screen -->
+    <FrameLayout
+        android:id="@+id/preview_container"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="@color/surface_elevated">
+
+        <TextureView
+            android:id="@+id/video_preview"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:layout_gravity="center" />
+
+    </FrameLayout>
+
+    <!-- Top bar: floating pill with controls -->
+    <LinearLayout
+        android:id="@+id/overlay_controls"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:layout_gravity="top|center_horizontal"
+        android:layout_marginTop="24dp"
+        android:background="@drawable/control_pill_bg"
+        android:paddingHorizontal="12dp"
+        android:paddingVertical="4dp"
+        android:elevation="8dp"
+        android:gravity="center_vertical">
+
+        <ImageButton
+            android:id="@+id/btn_switch_camera"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:padding="10dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:src="@drawable/baseline_cameraswitch_24"
+            app:tint="@color/control_icon"
+            android:contentDescription="@string/switch_camera" />
+
+        <View
+            android:layout_width="1dp"
+            android:layout_height="24dp"
+            android:layout_marginHorizontal="8dp"
+            android:background="#44FFFFFF" />
+
+        <ImageButton
+            android:id="@+id/btn_toggle_camera"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:padding="10dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:src="@drawable/baseline_videocam_off_24"
+            app:tint="@color/control_icon"
+            android:contentDescription="@string/toggle_camera" />
+
+        <View
+            android:layout_width="1dp"
+            android:layout_height="24dp"
+            android:layout_marginHorizontal="8dp"
+            android:background="#44FFFFFF" />
+
+        <ImageButton
+            android:id="@+id/btn_share_root"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:padding="10dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:src="@drawable/baseline_share_24"
+            app:tint="@color/control_icon"
+            android:contentDescription="@string/share_root_folder" />
+
+        <View
+            android:layout_width="1dp"
+            android:layout_height="24dp"
+            android:layout_marginHorizontal="8dp"
+            android:background="#44FFFFFF" />
+
+        <ImageButton
+            android:id="@+id/btn_recordings"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:padding="10dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:src="@drawable/baseline_view_list_24"
+            app:tint="@color/control_icon"
+            android:contentDescription="@string/view_recordings" />
+
+        <View
+            android:layout_width="1dp"
+            android:layout_height="24dp"
+            android:layout_marginHorizontal="8dp"
+            android:background="#44FFFFFF" />
+
+        <ImageButton
+            android:id="@+id/btn_settings"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:padding="10dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:src="@drawable/baseline_settings_24"
+            app:tint="@color/control_icon"
+            android:contentDescription="@string/settings" />
+    </LinearLayout>
+
+    <!-- Recording timer label -->
+    <TextView
+        android:id="@+id/recording_label"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|center_horizontal"
+        android:layout_marginTop="88dp"
+        android:text=""
+        android:textColor="@color/record_red"
+        android:textSize="14sp"
+        android:fontFamily="sans-serif-medium"
+        android:letterSpacing="0.1"
+        android:visibility="gone"
+        android:elevation="8dp" />
+
+    <!-- Bottom bar: record button with ring -->
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom"
+        android:paddingBottom="48dp"
+        android:paddingTop="24dp"
+        android:elevation="8dp">
+
+        <!-- Outer ring -->
+        <View
+            android:id="@+id/record_ring"
+            android:layout_width="84dp"
+            android:layout_height="84dp"
+            android:layout_gravity="center"
+            android:layout_margin="12dp"
+            android:background="@drawable/record_button_ring" />
+
+        <!-- Record / stop button -->
+        <ImageButton
+            android:id="@+id/btn_start"
+            android:layout_width="68dp"
+            android:layout_height="68dp"
+            android:layout_gravity="center"
+            android:background="@drawable/record_button_bg"
+            android:src="@drawable/outline_screen_record_24"
+            android:padding="18dp"
+            android:scaleType="fitCenter"
+            app:tint="@color/white"
+            android:enabled="false"
+            android:contentDescription="@string/start_recording" />
+    </FrameLayout>
+
+    <!-- Error view for Google Drive connection issues -->
+    <LinearLayout
+        android:id="@+id/error_container"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="@color/surface_dark"
+        android:orientation="vertical"
+        android:gravity="center"
+        android:padding="32dp"
+        android:visibility="gone"
+        android:elevation="10dp">
+
+        <ImageView
+            android:layout_width="64dp"
+            android:layout_height="64dp"
+            android:src="@drawable/baseline_videocam_off_24"
+            app:tint="@color/record_red"
+            android:contentDescription="@null"
+            android:layout_marginBottom="24dp" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/google_drive_required"
+            android:textColor="@color/white"
+            android:textSize="22sp"
+            android:textStyle="bold"
+            android:layout_marginBottom="8dp"
+            android:gravity="center" />
+
+        <TextView
+            android:id="@+id/error_message"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/google_drive_required_msg"
+            android:textColor="#BBFFFFFF"
+            android:textSize="16sp"
+            android:gravity="center"
+            android:layout_marginBottom="32dp" />
+
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            style="?android:attr/buttonBarStyle"
+            android:gravity="center">
+
+            <Button
+                android:id="@+id/btn_retry"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/retry"
+                style="?android:attr/buttonBarButtonStyle"
+                android:backgroundTint="@color/record_red"
+                android:textColor="@color/white"
+                android:layout_marginEnd="8dp"
+                android:paddingHorizontal="24dp" />
+
+            <Button
+                android:id="@+id/btn_close_error"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/close"
+                style="?android:attr/buttonBarButtonStyle"
+                android:textColor="#88FFFFFF"
+                android:paddingHorizontal="24dp" />
+        </LinearLayout>
+    </LinearLayout>
+
+</FrameLayout>
