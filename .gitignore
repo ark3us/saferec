@@ -1,15 +1,54 @@
+# General
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+._*
+.Spotlight-V100
+.Trashes
+thumbs.db
+Thumbs.db
+
+# Repository Specific
+old/
+AGENT.md
+.agent/
+Media/
+
+# Android/Java
 *.iml
 .gradle
 /local.properties
 /.idea/
-.DS_Store
 /build
 /captures
 .externalNativeBuild
 .cxx
-local.properties
-*.jks
-*.json
+*.class
+
+# Gradle files
+.gradle/
+build/
+app/build/
+*/build/
+
+# IDE files
+.idea/
 .vscode/
-.agent/
-Media/
+*.iml
+*.ipr
+*.iws
+
+# Sensitive/Secret files
+*.jks
+*.keystore
+*.pem
+*.p12
+google-services.json
+client_secret_*.json
+keystore.properties
+secrets.properties
+local.properties
+
+# Logs
+*.log
