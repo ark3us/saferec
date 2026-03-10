@@ -204,41 +204,7 @@ When the user switches front↔back during recording, [SafeRecService](file:///h
 | **App goes to background (not recording)** | [stop()](file:///home/ark3us/Filen/Dev/SafeRec/app/src/main/java/net/ark3us/saferec/media/VideoStreamRecorder.java#240-255) | closes camera entirely |
 | **Recording stops (app visible)** | [stopRecording()](file:///home/ark3us/Filen/Dev/SafeRec/app/src/main/java/net/ark3us/saferec/MainActivity.java#523-530) | releases encoder, rebuilds preview-only session |
 
----
 
-## Surveillance Mode
-
-Implemented to burn a real-time timestamp into video recordings while simplifying the user interaction for static surveillance.
-
-### Key Characteristics
-- **Locked Orientation:** Enforces `ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE`.
-- **Forced Back Camera:** Camera switching is disabled/dimmed to ensure a stable view.
-- **Forced Video:** Audio-only mode is disabled/dimmed; the camera is always active.
-- **Burned-in Timestamp:** A `yyyy-MM-dd HH:mm:ss` timestamp is composited directly into the video frames using OpenGL.
-
-### Technical Implementation
-
-When active, [VideoStreamRecorder](file:///home/ark3us/Filen/Dev/SafeRec/app/src/main/java/net/ark3us/saferec/media/VideoStreamRecorder.java) inserts [TimestampRenderer](file:///home/ark3us/Filen/Dev/SafeRec/app/src/main/java/net/ark3us/saferec/media/TimestampRenderer.java) between the camera and the encoder:
-
-```
-Camera (OES Texture) → TimestampRenderer (OpenGL ES 2.0)
-                            ↓
-             [Identity stMatrix + Rotation MVP]
-                            ↓
-             ┌──────────────┴──────────────┐
-             ↓                             ↓
-      Encoder Surface               Preview Surface
-```
-
-#### Rotation Handling
-Standard camera sensors output landscape frames that are portrait-rotated in the hardware buffer (90°). To produce correct landscape video:
-1. The **stMatrix** transforms sensor pixels to "natural" device orientation (portrait).
-2. The renderer applies a **counter-rotation of `180 - deviceRotation` (90°)** in its MVP matrix.
-3. This produces landscape pixels for both the encoder AND the preview.
-4. **MuxerSink** strips `KEY_ROTATION` from the encoder's output format to prevent the player from applying further (double) rotation.
-
-
----
 
 ## Key Classes
 
@@ -327,7 +293,6 @@ SharedPreferences wrapper. Keys:
 | `useFrontCamera` | boolean | false |
 | `videoQuality` | String | "LOW" |
 | `chunkSizeMB` | int | 0 (auto) |
-| `surveillanceMode` | boolean | false |
 | `autoStartOnLaunch` | boolean | false |
 | `tutorialShown` | boolean | false |
 

@@ -129,10 +129,6 @@ public class SafeRecService extends Service {
         });
         File baseDir = new File(getFilesDir(), "data_store");
         boolean includeVideo = !Settings.onlyAudio(this);
-        boolean surveillanceMode = Settings.isSurveillanceMode(this);
-        if (surveillanceMode) {
-            includeVideo = true;  // surveillance always records video
-        }
         String dataType = includeVideo ? MuxerSink.DATA_TYPE_VIDEO : MuxerSink.DATA_TYPE_AUDIO;
         int chunkSize;
 
@@ -155,7 +151,7 @@ public class SafeRecService extends Service {
         audioRecorder = new AudioStreamRecorder(this);
         if (includeVideo) {
             videoRecorder = VideoStreamRecorder.getInstance();
-            boolean useFront = surveillanceMode ? false : Settings.getUseFrontCamera(this);
+            boolean useFront = Settings.getUseFrontCamera(this);
             videoRecorder.start(this, sink, useFront, null, success -> {
                 if (success) {
                     Log.i(TAG, "Video recorder started successfully");

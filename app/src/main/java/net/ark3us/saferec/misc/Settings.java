@@ -75,12 +75,4 @@ public class Settings {
         getPrefs(context).edit().putInt("chunkSizeMB", sizeMB).apply();
     }
 
-    public static boolean isSurveillanceMode(Context context) {
-        return getPrefs(context).getBoolean("surveillanceMode", false);
-    }
-
-    public static void setSurveillanceMode(Context context, boolean enabled) {
-        Log.i(TAG, "Setting surveillanceMode to: " + enabled);
-        getPrefs(context).edit().putBoolean("surveillanceMode", enabled).apply();
-    }
 }
