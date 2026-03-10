@@ -28,6 +28,7 @@ import net.ark3us.saferec.misc.Settings;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
 
 public class VideoStreamRecorder {
     public interface Callback {
@@ -91,6 +92,8 @@ public class VideoStreamRecorder {
     private int sensorOrientationDeg;
     private int recordingRotation;
     private DisplayManager.DisplayListener rotationListener;
+    private TimestampRenderer timestampRenderer;
+    private boolean surveillanceMode = false;
 
     private static VideoStreamRecorder instance;
 
@@ -207,6 +210,7 @@ public class VideoStreamRecorder {
     public boolean start(Context context, MuxerSink muxer, boolean useFront,
             @Nullable SurfaceTexture surfaceTexture, @Nullable Callback callback) {
         Log.i(TAG, "start(useFront=" + useFront + ", hasSurfaceTexture=" + (surfaceTexture != null) + ")");
+        this.surveillanceMode = Settings.isSurveillanceMode(context);
         try {
             String cameraId = initCamera(context, useFront);
             if (surfaceTexture != null) {
@@ -217,7 +221,9 @@ public class VideoStreamRecorder {
             setupEncoder(context, cameraId);
             this.callback = callback;
             this.muxer = muxer;
-            registerRotationListener(context);
+            if (!surveillanceMode) {
+                registerRotationListener(context);
+            }
             return openCamera(context, cameraId);
         } catch (Exception e) {
             Log.e(TAG, "Failed to set up encoder or open camera", e);
@@ -229,8 +235,10 @@ public class VideoStreamRecorder {
         Log.i(TAG, "stopRecording() called. Current recording state: " + isRecording);
         isRecording = false;
         unregisterRotationListener();
+        releaseTimestampRenderer();
         releaseEncoder();
         this.muxer = null;
+        this.surveillanceMode = false;
 
         if (previewSurface != null) {
             Log.i(TAG, "Preview attached, rebuilding capture session without encoder");
@@ -270,8 +278,13 @@ public class VideoStreamRecorder {
             return;
         }
         previewSurface = null;
-        Log.i(TAG, "Preview detached, rebuilding capture session without preview");
-        startCaptureSession();
+        if (surveillanceMode && timestampRenderer != null) {
+            Log.i(TAG, "Surveillance mode: detaching preview via renderer");
+            timestampRenderer.setPreviewSurface(null);
+        } else {
+            Log.i(TAG, "Preview detached, rebuilding capture session without preview");
+            startCaptureSession();
+        }
     }
 
     /**
@@ -287,8 +300,13 @@ public class VideoStreamRecorder {
             surfaceTexture.setDefaultBufferSize(previewSize.getWidth(), previewSize.getHeight());
         }
         previewSurface = new Surface(surfaceTexture);
-        Log.i(TAG, "Preview attached, rebuilding capture session with preview");
-        startCaptureSession();
+        if (surveillanceMode && timestampRenderer != null) {
+            Log.i(TAG, "Surveillance mode: attaching preview via renderer");
+            timestampRenderer.setPreviewSurface(previewSurface);
+        } else {
+            Log.i(TAG, "Preview attached, rebuilding capture session with preview");
+            startCaptureSession();
+        }
     }
 
     // --- Private helpers ---
@@ -309,6 +327,7 @@ public class VideoStreamRecorder {
     }
 
     private void releaseEncoder() {
+        releaseTimestampRenderer();
         if (encoder != null) {
             try {
                 encoder.stop();
@@ -323,6 +342,13 @@ public class VideoStreamRecorder {
         }
         encoder = null;
         encoderSurface = null;
+    }
+
+    private void releaseTimestampRenderer() {
+        if (timestampRenderer != null) {
+            timestampRenderer.release();
+            timestampRenderer = null;
+        }
     }
 
     private DisplayManager displayManager;
@@ -443,12 +469,16 @@ public class VideoStreamRecorder {
         sensorOrientationDeg = getSensorOrientation(cameraId);
         int deviceRotation = getDeviceRotationDegrees(context);
 
-        // Compute recording rotation: compensate sensor orientation for current device
-        // rotation. Same formula for front and back — MediaCodec records raw sensor frames
-        // without mirroring, and setOrientationHint only controls playback rotation.
-        recordingRotation = (sensorOrientationDeg - deviceRotation + 360) % 360;
-        Log.i(TAG, "Recording rotation: " + recordingRotation + "° (sensor=" + sensorOrientationDeg + ", device="
-                + deviceRotation + ")");
+        if (surveillanceMode) {
+            // Surveillance mode: TimestampRenderer handles rotation internally,
+            // so the encoded frames are already upright → no rotation hint needed.
+            recordingRotation = 0;
+            Log.i(TAG, "Surveillance mode: recordingRotation forced to 0");
+        } else {
+            recordingRotation = (sensorOrientationDeg - deviceRotation + 360) % 360;
+            Log.i(TAG, "Recording rotation: " + recordingRotation + "° (sensor=" + sensorOrientationDeg + ", device="
+                    + deviceRotation + ")");
+        }
 
         MediaFormat format = MediaFormat.createVideoFormat(MIME_TYPE, quality.width, quality.height);
         format.setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface);
@@ -492,6 +522,18 @@ public class VideoStreamRecorder {
         }, cameraHandler);
 
         encoder.start();
+
+        if (surveillanceMode) {
+            // stMatrix rotates camera from sensor-native (landscape) to
+            // device-natural (portrait). The encoder MVP counter-rotates
+            // by -deviceRotation; the preview uses identity (TextureView
+            // transform handles it).
+            Log.i(TAG, "Surveillance mode: creating TimestampRenderer (deviceRotation=" + deviceRotation + ")");
+            timestampRenderer = new TimestampRenderer(
+                    encoderSurface, previewSurface,
+                    quality.width, quality.height,
+                    deviceRotation, cameraHandler);
+        }
     }
 
     private boolean openCamera(Context context, String cameraId) {
@@ -561,17 +603,29 @@ public class VideoStreamRecorder {
             closeSafely(captureSession);
             captureSession = null;
 
-            int template = (encoderSurface != null) ? CameraDevice.TEMPLATE_RECORD : CameraDevice.TEMPLATE_PREVIEW;
+            boolean hasEncoder = encoderSurface != null;
+            int template = hasEncoder ? CameraDevice.TEMPLATE_RECORD : CameraDevice.TEMPLATE_PREVIEW;
             final CaptureRequest.Builder localBuilder = cameraDevice.createCaptureRequest(template);
             localBuilder.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_VIDEO);
             List<Surface> targets = new ArrayList<>();
-            if (encoderSurface != null) {
-                localBuilder.addTarget(encoderSurface);
-                targets.add(encoderSurface);
-            }
-            if (previewSurface != null) {
-                localBuilder.addTarget(previewSurface);
-                targets.add(previewSurface);
+
+            if (surveillanceMode && timestampRenderer != null && hasEncoder) {
+                // In surveillance mode the camera feeds into the renderer's surface;
+                // the renderer draws to both encoder and preview EGL surfaces.
+                Surface cameraSurface = timestampRenderer.getCameraSurface();
+                if (cameraSurface != null) {
+                    localBuilder.addTarget(cameraSurface);
+                    targets.add(cameraSurface);
+                }
+            } else {
+                if (hasEncoder) {
+                    localBuilder.addTarget(encoderSurface);
+                    targets.add(encoderSurface);
+                }
+                if (previewSurface != null) {
+                    localBuilder.addTarget(previewSurface);
+                    targets.add(previewSurface);
+                }
             }
 
             cameraDevice.createCaptureSession(targets, new CameraCaptureSession.StateCallback() {

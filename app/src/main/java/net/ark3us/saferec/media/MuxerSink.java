@@ -117,6 +117,11 @@ public class MuxerSink {
     public synchronized void addVideoTrack(MediaFormat format, int rotation) {
         init();
         videoFormat = format;
+        // Strip KEY_ROTATION from the encoder format — we control rotation
+        // exclusively via setOrientationHint to avoid double-rotation.
+        if (format.containsKey(MediaFormat.KEY_ROTATION)) {
+            format.setInteger(MediaFormat.KEY_ROTATION, 0);
+        }
         videoTrackIndex = muxer.addTrack(format);
         if (rotation >= 0) {
             videoRotation = rotation;

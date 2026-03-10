@@ -1,6 +1,7 @@
 package net.ark3us.saferec;
 
 import android.content.Intent;
+import android.content.pm.ActivityInfo;
 import android.content.res.Configuration;
 import android.graphics.SurfaceTexture;
 import android.os.Bundle;
@@ -216,6 +217,25 @@ public class MainActivity extends AppCompatActivity {
 
         btnSettings = findViewById(R.id.btn_settings);
         btnSettings.setOnClickListener(v -> showSettingsPopup(v));
+
+        applySurveillanceMode();
+    }
+
+    private void applySurveillanceMode() {
+        boolean surveillance = Settings.isSurveillanceMode(this);
+        if (surveillance) {
+            setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
+            btnSwitchCamera.setEnabled(false);
+            btnSwitchCamera.setAlpha(0.2f);
+            btnToggleCamera.setEnabled(false);
+            btnToggleCamera.setAlpha(0.2f);
+        } else {
+            setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED);
+            btnSwitchCamera.setEnabled(true);
+            btnSwitchCamera.setAlpha(1.0f);
+            btnToggleCamera.setEnabled(true);
+            btnToggleCamera.setAlpha(1.0f);
+        }
     }
 
     private void showSettingsPopup(View v) {
@@ -239,6 +259,9 @@ public class MainActivity extends AppCompatActivity {
         int currentChunk = Settings.getChunkSizeMB(this);
         chunkMenu.add(0, 6, 0, getString(R.string.chunk_auto) + (currentChunk == 0 ? " ✓" : ""));
         chunkMenu.add(0, 7, 1, getString(R.string.chunk_custom) + (currentChunk > 0 ? " (" + currentChunk + " MB) ✓" : ""));
+
+        boolean surveillanceOn = Settings.isSurveillanceMode(this);
+        menu.add(0, 8, 4, getString(R.string.surveillance_mode) + (surveillanceOn ? " ✓" : ""));
 
         popup.setOnMenuItemClickListener(item -> {
             switch (item.getItemId()) {
@@ -270,6 +293,14 @@ public class MainActivity extends AppCompatActivity {
                 case 7:
                     showChunkSizeInputDialog();
                     break;
+                case 8: {
+                    boolean wasEnabled = Settings.isSurveillanceMode(this);
+                    Settings.setSurveillanceMode(this, !wasEnabled);
+                    applySurveillanceMode();
+                    Toast.makeText(this, getString(R.string.surveillance_mode) + ": " + (!wasEnabled ? "ON" : "OFF"),
+                            Toast.LENGTH_SHORT).show();
+                    break;
+                }
             }
             return true;
         });
@@ -366,6 +397,10 @@ public class MainActivity extends AppCompatActivity {
                 message = getText(R.string.tutorial_step_quality);
                 break;
             case 6:
+                target = btnSettings;
+                message = getText(R.string.tutorial_step_surveillance);
+                break;
+            case 7:
                 // Tile tutorial step
                 title = getText(R.string.tile_name_start);
                 message = getText(R.string.tutorial_step_tile);
@@ -468,7 +503,15 @@ public class MainActivity extends AppCompatActivity {
             });
         }
         videoPreview.setVisibility(View.VISIBLE);
-        previewRecorder.configureTransform(videoPreview);
+        // In surveillance mode during recording, the renderer handles preview
+        // output (output is already landscape) — reset transform to identity.
+        boolean surveillanceRecording = Settings.isSurveillanceMode(this)
+                && isStarted(LiveData.getInstance().getStatus().getValue());
+        if (surveillanceRecording) {
+            videoPreview.setTransform(null);
+        } else {
+            previewRecorder.configureTransform(videoPreview);
+        }
     }
 
     private void stopPreview(boolean clearSurface) {
