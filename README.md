@@ -1,4 +1,11 @@
+![SafeRec Banner](saferec.png)
+
 # SafeRec
+
+<a href="https://play.google.com/store/apps/details?id=net.ark3us.saferec">
+  <img alt="Get it on Google Play" src="https://play.google.com/intl/en_us/badges/static/images/badges/en_badge_web_generic.png" height="60" />
+</a>
+
 
 **SafeRec** is an open-source Android application designed for emergency and high-risk situations. It ensures your critical evidence is safe by recording (video and audio) and instantly uploading the footage in chunks directly to your Google Drive. Even if your phone is destroyed, broken, or confiscated during an event, your recordings are already securely preserved in your cloud storage. 
 
@@ -47,12 +54,39 @@ SafeRec solves this fundamental flaw by continuously uploading video and audio c
    Import the project into Android Studio and let Gradle sync the dependencies.
 
 3. **Configure Google API Credentials**:
-   To allow the app to upload files to Google Drive, you must configure OAuth 2.0 authentication:
+   Wait, before you start, ensure you have a Google account. The app requires a specific OAuth 2.0 Client ID to interact with Google Drive.
+
+   #### A. Create the Project
    - Go to the [Google Cloud Console](https://console.cloud.google.com/).
-   - Create a new project or select an existing one.
-   - Enable the **Google Drive API**.
-   - Navigate to **APIs & Services > Credentials** and create an **OAuth client ID** for an **Android** application.
-   - You will need to provide your app's package name (`net.ark3us.saferec`) and the SHA-1 certificate fingerprint of your debug or release keystore.
+   - Create a new project named **SafeRec** (or any name you prefer).
+   - Go to **APIs & Services > Library** and search for **Google Drive API**. Click **Enable**.
+
+   #### B. Configure OAuth Consent Screen
+   - Go to **APIs & Services > OAuth consent screen**.
+   - Choose **External** (unless you have a Google Workspace org).
+   - Fill in the required fields (App name, User support email, Developer contact info).
+   - Under **Scopes**, add `.../auth/drive.file` (this allows SafeRec to only access files it creates).
+
+   #### C. Create Android Credentials
+   - Go to **APIs & Services > Credentials**.
+   - Click **Create Credentials > OAuth client ID**.
+   - Select **Android** as the application type.
+   - **Name**: SafeRec Android Client
+   - **Package name**: `net.ark3us.saferec`
+   - **SHA-1 certificate fingerprint**: You need your debug/release fingerprint.
+
+   #### D. Get your SHA-1 Fingerprint
+   You can get this by running the following command in your terminal:
+   ```bash
+   # On Linux/macOS
+   keytool -list -v -keystore ~/.android/debug.keystore -alias androiddebugkey -storepass android -keypass android
+   
+   # On Windows
+   keytool -list -v -keystore "%USERPROFILE%\.android\debug.keystore" -alias androiddebugkey -storepass android -keypass android
+   ```
+   Look for the `SHA1` line in the output and paste it into the Google Cloud Console.
+
+   *Note: If you are using a release keystore, replace the path above with your `.jks` file path.*
 
 4. **Build the Project**:
    You can build the APK directly through Android Studio ("Build > Build Bundle(s) / APK(s) > Build APK(s)") or via the command line:
@@ -62,6 +96,10 @@ SafeRec solves this fundamental flaw by continuously uploading video and audio c
 
 5. **Run the App**:
    Deploy the application to your emulator or physical Android device. Make sure to grant the necessary permissions (Camera, Microphone, Foreground Service, Notifications) upon the first launch, and authenticate with your Google account when prompted to authorize Google Drive access.
+
+## Credits
+
+This application was developed with the assistance of **Antigravity**.
 
 ## License
 

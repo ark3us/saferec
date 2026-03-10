@@ -1,0 +1,30 @@
+App Name (max 30 characters)
+SafeRec
+
+Short Description (max 80 characters)
+Secure emergency video & audio recorder. Instant cloud backup & TSA timestamping.
+
+Full Description (max 4000 characters)
+
+In emergency and high-risk situations, every single second counts.
+
+Traditional camera and recording apps only save video locally <i>after</i> you have completely finished recording. If your device is dropped, broken, confiscated, or turned off during an event, your crucial evidence is often lost forever or corrupted.
+
+SafeRec solves this fundamental flaw.
+
+SafeRec is an advanced, security-focused recording application designed to ensure that your critical evidence is preserved no matter what happens to your device. As you record, SafeRec continuously uploads video and audio chunks directly to your personal Google Drive in real-time. This guarantees that whatever was recorded up until the exact moment of device failure or confiscation is already securely preserved in your cloud storage.
+
+Furthermore, SafeRec generates verifiable Cryptographic Timestamp Certificates (TSA). This adds an irrefutable layer of mathematical provability for legal or evidentiary use, ensuring the files existed at a specific point in time and have not been tampered with.
+
+<b>KEY FEATURES:</b>
+
+✓ <b>Instant Cloud Backup:</b> Automatically slices and uploads video/audio chunks directly to your Google Drive as they are being recorded. No delays.
+✓ <b>Background Recording:</b> Uses an Android Foreground Service, allowing you to seamlessly record even when the screen is locked, turned off, or while you are using other apps.
+✓ <b>Provable Evidence (TSA):</b> Hashes your media files (SHA-256) and requests timestamp certificates from a recognized Time Stamping Authority, mathematically proving the integrity and creation time of your recordings.
+✓ <b>Quick Settings Tile:</b> Start and stop recordings instantly via the Android Quick Settings drop-down menu—no need to even open the app.
+✓ <b>Audio-Only Mode:</b> Easily toggle between Video+Audio and Audio-Only modes for discretion, to save battery, and to reduce upload bandwidth.
+✓ <b>Auto-Start Capability:</b> Configure the app to automatically begin recording the exact moment the app is launched or the Quick Tile is tapped.
+✓ <b>Quality Controls:</b> Adjust video quality (High 720p, Medium 480p, Low 360p) to balance file size against your mobile data upload speeds to guarantee fast chunking.
+✓ <b>Open Source & Private:</b> SafeRec is fully open-source. Your recordings go <i>directly</i> from your phone to your personal Google Drive account. We do not have servers, intermediaries, or access to your data.
+
+Be prepared and ensure your evidence is safe. Download SafeRec today.
