@@ -97,6 +97,11 @@ public class RecordingsActivity extends AppCompatActivity {
             public void onMergeSession(String sessionId) {
                 mergeSession(sessionId);
             }
+
+            @Override
+            public void onShareTsa(FileDownloader.RecordingItem item) {
+                shareTsaFile(item);
+            }
         });
         recyclerView.setAdapter(adapter);
 
@@ -206,7 +211,7 @@ public class RecordingsActivity extends AppCompatActivity {
                         intent.setAction(Intent.ACTION_SEND_MULTIPLE);
                         intent.putParcelableArrayListExtra(Intent.EXTRA_STREAM, new ArrayList<>(uris));
                     }
-                    intent.setType("video/*");
+                    intent.setType("*/*");
                     intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
                     startActivity(Intent.createChooser(intent, "Share Recording"));
                 });
@@ -219,6 +224,34 @@ public class RecordingsActivity extends AppCompatActivity {
                     progressBar.setVisibility(View.GONE);
                     Toast.makeText(RecordingsActivity.this, "Share failed: " + e.getMessage(), Toast.LENGTH_LONG)
                             .show();
+                });
+            }
+        });
+    }
+
+    private void shareTsaFile(FileDownloader.RecordingItem item) {
+        List<FileDownloader.RecordingItem> single = new ArrayList<>();
+        single.add(item);
+        progressBar.setVisibility(View.VISIBLE);
+        downloader.shareFiles(single, new FileDownloader.Callback<List<Uri>>() {
+            @Override
+            public void onSuccess(List<Uri> uris) {
+                mainHandler.post(() -> {
+                    progressBar.setVisibility(View.GONE);
+                    Intent intent = new Intent(Intent.ACTION_SEND);
+                    intent.setType("application/timestamp-reply");
+                    intent.putExtra(Intent.EXTRA_STREAM, uris.get(0));
+                    intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                    startActivity(Intent.createChooser(intent, "Share TSA Signature"));
+                });
+            }
+
+            @Override
+            public void onError(Exception e) {
+                Log.e(TAG, "Share TSA failed", e);
+                mainHandler.post(() -> {
+                    progressBar.setVisibility(View.GONE);
+                    Toast.makeText(RecordingsActivity.this, "Share failed: " + e.getMessage(), Toast.LENGTH_LONG).show();
                 });
             }
         });

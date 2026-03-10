@@ -73,6 +73,13 @@ public class AudioStreamRecorder {
 
     public void stop() {
         isRecording = false;
+        if (audioRecord != null) {
+            try {
+                audioRecord.stop();
+            } catch (Exception e) {
+                Log.e(TAG, "Failed to stop AudioRecord: ", e);
+            }
+        }
         if (processingThread != null) {
             try {
                 processingThread.join();
@@ -83,10 +90,9 @@ public class AudioStreamRecorder {
         }
         if (audioRecord != null) {
             try {
-                audioRecord.stop();
                 audioRecord.release();
             } catch (Exception e) {
-                Log.e(TAG, "Failed to stop AudioRecord: ", e);
+                Log.e(TAG, "Failed to release AudioRecord: ", e);
             }
             audioRecord = null;
         }

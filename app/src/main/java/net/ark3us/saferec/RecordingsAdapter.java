@@ -32,6 +32,8 @@ public class RecordingsAdapter extends RecyclerView.Adapter<RecyclerView.ViewHol
         void onSelectionChanged(int count);
 
         void onMergeSession(String sessionId);
+
+        void onShareTsa(FileDownloader.RecordingItem item);
     }
 
     private static class DisplayItem {
@@ -39,6 +41,7 @@ public class RecordingsAdapter extends RecyclerView.Adapter<RecyclerView.ViewHol
         final String sessionId;
         final String dataType;
         final FileDownloader.RecordingItem recording;
+        FileDownloader.RecordingItem tsaRecording;
         boolean selected = false;
 
         DisplayItem(String sessionId, String dataType) {
@@ -69,13 +72,32 @@ public class RecordingsAdapter extends RecyclerView.Adapter<RecyclerView.ViewHol
                 "setFiles: updating with " + (newItems != null ? newItems.size() : 0) + " items");
         displayItems.clear();
         if (newItems != null && !newItems.isEmpty()) {
-            String currentSession = null;
+            List<FileDownloader.RecordingItem> mediaItems = new ArrayList<>();
+            List<FileDownloader.RecordingItem> tsaItems = new ArrayList<>();
             for (FileDownloader.RecordingItem item : newItems) {
+                if ("tsa".equalsIgnoreCase(item.mediaFile.getExtension())) {
+                    tsaItems.add(item);
+                } else {
+                    mediaItems.add(item);
+                }
+            }
+
+            String currentSession = null;
+            for (FileDownloader.RecordingItem item : mediaItems) {
                 if (currentSession == null || !currentSession.equals(item.mediaFile.sessionId)) {
                     currentSession = item.mediaFile.sessionId;
                     displayItems.add(new DisplayItem(currentSession, item.mediaFile.dataType));
                 }
-                displayItems.add(new DisplayItem(item));
+                DisplayItem displayItem = new DisplayItem(item);
+                for (FileDownloader.RecordingItem tsa : tsaItems) {
+                    if (tsa.mediaFile.sessionId.equals(item.mediaFile.sessionId) &&
+                        tsa.mediaFile.dataType.equals(item.mediaFile.dataType) &&
+                        tsa.mediaFile.sequenceNumber == item.mediaFile.sequenceNumber) {
+                        displayItem.tsaRecording = tsa;
+                        break;
+                    }
+                }
+                displayItems.add(displayItem);
             }
         }
         notifyDataSetChanged();
@@ -133,8 +155,12 @@ public class RecordingsAdapter extends RecyclerView.Adapter<RecyclerView.ViewHol
     public List<FileDownloader.RecordingItem> getSelectedItems() {
         List<FileDownloader.RecordingItem> selected = new ArrayList<>();
         for (DisplayItem item : displayItems) {
-            if (item.type == TYPE_ITEM && item.selected)
+            if (item.type == TYPE_ITEM && item.selected) {
                 selected.add(item.recording);
+                if (item.tsaRecording != null) {
+                    selected.add(item.tsaRecording);
+                }
+            }
         }
         return selected;
     }
@@ -213,6 +239,14 @@ public class RecordingsAdapter extends RecyclerView.Adapter<RecyclerView.ViewHol
                 listener.onSelectionChanged(getSelectedCount());
             });
 
+            if (displayItem.tsaRecording != null) {
+                recordingHolder.btnTsa.setVisibility(selectionMode ? View.GONE : View.VISIBLE);
+                recordingHolder.btnTsa.setOnClickListener(v -> listener.onShareTsa(displayItem.tsaRecording));
+            } else {
+                recordingHolder.btnTsa.setVisibility(View.GONE);
+                recordingHolder.btnTsa.setOnClickListener(null);
+            }
+
             recordingHolder.btnOpen.setOnClickListener(v -> listener.onItemClick(file));
             recordingHolder.itemView.setOnClickListener(v -> {
                 if (selectionMode) {
@@ -260,6 +294,7 @@ public class RecordingsAdapter extends RecyclerView.Adapter<RecyclerView.ViewHol
         TextView fileDate;
         TextView fileSize;
         ImageButton btnOpen;
+        View btnTsa;
 
         RecordingViewHolder(View itemView) {
             super(itemView);
@@ -269,6 +304,7 @@ public class RecordingsAdapter extends RecyclerView.Adapter<RecyclerView.ViewHol
             fileDate = itemView.findViewById(R.id.file_date);
             fileSize = itemView.findViewById(R.id.file_size);
             btnOpen = itemView.findViewById(R.id.btn_open);
+            btnTsa = itemView.findViewById(R.id.btn_tsa);
         }
     }
 }

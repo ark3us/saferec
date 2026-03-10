@@ -146,7 +146,22 @@ public class SafeRecService extends Service {
             Log.i(TAG, "Using default audio chunk size: " + chunkSize + " bytes");
         }
 
-        sink = new MuxerSink(baseDir, fileUploader, dataType, sessionId, chunkSize);
+        MuxerSink.FileSavedCallback callback = file -> {
+            new Thread(() -> {
+                if (Settings.isTimestampingEnabled(this)) {
+                    String path = file.getAbsolutePath();
+                    int dotIndex = path.lastIndexOf('.');
+                    File tsaFile = new File((dotIndex > 0 ? path.substring(0, dotIndex) : path) + ".tsa");
+                    boolean success = net.ark3us.saferec.net.FreeTSAClient.timestampFile(this, file, tsaFile);
+                    if (success) {
+                        fileUploader.upload(tsaFile);
+                    }
+                }
+                fileUploader.upload(file);
+            }, "TimestampUploadThread").start();
+        };
+
+        sink = new MuxerSink(baseDir, callback, dataType, sessionId, chunkSize);
         sink.setSequenceNumber(currentSequenceNumber);
         audioRecorder = new AudioStreamRecorder(this);
         if (includeVideo) {

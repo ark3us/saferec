@@ -1,5 +1,6 @@
 [versions]
 agp = "9.1.0"
+bcpkixJdk15to18 = "1.83"
 googleApiClientAndroid = "2.9.0"
 googleApiServicesDrive = "v3-rev20251210-2.0.0"
 junit = "4.13.2"
@@ -13,6 +14,7 @@ playServicesAuth = "21.5.1"
 swiperefreshlayout = "1.2.0"
 
 [libraries]
+bcpkix-jdk15to18 = { module = "org.bouncycastle:bcpkix-jdk15to18", version.ref = "bcpkixJdk15to18" }
 google-api-client-android = { module = "com.google.api-client:google-api-client-android", version.ref = "googleApiClientAndroid" }
 google-api-services-drive = { module = "com.google.apis:google-api-services-drive", version.ref = "googleApiServicesDrive" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }

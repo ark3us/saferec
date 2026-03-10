@@ -5,7 +5,6 @@ import android.media.MediaFormat;
 import android.media.MediaMuxer;
 import android.util.Log;
 
-import net.ark3us.saferec.net.FileUploader;
 import net.ark3us.saferec.net.MediaFile;
 
 import java.io.File;
@@ -27,7 +26,11 @@ public class MuxerSink {
     private int audioTrackIndex = -1;
     private int videoRotation = -1;
 
-    private final FileUploader uploader;
+    public interface FileSavedCallback {
+        void onFileSaved(File file);
+    }
+
+    private final FileSavedCallback fileSavedCallback;
     private final File storeDir;
     private final String dataType;
     private final String sessionId;
@@ -69,9 +72,9 @@ public class MuxerSink {
 
     private final List<PendingPacket> pendingPackets = new ArrayList<>();
 
-    public MuxerSink(File storeDir, FileUploader uploader, String dataType, String sessionId, int partSize) {
+    public MuxerSink(File storeDir, FileSavedCallback fileSavedCallback, String dataType, String sessionId, int partSize) {
         this.storeDir = storeDir;
-        this.uploader = uploader;
+        this.fileSavedCallback = fileSavedCallback;
         this.dataType = dataType;
         this.sessionId = sessionId;
         this.partSize = partSize;
@@ -241,8 +244,8 @@ public class MuxerSink {
             muxer = null;
         }
         if (currentFile != null) {
-            if (uploader != null && bytesWritten > 0) {
-                uploader.upload(currentFile);
+            if (fileSavedCallback != null && bytesWritten > 0) {
+                fileSavedCallback.onFileSaved(currentFile);
             }
         }
     }

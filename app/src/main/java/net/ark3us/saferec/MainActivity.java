@@ -230,6 +230,9 @@ public class MainActivity extends AppCompatActivity {
         boolean autoStart = Settings.isAutoStartOnLaunch(this);
         menu.add(0, 1, 1, getString(R.string.auto_start) + (autoStart ? " ✓" : ""));
 
+        boolean tsEnabled = Settings.isTimestampingEnabled(this);
+        menu.add(0, 8, 4, "Enable Timestamping" + (tsEnabled ? " ✓" : ""));
+
         // Use a SubMenu for quality grouping
         SubMenu qualityMenu = menu.addSubMenu(0, 5, 2, R.string.video_quality);
         String currentQuality = Settings.getVideoQuality(this);
@@ -252,6 +255,12 @@ public class MainActivity extends AppCompatActivity {
                     boolean newValue = !Settings.isAutoStartOnLaunch(this);
                     Settings.setAutoStartOnLaunch(this, newValue);
                     Toast.makeText(this, (newValue ? "Enabled" : "Disabled") + ": " + getString(R.string.auto_start),
+                            Toast.LENGTH_SHORT).show();
+                    break;
+                case 8:
+                    boolean newTsEnabled = !Settings.isTimestampingEnabled(this);
+                    Settings.setTimestampingEnabled(this, newTsEnabled);
+                    Toast.makeText(this, (newTsEnabled ? "Enabled" : "Disabled") + ": Timestamping",
                             Toast.LENGTH_SHORT).show();
                     break;
                 case 2:

@@ -39,6 +39,7 @@ graph TD
         FD["FileDownloader (abstract)"]
         GDFD["GoogleDriveFileDownloader"]
         MF["MediaFile"]
+        FTSA["FreeTSAClient"]
     end
 
     subgraph Data["Data / Config"]
@@ -54,7 +55,10 @@ graph TD
     VSR --> TR
     TR --> MS
     TR -- "draws to" --> VSR["VideoStreamRecorder preview"]
-    MS -- "on chunk complete" --> GDFU
+    MS -- "on chunk complete" --> SRS
+    SRS -- "timestamp/upload" --> FTSA
+    SRS -- "upload" --> GDFU
+    FTSA -- "construct TSQ" --> GDFU
     GDFU --> GDC
     MA -- "observes status" --> LD
     SRS -- "updates status" --> LD
@@ -94,7 +98,9 @@ net.ark3us.saferec/
 │   ├── GoogleDriveClient.java    # Low-level Drive API wrapper
 │   ├── FileDownloader.java       # Abstract downloader
 │   ├── GoogleDriveFileDownloader.java  # Drive download implementation
-│   └── MediaFile.java           # Chunk filename parser/generator
+│   ├── MediaFile.java           # Chunk filename parser/generator
+│   └── FreeTSAClient.java       # Timestamp Authority (TSA) client (Sectigo)
+│
 │
 ├── services/
 │   ├── SafeRecService.java       # Foreground service orchestrating recording
@@ -151,8 +157,17 @@ sequenceDiagram
     VSR-->>MS: writeVideoData(buffer, info)
     MS->>MS: (bytesWritten >= partSize && keyFrame) OR device rotated?
     alt Chunk complete
-        MS->>MS: rotate() → closeFile() + re-add tracks + start()
-        MS->>GDFU: upload(completedChunkFile)
+        MS->>MS: rotate() → closeFile() + onFileSaved(completedChunkFile)
+        MS-->>SRS: onFileSaved() callback
+        alt Timestamping enabled
+            SRS->>FTSA: timestampFile(chunkFile, tsaFile)
+            FTSA->>FTSA: HTTP POST to Sectigo (Background Thread)
+            FTSA-->>SRS: success/fail
+            alt Success
+                SRS->>GDFU: upload(tsaFile)
+            end
+        end
+        SRS->>GDFU: upload(mediaFile)
         GDFU->>GDFU: uploadFile() on thread pool (max 4 concurrent)
         GDFU->>GDFU: file.delete() on success
     end
@@ -261,6 +276,16 @@ Thread-safe (`synchronized`) wrapper around `MediaMuxer` with automatic chunking
 2. `Quality.getRecommendedChunkSize()` = [(bitRate / 8) * 10](file:///home/ark3us/Filen/Dev/SafeRec/app/src/main/java/net/ark3us/saferec/media/VideoStreamRecorder.java#240-255) (~10s of video)
 3. `DEFAULT_AUDIO_CHUNK` = 64 KB (audio-only mode)
 
+### [FreeTSAClient](file:///home/ark3us/Filen/Dev/SafeRec/app/src/main/java/net/ark3us/saferec/net/FreeTSAClient.java) — [FreeTSAClient.java](file:///home/ark3us/Filen/Dev/SafeRec/app/src/main/java/net/ark3us/saferec/net/FreeTSAClient.java)
+
+Utility to obtain cryptographically secure RFC 3161 timestamps.
+
+- **Hash:** SHA-256
+- **Provider:** `https://timestamp.sectigo.com` (Sectigo)
+- **Library:** BouncyCastle (for TSQ/TSR handling)
+- **Local Cache:** Saves `.tsa` files side-by-side with media chunks during background upload.
+
+
 ### [MediaMerger](file:///home/ark3us/Filen/Dev/SafeRec/app/src/main/java/net/ark3us/saferec/media/MediaMerger.java#14-169) — [MediaMerger.java](file:///home/ark3us/Filen/Dev/SafeRec/app/src/main/java/net/ark3us/saferec/media/MediaMerger.java)
 
 Merges multiple MP4 chunks into a single file. Used by [RecordingsActivity](file:///home/ark3us/Filen/Dev/SafeRec/app/src/main/java/net/ark3us/saferec/RecordingsActivity.java#40-332) when user taps "Merge".
@@ -295,6 +320,8 @@ SharedPreferences wrapper. Keys:
 | `chunkSizeMB` | int | 0 (auto) |
 | `autoStartOnLaunch` | boolean | false |
 | `tutorialShown` | boolean | false |
+| `timestampingEnabled` | boolean | false |
+
 
 ---
 

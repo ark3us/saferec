@@ -75,4 +75,13 @@ public class Settings {
         getPrefs(context).edit().putInt("chunkSizeMB", sizeMB).apply();
     }
 
+    public static boolean isTimestampingEnabled(Context context) {
+        return getPrefs(context).getBoolean("timestampingEnabled", false);
+    }
+
+    public static void setTimestampingEnabled(Context context, boolean enabled) {
+        Log.i(TAG, "Setting timestampingEnabled to: " + enabled);
+        getPrefs(context).edit().putBoolean("timestampingEnabled", enabled).apply();
+    }
+
 }

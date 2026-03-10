@@ -14,6 +14,7 @@ import android.media.MediaCodecInfo;
 import android.media.MediaFormat;
 import android.os.Handler;
 import android.os.HandlerThread;
+import android.os.Looper;
 import android.util.Log;
 import android.util.Size;
 import android.view.Display;
@@ -29,6 +30,7 @@ import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public class VideoStreamRecorder {
     public interface Callback {
@@ -92,6 +94,7 @@ public class VideoStreamRecorder {
     private int sensorOrientationDeg;
     private int recordingRotation;
     private DisplayManager.DisplayListener rotationListener;
+    private final AtomicInteger sessionConfigCount = new AtomicInteger(0);
 
     private static VideoStreamRecorder instance;
 
@@ -448,7 +451,7 @@ public class VideoStreamRecorder {
         Log.i(TAG, "Recording rotation: " + recordingRotation + "° (sensor=" + sensorOrientationDeg + ", device="
                 + deviceRotation + ")");
 
-        MediaFormat format = MediaFormat.createVideoFormat(MIME_TYPE, quality.width, quality.height);
+        MediaFormat format = MediaFormat.createVideoFormat(MIME_TYPE, previewSize.getWidth(), previewSize.getHeight());
         format.setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface);
         format.setInteger(MediaFormat.KEY_BIT_RATE, quality.bitRate);
         format.setInteger(MediaFormat.KEY_FRAME_RATE, quality.frameRate);
@@ -512,6 +515,7 @@ public class VideoStreamRecorder {
             }
         }
         try {
+            Handler mainHandler = new Handler(Looper.getMainLooper());
             manager.openCamera(cameraId, new CameraDevice.StateCallback() {
                 @Override
                 public void onOpened(@NonNull CameraDevice camera) {
@@ -540,7 +544,7 @@ public class VideoStreamRecorder {
                 public void onClosed(@NonNull CameraDevice camera) {
                     Log.i(TAG, "Camera closed");
                 }
-            }, cameraHandler);
+            }, mainHandler);
             return true;
         } catch (Exception e) {
             Log.e(TAG, "Failed to open camera", e);
@@ -555,6 +559,7 @@ public class VideoStreamRecorder {
             Log.w(TAG, "startCaptureSession: cameraDevice is null, skipping");
             return false;
         }
+        final int requestId = sessionConfigCount.incrementAndGet();
         try {
             closeSafely(captureSession);
             captureSession = null;
@@ -576,6 +581,11 @@ public class VideoStreamRecorder {
             cameraDevice.createCaptureSession(targets, new CameraCaptureSession.StateCallback() {
                 @Override
                 public void onConfigured(@NonNull CameraCaptureSession session) {
+                    if (requestId != sessionConfigCount.get() || cameraDevice == null) {
+                        Log.w(TAG, "onConfigured: Discarding outdated or invalid session (req=" + requestId + ", current=" + sessionConfigCount.get() + ")");
+                        session.close();
+                        return;
+                    }
                     captureSession = session;
                     try {
                         session.setRepeatingRequest(localBuilder.build(), null, cameraHandler);
@@ -584,11 +594,18 @@ public class VideoStreamRecorder {
                             callback.onStarted(true);
                     } catch (Exception e) {
                         Log.e(TAG, "Failed to start capture session", e);
+                        if (requestId == sessionConfigCount.get() && callback != null) {
+                            callback.onStarted(false);
+                        }
                     }
                 }
 
                 @Override
                 public void onConfigureFailed(@NonNull CameraCaptureSession session) {
+                    if (requestId != sessionConfigCount.get()) {
+                        Log.w(TAG, "onConfigureFailed: Ignoring outdated session failure");
+                        return;
+                    }
                     Log.e(TAG, "Capture session configuration failed");
                     isRecording = false;
                     if (callback != null)
@@ -614,9 +631,11 @@ public class VideoStreamRecorder {
         if (cameraThread == null)
             return;
         cameraThread.quitSafely();
-        try {
-            cameraThread.join();
-        } catch (InterruptedException ignored) {
+        if (Thread.currentThread() != cameraThread) {
+            try {
+                cameraThread.join();
+            } catch (InterruptedException ignored) {
+            }
         }
         cameraThread = null;
         cameraHandler = null;
