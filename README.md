@@ -1,379 +1,68 @@
-# SafeRec — Application Architecture
-
-> **Package:** `net.ark3us.saferec`
-> **Platform:** Android (Camera2 API, MediaCodec, MediaMuxer)
-> **Purpose:** Background audio/video recording with chunked upload to Google Drive
-
----
-
-## High-Level Architecture
-
-```mermaid
-graph TD
-    subgraph UI["UI Layer"]
-        MA["MainActivity"]
-        RA["RecordingsActivity"]
-        PA["PlaybackActivity"]
-        PM["PermissionsManager"]
-        TO["TutorialOverlayView"]
-    end
-
-    subgraph Services["Service Layer"]
-        SRS["SafeRecService"]
-        SRTS["SafeRecTileService"]
-        NH["NotificationHelper"]
-    end
-
-    subgraph Media["Media Layer"]
-        VSR["VideoStreamRecorder"]
-        ASR["AudioStreamRecorder"]
-        MS["MuxerSink"]
-        MM["MediaMerger"]
-        TR["TimestampRenderer"]
-    end
-
-    subgraph Net["Network Layer"]
-        FU["FileUploader (abstract)"]
-        GDFU["GoogleDriveFileUploader"]
-        GDC["GoogleDriveClient"]
-        FD["FileDownloader (abstract)"]
-        GDFD["GoogleDriveFileDownloader"]
-        MF["MediaFile"]
-        FTSA["FreeTSAClient"]
-    end
-
-    subgraph Data["Data / Config"]
-        LD["LiveData (singleton)"]
-        S["Settings"]
-    end
-
-    MA -- "startForegroundService(CMD_START/STOP)" --> SRS
-    SRTS -- "launches MainActivity" --> MA
-    SRS --> VSR
-    SRS --> ASR
-    SRS --> MS
-    VSR --> TR
-    TR --> MS
-    TR -- "draws to" --> VSR["VideoStreamRecorder preview"]
-    MS -- "on chunk complete" --> SRS
-    SRS -- "timestamp/upload" --> FTSA
-    SRS -- "upload" --> GDFU
-    FTSA -- "construct TSQ" --> GDFU
-    GDFU --> GDC
-    MA -- "observes status" --> LD
-    SRS -- "updates status" --> LD
-    RA -- "list/download/delete/share" --> GDFD
-    RA -- "merge chunks" --> MM
-    SRS --> NH
-```
-
----
-
-## Package Structure
-
-```
-net.ark3us.saferec/
-├── MainActivity.java          # Main UI, preview, start/stop, settings
-├── RecordingsActivity.java    # Browse/download/merge/share recordings from Drive
-├── RecordingsAdapter.java     # RecyclerView adapter for recordings list
-├── PlaybackActivity.java      # Video playback (streaming from Drive)
-├── PermissionsManager.java    # Runtime permissions + Google Drive OAuth
-│
-├── data/
-│   └── LiveData.java          # Singleton observable for service status
-│
-├── media/
-│   ├── VideoStreamRecorder.java  # Camera2 + MediaCodec video encoder (singleton)
-│   ├── AudioStreamRecorder.java  # AudioRecord + MediaCodec AAC encoder
-│   ├── MuxerSink.java            # MediaMuxer wrapper with chunking + upload
-│   ├── MediaMerger.java          # Merges MP4 chunks into a single file
-│   └── TimestampRenderer.java    # OpenGL pipeline for timestamp compositing
-│
-├── misc/
-│   └── Settings.java          # SharedPreferences wrapper
-│
-├── net/
-│   ├── FileUploader.java         # Abstract uploader with thread pool
-│   ├── GoogleDriveFileUploader.java  # Drive upload implementation
-│   ├── GoogleDriveClient.java    # Low-level Drive API wrapper
-│   ├── FileDownloader.java       # Abstract downloader
-│   ├── GoogleDriveFileDownloader.java  # Drive download implementation
-│   ├── MediaFile.java           # Chunk filename parser/generator
-│   └── FreeTSAClient.java       # Timestamp Authority (TSA) client (Sectigo)
-│
-│
-├── services/
-│   ├── SafeRecService.java       # Foreground service orchestrating recording
-│   ├── SafeRecTileService.java   # Quick Settings tile to start recording
-│   └── NotificationHelper.java  # Notification channel + builder
-│
-└── ui/
-    └── TutorialOverlayView.java  # First-run tutorial overlay
-```
-
----
-
-## Recording Lifecycle (Detail)
-
-### 1. Start Recording
-
-```mermaid
-sequenceDiagram
-    participant MA as MainActivity
-    participant SRS as SafeRecService
-    participant VSR as VideoStreamRecorder
-    participant ASR as AudioStreamRecorder
-    participant MS as MuxerSink
-    participant GDFU as GoogleDriveFileUploader
-
-    MA->>SRS: startForegroundService(CMD_START)
-    SRS->>SRS: startRecording()
-    SRS->>MS: new MuxerSink(baseDir, uploader, dataType, sessionId, chunkSize)
-    SRS->>VSR: start(context, muxer, useFront, surfaceTexture, callback)
-    VSR->>VSR: initCamera() → syncQuality, ensureCameraThread, choosePreviewSize
-    VSR->>VSR: setupEncoder() → MediaCodec (H.264), createInputSurface
-    VSR->>VSR: openCamera() → CameraDevice.StateCallback.onOpened
-    VSR->>VSR: startCaptureSession() → encoder + preview targets
-    VSR-->>MS: encoder callback → writeVideoData(buffer, info)
-    VSR-->>SRS: callback.onStarted(true)
-    SRS->>ASR: start(muxer)
-    ASR->>ASR: setupEncoder() → MediaCodec (AAC)
-    ASR->>ASR: AudioRecord.startRecording()
-    ASR->>ASR: processAudio() [on background thread]
-    ASR-->>MS: writeAudioData(buffer, info)
-    MS->>MS: addVideoTrack(format, rotation) / addAudioTrack(format)
-    MS->>MS: start() → muxer.start(), flush pending packets
-    SRS->>SRS: updateNotification(), LiveData → STATUS_STARTED
-```
-
-### 2. Chunking & Upload (during recording)
-
-```mermaid
-sequenceDiagram
-    participant VSR as VideoStreamRecorder
-    participant MS as MuxerSink
-    participant GDFU as GoogleDriveFileUploader
-
-    VSR-->>MS: writeVideoData(buffer, info)
-    MS->>MS: (bytesWritten >= partSize && keyFrame) OR device rotated?
-    alt Chunk complete
-        MS->>MS: rotate() → closeFile() + onFileSaved(completedChunkFile)
-        MS-->>SRS: onFileSaved() callback
-        alt Timestamping enabled
-            SRS->>FTSA: timestampFile(chunkFile, tsaFile)
-            FTSA->>FTSA: HTTP POST to Sectigo (Background Thread)
-            FTSA-->>SRS: success/fail
-            alt Success
-                SRS->>GDFU: upload(tsaFile)
-            end
-        end
-        SRS->>GDFU: upload(mediaFile)
-        GDFU->>GDFU: uploadFile() on thread pool (max 4 concurrent)
-        GDFU->>GDFU: file.delete() on success
-    end
-```
-
-### 3. Stop Recording
-
-```mermaid
-sequenceDiagram
-    participant MA as MainActivity
-    participant SRS as SafeRecService
-    participant ASR as AudioStreamRecorder
-    participant VSR as VideoStreamRecorder
-    participant MS as MuxerSink
-
-    MA->>SRS: startForegroundService(CMD_STOP)
-    SRS->>SRS: stopRecording()
-    SRS->>VSR: stopRecording()
-    VSR->>VSR: releaseEncoder() → encoder.stop(), encoder.release()
-    alt Preview surface attached
-        VSR->>VSR: startCaptureSession() (preview-only, TEMPLATE_PREVIEW)
-    else No preview
-        VSR->>VSR: stop() → close session, camera, thread
-    end
-    SRS->>ASR: stop()
-    ASR->>ASR: isRecording = false → processAudio loop exits
-    ASR->>ASR: signal EOS → drainEncoder() → flush remaining frames
-    ASR->>ASR: audioRecord.stop/release, encoder.stop/release
-    SRS->>MS: stop()
-    MS->>MS: closeFile() → muxer.stop(), muxer.release(), upload last chunk
-    SRS->>SRS: LiveData → STATUS_STOPPED, updateNotification()
-```
-
-### 4. Camera Switch Mid-Recording
-
-When the user switches front↔back during recording, [SafeRecService](file:///home/ark3us/Filen/Dev/SafeRec/app/src/main/java/net/ark3us/saferec/services/SafeRecService.java#21-227) receives a new `CMD_START`:
-
-1. [stopRecording()](file:///home/ark3us/Filen/Dev/SafeRec/app/src/main/java/net/ark3us/saferec/MainActivity.java#523-530) — tears down audio, video, and muxer (uploads final chunk)
-2. [startRecording()](file:///home/ark3us/Filen/Dev/SafeRec/app/src/main/java/net/ark3us/saferec/services/SafeRecService.java#112-181) — creates a **new session/muxer**, re-opens camera with new ID
-3. This is a full restart, not a hot swap — there's a brief gap in the recording
-
-### 5. Preview Lifecycle (Independent of Recording)
-
-| State | Action |
-|-------|--------|
-| **App opens (not recording)** | [startPreview()](file:///home/ark3us/Filen/Dev/SafeRec/app/src/main/java/net/ark3us/saferec/media/VideoStreamRecorder.java#121-140) → opens camera, preview-only session (`TEMPLATE_PREVIEW`) |
-| **App opens (recording in progress)** | [attachPreview()](file:///home/ark3us/Filen/Dev/SafeRec/app/src/main/java/net/ark3us/saferec/media/VideoStreamRecorder.java#271-287) → rebuilds capture session with preview + encoder |
-| **App goes to background (recording)** | [detachPreview()](file:///home/ark3us/Filen/Dev/SafeRec/app/src/main/java/net/ark3us/saferec/media/VideoStreamRecorder.java#256-270) → rebuilds capture session without preview |
-| **App goes to background (not recording)** | [stop()](file:///home/ark3us/Filen/Dev/SafeRec/app/src/main/java/net/ark3us/saferec/media/VideoStreamRecorder.java#240-255) | closes camera entirely |
-| **Recording stops (app visible)** | [stopRecording()](file:///home/ark3us/Filen/Dev/SafeRec/app/src/main/java/net/ark3us/saferec/MainActivity.java#523-530) | releases encoder, rebuilds preview-only session |
-
-
-
-## Key Classes
-
-### [VideoStreamRecorder](file:///home/ark3us/Filen/Dev/SafeRec/app/src/main/java/net/ark3us/saferec/media/VideoStreamRecorder.java#32-584) — [VideoStreamRecorder.java](file:///home/ark3us/Filen/Dev/SafeRec/app/src/main/java/net/ark3us/saferec/media/VideoStreamRecorder.java)
-
-**Singleton.** Manages Camera2 device, preview, and H.264 MediaCodec encoder.
-
-| Field | Type | Notes |
-|-------|------|-------|
-| `muxer` | `volatile MuxerSink` | Set during recording, null otherwise |
-| `isRecording` | `volatile boolean` | True when encoder + muxer are active |
-| `encoder` | `MediaCodec` | H.264 encoder (Surface input) |
-| `encoderSurface` | [Surface](file:///home/ark3us/Filen/Dev/SafeRec/app/src/main/java/net/ark3us/saferec/MainActivity.java#165-168) | Input surface from encoder |
-| `cameraDevice` | `CameraDevice` | Currently open camera |
-| `captureSession` | `CameraCaptureSession` | Active session |
-| `previewSurface` | [Surface](file:///home/ark3us/Filen/Dev/SafeRec/app/src/main/java/net/ark3us/saferec/MainActivity.java#165-168) | From TextureView, null when no preview |
-| `quality` | [Quality](file:///home/ark3us/Filen/Dev/SafeRec/app/src/main/java/net/ark3us/saferec/media/VideoStreamRecorder.java#37-71) | LOW (640×360), MEDIUM (854×480), HIGH (1280×720) |
-
-Key methods:
-- [initCamera(context, useFront)](file:///home/ark3us/Filen/Dev/SafeRec/app/src/main/java/net/ark3us/saferec/media/VideoStreamRecorder.java#290-304) — shared setup (sync quality, camera thread, preview size)
-- [setupEncoder(context, cameraId)](file:///home/ark3us/Filen/Dev/SafeRec/app/src/main/java/net/ark3us/saferec/media/AudioStreamRecorder.java#105-120) — creates & starts MediaCodec with async callback
-- [startCaptureSession()](file:///home/ark3us/Filen/Dev/SafeRec/app/src/main/java/net/ark3us/saferec/media/VideoStreamRecorder.java#504-554) — builds targets list (encoder + preview), sets repeating request
-- [releaseEncoder()](file:///home/ark3us/Filen/Dev/SafeRec/app/src/main/java/net/ark3us/saferec/media/VideoStreamRecorder.java#305-321) — stops & releases encoder safely
-- [configureTransform(textureView)](file:///home/ark3us/Filen/Dev/SafeRec/app/src/main/java/net/ark3us/saferec/media/VideoStreamRecorder.java#141-197) — corrects preview for device rotation
-
-**Rotation formula:** [(sensorOrientation - deviceRotation + 360) % 360](file:///home/ark3us/Filen/Dev/SafeRec/app/src/main/java/net/ark3us/saferec/media/VideoStreamRecorder.java#240-255) — same for front and back cameras.
-
-### [AudioStreamRecorder](file:///home/ark3us/Filen/Dev/SafeRec/app/src/main/java/net/ark3us/saferec/media/AudioStreamRecorder.java#18-179) — [AudioStreamRecorder.java](file:///home/ark3us/Filen/Dev/SafeRec/app/src/main/java/net/ark3us/saferec/media/AudioStreamRecorder.java)
-
-Manages `AudioRecord` (mic input) and AAC MediaCodec encoder on a background thread.
-
-- **Sample rate:** 44100 Hz, mono, PCM 16-bit
-- **Bitrate:** 64 kbps AAC-LC
-- **Stop sequence:** signals EOS to encoder, drains remaining output, then releases
-
-Key methods:
-- [processAudio()](file:///home/ark3us/Filen/Dev/SafeRec/app/src/main/java/net/ark3us/saferec/media/AudioStreamRecorder.java#121-158) — loop: read PCM → queue to encoder → [drainEncoder()](file:///home/ark3us/Filen/Dev/SafeRec/app/src/main/java/net/ark3us/saferec/media/AudioStreamRecorder.java#159-178)
-- [drainEncoder(bufferInfo)](file:///home/ark3us/Filen/Dev/SafeRec/app/src/main/java/net/ark3us/saferec/media/AudioStreamRecorder.java#159-178) — pulls encoded AAC from encoder, writes to muxer
-
-### [MuxerSink](file:///home/ark3us/Filen/Dev/SafeRec/app/src/main/java/net/ark3us/saferec/media/MuxerSink.java#17-263) — [MuxerSink.java](file:///home/ark3us/Filen/Dev/SafeRec/app/src/main/java/net/ark3us/saferec/media/MuxerSink.java)
-
-Thread-safe (`synchronized`) wrapper around `MediaMuxer` with automatic chunking and upload.
-
-| Concept | Implementation |
-|---------|---------------|
-| **Track readiness** | Waits for both audio+video tracks (or just audio if audio-only) before `muxer.start()` |
-| **Pending packets** | Buffers up to 100 packets while tracks aren't ready |
-| **Chunk rotation** | On video key-frame when `bytesWritten >= partSize`, or when device rotation changes |
-| **PTS normalization** | 3-layer: session base → chunk base → final (always ≥ 0) |
-| **File naming** | `{sessionId}_{dataType}_{timestamp}.{seq}` via [MediaFile](file:///home/ark3us/Filen/Dev/SafeRec/app/src/main/java/net/ark3us/saferec/net/MediaFile.java#7-71) |
-
-**Chunk size** is determined by:
-1. Manual setting (`Settings.getChunkSizeMB`) if > 0
-2. `Quality.getRecommendedChunkSize()` = [(bitRate / 8) * 10](file:///home/ark3us/Filen/Dev/SafeRec/app/src/main/java/net/ark3us/saferec/media/VideoStreamRecorder.java#240-255) (~10s of video)
-3. `DEFAULT_AUDIO_CHUNK` = 64 KB (audio-only mode)
-
-### [FreeTSAClient](file:///home/ark3us/Filen/Dev/SafeRec/app/src/main/java/net/ark3us/saferec/net/FreeTSAClient.java) — [FreeTSAClient.java](file:///home/ark3us/Filen/Dev/SafeRec/app/src/main/java/net/ark3us/saferec/net/FreeTSAClient.java)
-
-Utility to obtain cryptographically secure RFC 3161 timestamps.
-
-- **Hash:** SHA-256
-- **Provider:** `https://timestamp.sectigo.com` (Sectigo)
-- **Library:** BouncyCastle (for TSQ/TSR handling)
-- **Local Cache:** Saves `.tsa` files side-by-side with media chunks during background upload.
-
-
-### [MediaMerger](file:///home/ark3us/Filen/Dev/SafeRec/app/src/main/java/net/ark3us/saferec/media/MediaMerger.java#14-169) — [MediaMerger.java](file:///home/ark3us/Filen/Dev/SafeRec/app/src/main/java/net/ark3us/saferec/media/MediaMerger.java)
-
-Merges multiple MP4 chunks into a single file. Used by [RecordingsActivity](file:///home/ark3us/Filen/Dev/SafeRec/app/src/main/java/net/ark3us/saferec/RecordingsActivity.java#40-332) when user taps "Merge".
-
-- Reads video/audio formats from the first chunk
-- Strips `KEY_ROTATION` from format, applies rotation via `setOrientationHint` only
-- Concatenates samples with PTS offset tracking per track
-- **Limitation:** Single MP4 = single rotation value. Mixed-camera sessions or merged chunks with different device rotations will have wrong orientation on some segments.
-
-### [SafeRecService](file:///home/ark3us/Filen/Dev/SafeRec/app/src/main/java/net/ark3us/saferec/services/SafeRecService.java#21-227) — [SafeRecService.java](file:///home/ark3us/Filen/Dev/SafeRec/app/src/main/java/net/ark3us/saferec/services/SafeRecService.java)
-
-Foreground service orchestrating the recording. Commands via `Intent` extras:
-
-| Command | Action |
-|---------|--------|
-| `CMD_START` | If already recording: stop + restart (camera switch). Otherwise: start new recording |
-| `CMD_STOP` | Stop recording, reset session |
-| `CMD_UPLOAD_PENDING` | Upload any leftover local chunks to Drive |
-
-State is broadcast via [LiveData](file:///home/ark3us/Filen/Dev/SafeRec/app/src/main/java/net/ark3us/saferec/data/LiveData.java#5-26) singleton: `STATUS_READY` → `STATUS_STARTED` → `STATUS_STOPPED` / `STATUS_ERROR`
-
-### [Settings](file:///home/ark3us/Filen/Dev/SafeRec/app/src/main/java/net/ark3us/saferec/misc/Settings.java#7-78) — [Settings.java](file:///home/ark3us/Filen/Dev/SafeRec/app/src/main/java/net/ark3us/saferec/misc/Settings.java)
-
-SharedPreferences wrapper. Keys:
-
-| Setting | Type | Default |
-|---------|------|---------|
-| `accessToken` | String | null |
-| [onlyAudio](file:///home/ark3us/Filen/Dev/SafeRec/app/src/main/java/net/ark3us/saferec/misc/Settings.java#25-28) | boolean | false |
-| `useFrontCamera` | boolean | false |
-| `videoQuality` | String | "LOW" |
-| `chunkSizeMB` | int | 0 (auto) |
-| `autoStartOnLaunch` | boolean | false |
-| `tutorialShown` | boolean | false |
-| `timestampingEnabled` | boolean | false |
-
-
----
-
-## Data Flow
-
-### File Storage & Naming
-
-```
-/data/data/net.ark3us.saferec/files/data_store/
-  └── {sessionId}_{video|audio}_{timestamp}.{seq}    ← local chunk files
-```
-
-`sessionId` = `System.currentTimeMillis()` at session start.
-
-### Google Drive Structure
-
-```
-My Drive/
-  └── SafeRec/
-      └── {sessionId}/
-          └── {video|audio}/
-              └── {timestamp}.{seq}.mp4
-```
-
-Chunks are uploaded immediately on completion and **deleted locally** on successful upload.
-
----
-
-## Threading Model
-
-| Thread | Components |
-|--------|-----------|
-| **Main (UI)** | MainActivity, RecordingsActivity, service commands |
-| **CameraBackground** (HandlerThread) | Camera2 callbacks, MediaCodec encoder callbacks (video) |
-| **Audio processing** (Thread) | `AudioStreamRecorder.processAudio()` loop |
-| **Upload pool** (4 threads) | `FileUploader.uploadExecutor` |
-| **Upload scan** (1 thread) | `FileUploader.scanExecutor` for directory scanning |
-| **Service executor** (1 thread) | `SafeRecService.executor` for pending uploads |
-
-### Thread Safety Notes
-
-- [MuxerSink](file:///home/ark3us/Filen/Dev/SafeRec/app/src/main/java/net/ark3us/saferec/media/MuxerSink.java#17-263): all public methods are `synchronized`
-- `VideoStreamRecorder.muxer` and `.isRecording`: `volatile` for cross-thread visibility
-- `AudioStreamRecorder.isRecording`: `volatile`, checked in processing loop
-- `GoogleDriveFileUploader.sessionFolderIdCache`: `ConcurrentHashMap`
-- `GoogleDriveFileUploader.cachedBaseFolderId`: `volatile` + double-checked locking
-
----
-
-## Known Limitations
-
-1. **Camera switch = recording gap.** Switching cameras mid-session does a full stop+restart, creating a new muxer/session segment.
-2. **Mixed-rotation merge.** A single MP4 can only have one `setOrientationHint`. When chunks from different cameras (with different sensor orientations) or different device rotations are merged, some segments will display with wrong rotation.
-3. **No video mirroring.** Front camera video is recorded un-mirrored (you see yourself as others see you, not as a mirror reflection). This is standard for video recording.
-4. **Token expiry.** The Google Drive access token is stored in SharedPreferences. If it expires, uploads silently fail. No refresh token mechanism exists.
+# SafeRec
+
+**SafeRec** is an open-source Android application designed for emergency and high-risk situations. It ensures your critical evidence is safe by recording (video and audio) and instantly uploading the footage in chunks directly to your Google Drive. Even if your phone is destroyed, broken, or confiscated during an event, your recordings are already securely preserved in your cloud storage. 
+
+Furthermore, SafeRec generates verifiable timestamp certificates (TSA) to prove the authenticity and integrity of your recordings, making them robust for evidentiary purposes.
+
+## Motivations
+
+In emergency situations, every second is vital. A traditional camera app saves the video locally only *after* the recording is stopped. If the device is taken, broken, or turned off during the event, the evidence is often lost forever or corrupted. 
+
+SafeRec solves this fundamental flaw by continuously uploading video and audio chunks to your Google Drive in real-time. This guarantees that whatever was recorded up until the moment of device failure or confiscation is securely preserved. The cryptographic TSA stamping adds an irrefutable layer of provability for legal or evidentiary use, ensuring the file existed at a specific point in time and has not been tampered with.
+
+## Key Features
+
+- **Instant Cloud Backup**: Automatically uploads video/audio chunks directly to Google Drive as they are being recorded.
+- **Background Recording**: Uses an Android Foreground Service, allowing you to seamlessly record even when the screen is locked or while you are using other apps.
+- **Audio-Only Mode**: Easily toggle between Video+Audio and Audio-Only modes for discretion, battery-saving, and reduced bandwidth.
+- **Quick Settings Tile**: Start and stop recordings instantly via the Android Quick Settings drop-down menu, without ever needing to open the app.
+- **Auto-Start**: Configure the app to automatically begin recording the moment the app is launched or the Tile is tapped.
+- **Cryptographic Timestamping (TSA)**: Hashes the media files (SHA-256) and requests timestamp certificates from a recognizable Time Stamping Authority (Sectigo), proving the integrity and creation time of your recordings.
+- **Chunk Management**: Automatically chunks video files (with adjustable chunk sizes) to ensure frequent and manageable uploads, minimizing the risk of losing long segments.
+- **Video Quality Controls**: Adjust video quality (High 720p, Medium 480p, Low 360p) to balance file size against upload speeds.
+
+## Technical Details
+
+- **Language & Architecture**: Built entirely in Java using native Android APIs.
+- **Camera API**: Utilizes the modern `Camera2` API for robust video capture seamlessly routed to a `MediaMuxer`.
+- **Cloud Integration**: Powered by the Google Drive API v3 and Google Play Services Auth for secure, token-based uploads.
+- **Minimum SDK**: Android 8.0 (API Level 26).
+- **Target SDK**: Android 16 (API Level 36).
+
+## Build and Run Instructions
+
+### Prerequisites
+- [Android Studio](https://developer.android.com/studio) (latest stable version recommended).
+- JDK 11 (specified in `build.gradle.kts`).
+- An Android Device or Emulator running Android 8.0 (API level 26) or higher.
+- A Google Cloud Console Project with the **Google Drive API** enabled.
+
+### Setup & Compilation
+1. **Clone the repository**:
+   ```bash
+   git clone https://github.com/yourusername/SafeRec.git
+   cd SafeRec
+   ```
+2. **Open in Android Studio**:
+   Import the project into Android Studio and let Gradle sync the dependencies.
+
+3. **Configure Google API Credentials**:
+   To allow the app to upload files to Google Drive, you must configure OAuth 2.0 authentication:
+   - Go to the [Google Cloud Console](https://console.cloud.google.com/).
+   - Create a new project or select an existing one.
+   - Enable the **Google Drive API**.
+   - Navigate to **APIs & Services > Credentials** and create an **OAuth client ID** for an **Android** application.
+   - You will need to provide your app's package name (`net.ark3us.saferec`) and the SHA-1 certificate fingerprint of your debug or release keystore.
+
+4. **Build the Project**:
+   You can build the APK directly through Android Studio ("Build > Build Bundle(s) / APK(s) > Build APK(s)") or via the command line:
+   ```bash
+   ./gradlew assembleDebug
+   ```
+
+5. **Run the App**:
+   Deploy the application to your emulator or physical Android device. Make sure to grant the necessary permissions (Camera, Microphone, Foreground Service, Notifications) upon the first launch, and authenticate with your Google account when prompted to authorize Google Drive access.
+
+## License
+
+*(Add your specific Open Source License here, e.g., MIT, Apache 2.0, GPL-3.0)*
