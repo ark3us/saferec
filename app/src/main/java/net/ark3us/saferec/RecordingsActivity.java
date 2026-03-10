@@ -162,32 +162,29 @@ public class RecordingsActivity extends AppCompatActivity {
         if (selected.isEmpty())
             return;
 
-        progressBar.setVisibility(View.VISIBLE);
-        downloader.deleteFiles(selected, new FileDownloader.Callback<Void>() {
-            @Override
-            public void onSuccess(Void result) {
-                Log.d(TAG, "Successfully deleted " + selected.size() + " files");
-                mainHandler.post(() -> {
-                    progressBar.setVisibility(View.GONE);
-                    adapter.removeItems(selected);
-                    exitSelectionMode();
-
-                    if (adapter.getItemCount() == 0) {
-                        Log.d(TAG, "List is now empty after local removal");
-                        emptyState.setVisibility(View.VISIBLE);
-                        emptyState.setText(R.string.no_recordings_found);
-                    }
-                });
+        List<String> fileIds = new ArrayList<>();
+        java.util.Set<String> folderIds = new java.util.HashSet<>();
+        for (FileDownloader.RecordingItem item : selected) {
+            fileIds.add(item.driveFile.getId());
+            if (item.driveFile.getParents() != null) {
+                folderIds.addAll(item.driveFile.getParents());
             }
+        }
 
-            @Override
-            public void onError(Exception e) {
-                Log.e(TAG, "Delete failed", e);
-                mainHandler.post(() -> {
-                    progressBar.setVisibility(View.GONE);
-                });
-            }
-        });
+        Intent intent = new Intent(this, net.ark3us.saferec.services.SafeRecService.class);
+        intent.putExtra("command", net.ark3us.saferec.services.SafeRecService.CMD_DELETE);
+        intent.putExtra(net.ark3us.saferec.services.SafeRecService.EXTRA_FILE_IDS, fileIds.toArray(new String[0]));
+        intent.putExtra(net.ark3us.saferec.services.SafeRecService.EXTRA_FOLDER_IDS, folderIds.toArray(new String[0]));
+        startForegroundService(intent);
+
+        // Optimistic UI update
+        adapter.removeItems(selected);
+        exitSelectionMode();
+        if (adapter.getItemCount() == 0) {
+            emptyState.setVisibility(View.VISIBLE);
+            emptyState.setText(R.string.no_recordings_found);
+        }
+        Toast.makeText(this, "Deleting " + selected.size() + " recordings in background...", Toast.LENGTH_SHORT).show();
     }
 
     private void shareSelected() {

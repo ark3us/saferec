@@ -144,35 +144,44 @@ public class GoogleDriveFileDownloader extends FileDownloader {
 
     @Override
     public void deleteFiles(List<RecordingItem> items, Callback<Void> callback) {
+        List<String> fileIds = new ArrayList<>();
+        Set<String> folderIds = new HashSet<>();
+        for (RecordingItem item : items) {
+            fileIds.add(item.driveFile.getId());
+            List<String> parents = item.driveFile.getParents();
+            if (parents != null && !parents.isEmpty()) {
+                folderIds.addAll(parents);
+            }
+        }
+        deleteFilesById(fileIds, folderIds, callback);
+    }
+
+    public void deleteFilesById(List<String> fileIds, Set<String> folderIdsToCheck, Callback<Void> callback) {
         executor.execute(() -> {
             try {
-                Set<String> folderIdsToCheck = new HashSet<>();
-                for (RecordingItem item : items) {
-                    // Get parents before deleting if not available
-                    List<String> parents = item.driveFile.getParents();
-                    if (parents != null && !parents.isEmpty()) {
-                        folderIdsToCheck.addAll(parents);
-                    }
-                    driveClient.getDriveService().files().delete(item.driveFile.getId()).execute();
+                for (String fileId : fileIds) {
+                    driveClient.getDriveService().files().delete(fileId).execute();
                 }
 
                 // Optional: Clean up empty folders (DataType and then Session)
-                for (String folderId : folderIdsToCheck) {
-                    try {
-                        cleanEmptyFolderRecursively(folderId);
-                    } catch (Exception folderEx) {
-                        Log.e(TAG, "Failed to clean folders for: " + folderId, folderEx);
+                if (folderIdsToCheck != null) {
+                    for (String folderId : folderIdsToCheck) {
+                        try {
+                            cleanEmptyFolderRecursively(folderId);
+                        } catch (Exception folderEx) {
+                            Log.e(TAG, "Failed to clean folders for: " + folderId, folderEx);
+                        }
                     }
                 }
 
-                callback.onSuccess(null);
+                if (callback != null) callback.onSuccess(null);
             } catch (Exception e) {
-                callback.onError(e);
+                if (callback != null) callback.onError(e);
             }
         });
     }
 
-    private void cleanEmptyFolderRecursively(String folderId) throws Exception {
+    public void cleanEmptyFolderRecursively(String folderId) throws Exception {
         if (folderId == null)
             return;
 

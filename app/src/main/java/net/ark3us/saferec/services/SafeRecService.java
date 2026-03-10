@@ -12,24 +12,26 @@ import net.ark3us.saferec.media.AudioStreamRecorder;
 import net.ark3us.saferec.media.MuxerSink;
 import net.ark3us.saferec.media.VideoStreamRecorder;
 import net.ark3us.saferec.misc.Settings;
+import net.ark3us.saferec.net.GoogleDriveFileDownloader;
 import net.ark3us.saferec.net.GoogleDriveFileUploader;
 
 import java.io.File;
+import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 public class SafeRecService extends Service {
-    private static final String TAG = "SafeRecService";
-
     public static final String CMD_START = "START";
     public static final String CMD_STOP = "STOP";
+    public static final String CMD_DELETE = "DELETE";
     public static final String CMD_UPLOAD_PENDING = "UPLOAD_PENDING";
-
+    public static final String EXTRA_FILE_IDS = "file_ids";
+    public static final String EXTRA_FOLDER_IDS = "folder_ids";
     public static final String STATUS_READY = "READY";
     public static final String STATUS_STARTED = "STARTED";
     public static final String STATUS_STOPPED = "STOPPED";
     public static final String STATUS_ERROR = "ERROR";
-
+    private static final String TAG = "SafeRecService";
     private VideoStreamRecorder videoRecorder;
     private AudioStreamRecorder audioRecorder;
     private MuxerSink sink;
@@ -37,7 +39,10 @@ public class SafeRecService extends Service {
     private boolean isRecording = false;
     private boolean isForeground = false;
     private int activeUploads = 0;
+    private int activeDeletions = 0;
+    private int activeTimestamping = 0;
     private String currentSessionId;
+    private GoogleDriveFileUploader sharedUploader;
     private int currentSequenceNumber = 0;
 
     private ExecutorService executor = Executors.newSingleThreadExecutor();
@@ -50,7 +55,7 @@ public class SafeRecService extends Service {
     }
 
     private Notification buildNotification() {
-        return NotificationHelper.buildNotification(this, isRecording, activeUploads);
+        return NotificationHelper.buildNotification(this, isRecording, activeUploads, activeDeletions, activeTimestamping);
     }
 
     private void updateNotification() {
@@ -99,6 +104,9 @@ public class SafeRecService extends Service {
                     uploadPendingFiles();
                 }
                 break;
+            case CMD_DELETE:
+                deleteDriveFiles(intent);
+                break;
         }
         return START_STICKY;
     }
@@ -122,11 +130,15 @@ public class SafeRecService extends Service {
         }
         String sessionId = currentSessionId;
         String accessToken = Settings.getAccessToken(this);
-        GoogleDriveFileUploader fileUploader = new GoogleDriveFileUploader(accessToken);
-        fileUploader.setListener(num -> {
-            activeUploads = num;
-            updateNotification();
-        });
+        
+        if (sharedUploader == null) {
+            sharedUploader = new GoogleDriveFileUploader(accessToken);
+            sharedUploader.setListener(num -> {
+                activeUploads = num;
+                updateNotification();
+            });
+        }
+
         File baseDir = new File(getFilesDir(), "data_store");
         boolean includeVideo = !Settings.onlyAudio(this);
         String dataType = includeVideo ? MuxerSink.DATA_TYPE_VIDEO : MuxerSink.DATA_TYPE_AUDIO;
@@ -149,15 +161,23 @@ public class SafeRecService extends Service {
         MuxerSink.FileSavedCallback callback = file -> {
             new Thread(() -> {
                 if (Settings.isTimestampingEnabled(this)) {
+                    synchronized (this) {
+                        activeTimestamping++;
+                        updateNotification();
+                    }
                     String path = file.getAbsolutePath();
                     int dotIndex = path.lastIndexOf('.');
                     File tsaFile = new File((dotIndex > 0 ? path.substring(0, dotIndex) : path) + ".tsa");
                     boolean success = net.ark3us.saferec.net.FreeTSAClient.timestampFile(this, file, tsaFile);
+                    synchronized (this) {
+                        activeTimestamping--;
+                        updateNotification();
+                    }
                     if (success) {
-                        fileUploader.upload(tsaFile);
+                        sharedUploader.upload(tsaFile);
                     }
                 }
-                fileUploader.upload(file);
+                sharedUploader.upload(file);
             }, "TimestampUploadThread").start();
         };
 
@@ -222,8 +242,64 @@ public class SafeRecService extends Service {
             File baseDir = new File(getFilesDir(), "data_store");
             String accessToken = Settings.getAccessToken(this);
             if (accessToken != null) {
-                new GoogleDriveFileUploader(accessToken).upload(baseDir);
+                if (sharedUploader == null) {
+                    sharedUploader = new GoogleDriveFileUploader(accessToken);
+                    sharedUploader.setListener(num -> {
+                        activeUploads = num;
+                        updateNotification();
+                    });
+                }
+                sharedUploader.upload(baseDir);
             }
+        });
+    }
+
+    private void deleteDriveFiles(Intent intent) {
+        String[] fileIds = intent.getStringArrayExtra(EXTRA_FILE_IDS);
+        String[] folderIds = intent.getStringArrayExtra(EXTRA_FOLDER_IDS);
+
+        if (fileIds == null || fileIds.length == 0) return;
+
+        executor.execute(() -> {
+            String accessToken = Settings.getAccessToken(this);
+            if (accessToken == null) {
+                Log.e(TAG, "Cannot delete: No access token");
+                return;
+            }
+
+            Log.i(TAG, "Starting background deletion of " + fileIds.length + " files");
+            synchronized (this) {
+                activeDeletions += fileIds.length;
+                updateNotification();
+            }
+
+            GoogleDriveFileDownloader downloader = new GoogleDriveFileDownloader(this, accessToken);
+            
+            List<String> fileIdList = java.util.Arrays.asList(fileIds);
+            java.util.Set<String> folderIdSet = new java.util.HashSet<>();
+            if (folderIds != null) {
+                java.util.Collections.addAll(folderIdSet, folderIds);
+            }
+
+            downloader.deleteFilesById(fileIdList, folderIdSet, new net.ark3us.saferec.net.FileDownloader.Callback<Void>() {
+                @Override
+                public void onSuccess(Void result) {
+                    Log.i(TAG, "Background deletion completed successfully");
+                    synchronized (SafeRecService.this) {
+                        activeDeletions -= fileIds.length;
+                        updateNotification();
+                    }
+                }
+
+                @Override
+                public void onError(Exception e) {
+                    Log.e(TAG, "Background deletion failed", e);
+                    synchronized (SafeRecService.this) {
+                        activeDeletions -= fileIds.length;
+                        updateNotification();
+                    }
+                }
+            });
         });
     }
 
