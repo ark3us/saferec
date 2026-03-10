@@ -103,4 +103,4 @@ This application was developed with the assistance of **Antigravity**.
 
 ## License
 
-*(Add your specific Open Source License here, e.g., MIT, Apache 2.0, GPL-3.0)*
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
