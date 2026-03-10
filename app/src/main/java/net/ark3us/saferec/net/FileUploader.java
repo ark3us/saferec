@@ -6,7 +6,6 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public abstract class FileUploader {
-    private static final String TAG = FileUploader.class.getSimpleName();
     private static final int MAX_CONCURRENT_UPLOADS = 4;
     protected final ExecutorService uploadExecutor = Executors.newFixedThreadPool(MAX_CONCURRENT_UPLOADS);
     protected final ExecutorService scanExecutor = Executors.newSingleThreadExecutor();
@@ -64,10 +63,18 @@ public abstract class FileUploader {
 
     /** Single file: submit directly to upload executor. Directory: scan then submit each file. */
     public void upload(File fileOrDir) {
-        if (fileOrDir != null && !fileOrDir.isDirectory()) {
+        if (fileOrDir == null) {
+            return;
+        }
+        if (!fileOrDir.isDirectory()) {
             uploadExecutor.submit(() -> wrappedUploadFile(fileOrDir));
             return;
         }
         scanExecutor.submit(() -> uploadInternal(fileOrDir));
+    }
+
+    public void shutdown() {
+        scanExecutor.shutdownNow();
+        uploadExecutor.shutdownNow();
     }
 }

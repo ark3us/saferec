@@ -55,10 +55,9 @@
         </service>
         <service
             android:name=".services.SafeRecService"
-            android:exported="true"
+            android:exported="false"
             android:stopWithTask="false"
-            android:foregroundServiceType="camera|microphone"
-            android:permission="android.permission.FOREGROUND_SERVICE_CAMERA">
+            android:foregroundServiceType="camera|microphone">
         </service>
 
         <provider

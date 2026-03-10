@@ -6,8 +6,6 @@ import android.util.Log;
 
 import androidx.core.content.FileProvider;
 
-import androidx.core.content.FileProvider;
-
 import com.google.api.services.drive.model.FileList;
 
 import java.io.File;
@@ -114,6 +112,7 @@ public class GoogleDriveFileDownloader extends FileDownloader {
     private List<com.google.api.services.drive.model.File> fetchFilesBatch(List<String> parentIds, boolean isFolder)
             throws Exception {
         List<com.google.api.services.drive.model.File> allResults = new ArrayList<>();
+        Log.d(TAG, "Fetching " + (isFolder ? "folders" : "files") + " for parent count=" + parentIds.size());
         for (int i = 0; i < parentIds.size(); i += 50) {
             List<String> batch = parentIds.subList(i, Math.min(i + 50, parentIds.size()));
             StringBuilder q = new StringBuilder("trashed=false and ");
@@ -132,13 +131,21 @@ public class GoogleDriveFileDownloader extends FileDownloader {
 
             String fields = isFolder ? "files(id, name, parents)"
                     : "files(id, name, parents, size, createdTime, webViewLink, thumbnailLink)";
-            FileList list = driveClient.getDriveService().files().list()
-                    .setQ(q.toString())
-                    .setFields(fields)
-                    .execute();
-            if (list.getFiles() != null)
-                allResults.addAll(list.getFiles());
+            String pageToken = null;
+            do {
+                FileList list = driveClient.getDriveService().files().list()
+                        .setQ(q.toString())
+                        .setFields(fields + ",nextPageToken")
+                        .setPageToken(pageToken)
+                        .setPageSize(1000)
+                        .execute();
+                if (list.getFiles() != null) {
+                    allResults.addAll(list.getFiles());
+                }
+                pageToken = list.getNextPageToken();
+            } while (pageToken != null && !pageToken.isEmpty());
         }
+        Log.d(TAG, "Fetched " + allResults.size() + " " + (isFolder ? "folders" : "files"));
         return allResults;
     }
 
@@ -218,8 +225,9 @@ public class GoogleDriveFileDownloader extends FileDownloader {
             try {
                 List<Uri> uris = new ArrayList<>();
                 File cacheDir = new File(context.getCacheDir(), "recordings");
-                if (!cacheDir.exists()) {
-                    cacheDir.mkdirs();
+                if (!cacheDir.exists() && !cacheDir.mkdirs()) {
+                    callback.onError(new IllegalStateException("Failed to create cache dir: " + cacheDir.getAbsolutePath()));
+                    return;
                 }
 
                 for (RecordingItem item : items) {
@@ -249,8 +257,9 @@ public class GoogleDriveFileDownloader extends FileDownloader {
             try {
                 List<File> localFiles = new ArrayList<>();
                 File cacheDir = new File(context.getCacheDir(), "merging");
-                if (!cacheDir.exists()) {
-                    cacheDir.mkdirs();
+                if (!cacheDir.exists() && !cacheDir.mkdirs()) {
+                    callback.onError(new IllegalStateException("Failed to create merge cache dir: " + cacheDir.getAbsolutePath()));
+                    return;
                 }
 
                 for (RecordingItem item : items) {

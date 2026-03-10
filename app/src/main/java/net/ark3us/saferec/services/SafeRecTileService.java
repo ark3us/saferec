@@ -20,8 +20,8 @@ public class SafeRecTileService extends TileService {
             try {
                 Intent intent = new Intent(this, MainActivity.class);
                 intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                intent.putExtra("command", SafeRecService.CMD_START);
-                intent.putExtra("from_tile", true);
+                intent.putExtra(SafeRecService.EXTRA_COMMAND, SafeRecService.CMD_START);
+                intent.putExtra(SafeRecService.EXTRA_FROM_TILE, true);
                 Log.i(TAG, "Tile clicked, launching SafeRecActivity");
 
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {

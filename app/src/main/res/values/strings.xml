@@ -52,4 +52,5 @@
     <string name="chunk_auto">Auto</string>
     <string name="chunk_custom">Manual...</string>
     <string name="chunk_manual_title">Enter Chunk Size (MB)</string>
+    <string name="chunk_invalid_input">Invalid chunk size</string>
 </resources>

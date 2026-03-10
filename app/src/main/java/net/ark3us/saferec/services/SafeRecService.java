@@ -3,15 +3,20 @@ package net.ark3us.saferec.services;
 import android.app.Notification;
 import android.app.NotificationManager;
 import android.app.Service;
+import android.content.Context;
 import android.content.Intent;
 import android.os.IBinder;
 import android.util.Log;
+
+import androidx.annotation.Nullable;
 
 import net.ark3us.saferec.data.LiveData;
 import net.ark3us.saferec.media.AudioStreamRecorder;
 import net.ark3us.saferec.media.MuxerSink;
 import net.ark3us.saferec.media.VideoStreamRecorder;
 import net.ark3us.saferec.misc.Settings;
+import net.ark3us.saferec.net.FileDownloader;
+import net.ark3us.saferec.net.FreeTSAClient;
 import net.ark3us.saferec.net.GoogleDriveFileDownloader;
 import net.ark3us.saferec.net.GoogleDriveFileUploader;
 
@@ -25,6 +30,9 @@ public class SafeRecService extends Service {
     public static final String CMD_STOP = "STOP";
     public static final String CMD_DELETE = "DELETE";
     public static final String CMD_UPLOAD_PENDING = "UPLOAD_PENDING";
+    public static final String EXTRA_COMMAND = "command";
+    public static final String EXTRA_FROM_TILE = "from_tile";
+    public static final String EXTRA_FROM_NOTIFICATION = "from_notification";
     public static final String EXTRA_FILE_IDS = "file_ids";
     public static final String EXTRA_FOLDER_IDS = "folder_ids";
     public static final String STATUS_READY = "READY";
@@ -46,12 +54,20 @@ public class SafeRecService extends Service {
     private int currentSequenceNumber = 0;
 
     private ExecutorService executor = Executors.newSingleThreadExecutor();
+    private ExecutorService postProcessExecutor = Executors.newSingleThreadExecutor();
+
+    public static Intent createCommandIntent(Context context, @Nullable String command) {
+        Intent intent = new Intent(context, SafeRecService.class);
+        intent.putExtra(EXTRA_COMMAND, command);
+        return intent;
+    }
 
     @Override
     public void onCreate() {
         super.onCreate();
         NotificationHelper.createNotificationChannel(this);
         executor = Executors.newSingleThreadExecutor();
+        postProcessExecutor = Executors.newSingleThreadExecutor();
     }
 
     private Notification buildNotification() {
@@ -76,7 +92,7 @@ public class SafeRecService extends Service {
     public int onStartCommand(Intent intent, int flags, int startId) {
         Log.i(TAG, "SafeRecService started");
         updateNotification();
-        String command = intent != null ? intent.getStringExtra("command") : null;
+        String command = intent != null ? intent.getStringExtra(EXTRA_COMMAND) : null;
         if (command == null) {
             if (!isRecording) {
                 LiveData.getInstance().updateStatus(STATUS_READY);
@@ -122,6 +138,12 @@ public class SafeRecService extends Service {
             Log.w(TAG, "Recording is already in progress");
             return;
         }
+        String accessToken = Settings.getAccessToken(this);
+        if (accessToken == null || accessToken.isEmpty()) {
+            Log.e(TAG, "Cannot start recording: missing access token");
+            LiveData.getInstance().updateStatus(STATUS_ERROR);
+            return;
+        }
         isRecording = true;
         LiveData.getInstance().updateStatus(STATUS_STARTED);
         if (currentSessionId == null) {
@@ -129,7 +151,7 @@ public class SafeRecService extends Service {
             currentSequenceNumber = 0;
         }
         String sessionId = currentSessionId;
-        String accessToken = Settings.getAccessToken(this);
+        Log.i(TAG, "Starting recording session id=" + sessionId + " sequence=" + currentSequenceNumber);
         
         if (sharedUploader == null) {
             sharedUploader = new GoogleDriveFileUploader(accessToken);
@@ -159,7 +181,8 @@ public class SafeRecService extends Service {
         }
 
         MuxerSink.FileSavedCallback callback = file -> {
-            new Thread(() -> {
+            postProcessExecutor.execute(() -> {
+                Log.i(TAG, "Processing saved chunk: " + file.getName());
                 if (Settings.isTimestampingEnabled(this)) {
                     synchronized (this) {
                         activeTimestamping++;
@@ -168,7 +191,7 @@ public class SafeRecService extends Service {
                     String path = file.getAbsolutePath();
                     int dotIndex = path.lastIndexOf('.');
                     File tsaFile = new File((dotIndex > 0 ? path.substring(0, dotIndex) : path) + ".tsa");
-                    boolean success = net.ark3us.saferec.net.FreeTSAClient.timestampFile(this, file, tsaFile);
+                    boolean success = FreeTSAClient.timestampFile(this, file, tsaFile);
                     synchronized (this) {
                         activeTimestamping--;
                         updateNotification();
@@ -178,7 +201,7 @@ public class SafeRecService extends Service {
                     }
                 }
                 sharedUploader.upload(file);
-            }, "TimestampUploadThread").start();
+            });
         };
 
         sink = new MuxerSink(baseDir, callback, dataType, sessionId, chunkSize);
@@ -241,16 +264,19 @@ public class SafeRecService extends Service {
         executor.execute(() -> {
             File baseDir = new File(getFilesDir(), "data_store");
             String accessToken = Settings.getAccessToken(this);
-            if (accessToken != null) {
-                if (sharedUploader == null) {
-                    sharedUploader = new GoogleDriveFileUploader(accessToken);
-                    sharedUploader.setListener(num -> {
-                        activeUploads = num;
-                        updateNotification();
-                    });
-                }
-                sharedUploader.upload(baseDir);
+            if (accessToken == null || accessToken.isEmpty()) {
+                Log.w(TAG, "Skipping pending upload: missing access token");
+                return;
             }
+            if (sharedUploader == null) {
+                sharedUploader = new GoogleDriveFileUploader(accessToken);
+                sharedUploader.setListener(num -> {
+                    activeUploads = num;
+                    updateNotification();
+                });
+            }
+            Log.i(TAG, "Uploading pending files from " + baseDir.getAbsolutePath());
+            sharedUploader.upload(baseDir);
         });
     }
 
@@ -258,7 +284,10 @@ public class SafeRecService extends Service {
         String[] fileIds = intent.getStringArrayExtra(EXTRA_FILE_IDS);
         String[] folderIds = intent.getStringArrayExtra(EXTRA_FOLDER_IDS);
 
-        if (fileIds == null || fileIds.length == 0) return;
+        if (fileIds == null || fileIds.length == 0) {
+            Log.w(TAG, "Delete requested with empty file list");
+            return;
+        }
 
         executor.execute(() -> {
             String accessToken = Settings.getAccessToken(this);
@@ -281,7 +310,7 @@ public class SafeRecService extends Service {
                 java.util.Collections.addAll(folderIdSet, folderIds);
             }
 
-            downloader.deleteFilesById(fileIdList, folderIdSet, new net.ark3us.saferec.net.FileDownloader.Callback<Void>() {
+            downloader.deleteFilesById(fileIdList, folderIdSet, new FileDownloader.Callback<Void>() {
                 @Override
                 public void onSuccess(Void result) {
                     Log.i(TAG, "Background deletion completed successfully");
@@ -306,7 +335,12 @@ public class SafeRecService extends Service {
     @Override
     public void onDestroy() {
         stopRecording();
+        if (sharedUploader != null) {
+            sharedUploader.shutdown();
+            sharedUploader = null;
+        }
         executor.shutdown();
+        postProcessExecutor.shutdown();
         super.onDestroy();
     }
 

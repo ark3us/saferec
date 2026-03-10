@@ -2,6 +2,7 @@ package net.ark3us.saferec;
 
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
+import android.content.pm.PermissionInfo;
 import android.util.Log;
 
 import androidx.activity.result.ActivityResultLauncher;
@@ -18,7 +19,9 @@ import com.google.android.gms.common.api.Scope;
 import com.google.api.services.drive.DriveScopes;
 
 import java.util.Collections;
+import java.util.List;
 import java.util.Map;
+import java.util.ArrayList;
 
 public class PermissionsManager {
     public interface Callback {
@@ -51,6 +54,7 @@ public class PermissionsManager {
                             break;
                         }
                     }
+                    Log.i(TAG, "Permission request completed. allGranted=" + allGranted);
                     requestDriveAuthorization();
                 });
 
@@ -62,11 +66,15 @@ public class PermissionsManager {
                                 Identity.getAuthorizationClient(context)
                                         .getAuthorizationResultFromIntent(activityResult.getData());
                         String accessToken = result.getAccessToken();
-                        Log.i(TAG, "Authorization succeeded, access token: " + accessToken);
-                        callback.onFinish(allGranted, accessToken);
+                        Log.i(TAG, "Authorization succeeded; access token received=" + (accessToken != null));
+                        if (callback != null) {
+                            callback.onFinish(allGranted, accessToken);
+                        }
                     } catch (ApiException e) {
                         Log.e(TAG, "Authorization failed", e);
-                        callback.onFinish(false, null);
+                        if (callback != null) {
+                            callback.onFinish(false, null);
+                        }
                     }
                 });
     }
@@ -83,19 +91,24 @@ public class PermissionsManager {
                 .addOnSuccessListener(result -> {
                     Log.i(TAG, "Authorization result: " + result);
                     if (result.hasResolution() && result.getPendingIntent() != null) {
+                        Log.i(TAG, "Authorization requires user resolution");
                         startAuthIntent.launch(
                                 new IntentSenderRequest.Builder(result.getPendingIntent().getIntentSender()).build()
                         );
                     } else {
                         // Already granted
                         String accessToken = result.getAccessToken();
-                        Log.i(TAG, "Authorization succeeded, access token: " + accessToken);
-                        callback.onFinish(allGranted, accessToken);
+                        Log.i(TAG, "Authorization succeeded without resolution; token received=" + (accessToken != null));
+                        if (callback != null) {
+                            callback.onFinish(allGranted, accessToken);
+                        }
                     }
                 })
                 .addOnFailureListener(e -> {
                     Log.e(TAG, "Failed to authorize", e);
-                    callback.onFinish(false, null);
+                    if (callback != null) {
+                        callback.onFinish(false, null);
+                    }
                 });
     }
 
@@ -109,10 +122,31 @@ public class PermissionsManager {
                 requestDriveAuthorization();
                 return;
             }
-            requestPermissionsLauncher.launch(requested);
+            List<String> runtimePermissions = new ArrayList<>();
+            for (String permission : requested) {
+                try {
+                    PermissionInfo permissionInfo = pm.getPermissionInfo(permission, 0);
+                    int baseProtection = permissionInfo.getProtection() & PermissionInfo.PROTECTION_MASK_BASE;
+                    if (baseProtection == PermissionInfo.PROTECTION_DANGEROUS) {
+                        runtimePermissions.add(permission);
+                    }
+                } catch (PackageManager.NameNotFoundException e) {
+                    Log.w(TAG, "Permission not found in package manager: " + permission, e);
+                }
+            }
+
+            if (runtimePermissions.isEmpty()) {
+                Log.i(TAG, "No runtime permissions to request");
+                requestDriveAuthorization();
+                return;
+            }
+            Log.i(TAG, "Requesting runtime permissions count=" + runtimePermissions.size());
+            requestPermissionsLauncher.launch(runtimePermissions.toArray(new String[0]));
         } catch (PackageManager.NameNotFoundException e) {
             Log.e(TAG, "Failed to get package info: ", e);
-            callback.onFinish(false, null);
+            if (callback != null) {
+                callback.onFinish(false, null);
+            }
         }
     }
 }

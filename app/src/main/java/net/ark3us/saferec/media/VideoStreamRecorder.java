@@ -29,7 +29,6 @@ import net.ark3us.saferec.misc.Settings;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public class VideoStreamRecorder {
@@ -90,6 +89,7 @@ public class VideoStreamRecorder {
     private Quality quality;
     private Size previewSize;
     private volatile boolean isRecording = false;
+    private volatile boolean encoderRunning = false;
     private boolean useFront = false;
     private int sensorOrientationDeg;
     private int recordingRotation;
@@ -133,6 +133,11 @@ public class VideoStreamRecorder {
         Log.i(TAG, "startPreview(useFront=" + useFront + ")");
         try {
             String cameraId = initCamera(context, useFront);
+            if (cameraId == null) {
+                Log.e(TAG, "Cannot start preview: camera id is null");
+                if (callback != null) callback.onStarted(false);
+                return false;
+            }
             surfaceTexture.setDefaultBufferSize(previewSize.getWidth(), previewSize.getHeight());
             previewSurface = new Surface(surfaceTexture);
             this.callback = callback;
@@ -213,6 +218,11 @@ public class VideoStreamRecorder {
         Log.i(TAG, "start(useFront=" + useFront + ", hasSurfaceTexture=" + (surfaceTexture != null) + ")");
         try {
             String cameraId = initCamera(context, useFront);
+            if (cameraId == null) {
+                Log.e(TAG, "Cannot start recording: camera id is null");
+                if (callback != null) callback.onStarted(false);
+                return false;
+            }
             if (surfaceTexture != null) {
                 Log.i(TAG, "Setting up preview surface for recording");
                 surfaceTexture.setDefaultBufferSize(previewSize.getWidth(), previewSize.getHeight());
@@ -273,6 +283,9 @@ public class VideoStreamRecorder {
             Log.w(TAG, "detachPreview called but not recording, ignoring");
             return;
         }
+        if (previewSurface != null) {
+            previewSurface.release();
+        }
         previewSurface = null;
         Log.i(TAG, "Preview detached, rebuilding capture session without preview");
         startCaptureSession();
@@ -286,6 +299,9 @@ public class VideoStreamRecorder {
         if (!isRecording) {
             Log.w(TAG, "attachPreview called but not recording, ignoring");
             return;
+        }
+        if (previewSurface != null) {
+            previewSurface.release();
         }
         if (previewSize != null) {
             surfaceTexture.setDefaultBufferSize(previewSize.getWidth(), previewSize.getHeight());
@@ -304,8 +320,16 @@ public class VideoStreamRecorder {
     private String initCamera(Context context, boolean useFront) {
         syncQuality(context);
         manager = (CameraManager) context.getSystemService(Context.CAMERA_SERVICE);
+        if (manager == null) {
+            Log.e(TAG, "CameraManager is unavailable");
+            return null;
+        }
         ensureCameraThread();
         String cameraId = useFront ? getFrontCameraId(context) : getBackCameraId(context);
+        if (cameraId == null) {
+            Log.e(TAG, "No camera found for useFront=" + useFront);
+            return null;
+        }
         this.useFront = useFront;
         previewSize = choosePreviewSize(context, cameraId);
         Log.i(TAG, "Chosen preview size: " + previewSize);
@@ -313,6 +337,7 @@ public class VideoStreamRecorder {
     }
 
     private void releaseEncoder() {
+        encoderRunning = false;
         if (encoder != null) {
             try {
                 encoder.stop();
@@ -393,6 +418,10 @@ public class VideoStreamRecorder {
 
     private Size choosePreviewSize(Context context, String cameraId) {
         try {
+            if (cameraId == null) {
+                Log.w(TAG, "choosePreviewSize called with null camera id, using fallback");
+                return new Size(quality.width, quality.height);
+            }
             CameraManager mgr = (CameraManager) context.getSystemService(Context.CAMERA_SERVICE);
             if (mgr == null)
                 return new Size(quality.width, quality.height);
@@ -417,6 +446,7 @@ public class VideoStreamRecorder {
             }
             return best;
         } catch (Exception e) {
+            Log.w(TAG, "Failed to choose preview size for cameraId=" + cameraId + ", using fallback", e);
             return new Size(quality.width, quality.height);
         }
     }
@@ -436,9 +466,18 @@ public class VideoStreamRecorder {
     private int getDeviceRotationDegrees(Context context) {
         try {
             DisplayManager dm = (DisplayManager) context.getSystemService(Context.DISPLAY_SERVICE);
+            if (dm == null) {
+                Log.w(TAG, "DisplayManager is unavailable, defaulting rotation to 0");
+                return 0;
+            }
             Display display = dm.getDisplay(Display.DEFAULT_DISPLAY);
+            if (display == null) {
+                Log.w(TAG, "Default display is unavailable, defaulting rotation to 0");
+                return 0;
+            }
             return display.getRotation() * 90;
         } catch (Exception e) {
+            Log.w(TAG, "Failed to get device rotation, defaulting to 0", e);
             return 0;
         }
     }
@@ -469,21 +508,41 @@ public class VideoStreamRecorder {
             @Override
             public void onOutputBufferAvailable(@NonNull MediaCodec codec, int index,
                     @NonNull MediaCodec.BufferInfo info) {
-                MuxerSink localMuxer = muxer;
-                ByteBuffer buffer = codec.getOutputBuffer(index);
-                if (buffer != null && info.size > 0 && localMuxer != null) {
-                    localMuxer.writeVideoData(buffer, info);
+                if (!encoderRunning) {
+                    return;
                 }
-                codec.releaseOutputBuffer(index, false);
+                try {
+                    MuxerSink localMuxer = muxer;
+                    ByteBuffer buffer = codec.getOutputBuffer(index);
+                    if (buffer != null && info.size > 0 && localMuxer != null) {
+                        localMuxer.writeVideoData(buffer, info);
+                    }
+                } catch (IllegalStateException e) {
+                    if (encoderRunning) {
+                        Log.w(TAG, "Encoder output callback ignored due to codec state during write", e);
+                    }
+                } finally {
+                    try {
+                        codec.releaseOutputBuffer(index, false);
+                    } catch (IllegalStateException e) {
+                        if (encoderRunning) {
+                            Log.w(TAG, "Encoder output callback ignored due to codec state during release", e);
+                        }
+                    }
+                }
             }
 
             @Override
             public void onError(@NonNull MediaCodec codec, @NonNull MediaCodec.CodecException e) {
+                encoderRunning = false;
                 Log.e(TAG, "Encoder error", e);
             }
 
             @Override
             public void onOutputFormatChanged(@NonNull MediaCodec codec, @NonNull MediaFormat fmt) {
+                if (!encoderRunning) {
+                    return;
+                }
                 Log.i(TAG, "Encoder output format changed: " + fmt);
                 MuxerSink localMuxer = muxer;
                 if (localMuxer != null) {
@@ -492,10 +551,16 @@ public class VideoStreamRecorder {
             }
         }, cameraHandler);
 
+        encoderRunning = true;
         encoder.start();
     }
 
     private boolean openCamera(Context context, String cameraId) {
+        if (cameraId == null || manager == null) {
+            Log.e(TAG, "Cannot open camera: cameraId=" + cameraId + ", manager=" + (manager != null));
+            if (callback != null) callback.onStarted(false);
+            return false;
+        }
         if (context.checkSelfPermission(
                 Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
             Log.e(TAG, "Camera permission not granted");

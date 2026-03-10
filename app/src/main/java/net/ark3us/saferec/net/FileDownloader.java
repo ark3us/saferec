@@ -23,6 +23,10 @@ public abstract class FileDownloader {
 
     public abstract void downloadFiles(List<RecordingItem> items, Callback<List<File>> callback);
 
+    public void shutdown() {
+        executor.shutdownNow();
+    }
+
     public static class RecordingItem {
         public final MediaFile mediaFile;
         public final com.google.api.services.drive.model.File driveFile;

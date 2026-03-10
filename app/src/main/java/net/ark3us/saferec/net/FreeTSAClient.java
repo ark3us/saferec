@@ -68,7 +68,7 @@ public class FreeTSAClient {
             }
 
             String contentType = connection.getContentType();
-            if (contentType == null || !contentType.equals("application/timestamp-reply")) {
+            if (contentType == null || !contentType.toLowerCase().startsWith("application/timestamp-reply")) {
                 Log.e(TAG, "Invalid content type from TSA: " + contentType);
                 showToast(context, "TSA returned invalid response type");
                 return false;

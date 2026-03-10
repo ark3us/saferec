@@ -31,11 +31,13 @@ import net.ark3us.saferec.media.MediaMerger;
 import net.ark3us.saferec.misc.Settings;
 import net.ark3us.saferec.net.FileDownloader;
 import net.ark3us.saferec.net.GoogleDriveFileDownloader;
-import net.ark3us.saferec.net.MediaFile;
+import net.ark3us.saferec.services.SafeRecService;
 
 import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 public class RecordingsActivity extends AppCompatActivity {
 
@@ -51,6 +53,7 @@ public class RecordingsActivity extends AppCompatActivity {
     private CheckBox selectAllCheckbox;
     private FileDownloader downloader;
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
+    private final ExecutorService backgroundExecutor = Executors.newSingleThreadExecutor();
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -171,10 +174,9 @@ public class RecordingsActivity extends AppCompatActivity {
             }
         }
 
-        Intent intent = new Intent(this, net.ark3us.saferec.services.SafeRecService.class);
-        intent.putExtra("command", net.ark3us.saferec.services.SafeRecService.CMD_DELETE);
-        intent.putExtra(net.ark3us.saferec.services.SafeRecService.EXTRA_FILE_IDS, fileIds.toArray(new String[0]));
-        intent.putExtra(net.ark3us.saferec.services.SafeRecService.EXTRA_FOLDER_IDS, folderIds.toArray(new String[0]));
+        Intent intent = SafeRecService.createCommandIntent(this, SafeRecService.CMD_DELETE);
+        intent.putExtra(SafeRecService.EXTRA_FILE_IDS, fileIds.toArray(new String[0]));
+        intent.putExtra(SafeRecService.EXTRA_FOLDER_IDS, folderIds.toArray(new String[0]));
         startForegroundService(intent);
 
         // Optimistic UI update
@@ -311,11 +313,12 @@ public class RecordingsActivity extends AppCompatActivity {
         downloader.downloadFiles(sessionItems, new FileDownloader.Callback<List<File>>() {
             @Override
             public void onSuccess(List<File> localFiles) {
-                new Thread(() -> {
+                backgroundExecutor.execute(() -> {
                     try {
                         File shareDir = new File(getCacheDir(), "merged_sharing");
-                        if (!shareDir.exists())
-                            shareDir.mkdirs();
+                        if (!shareDir.exists() && !shareDir.mkdirs()) {
+                            throw new IllegalStateException("Failed to create share dir: " + shareDir.getAbsolutePath());
+                        }
 
                         File shareFile = new File(shareDir, "merged_" + sessionId + ".mp4");
                         MediaMerger.merge(localFiles, shareFile);
@@ -344,7 +347,7 @@ public class RecordingsActivity extends AppCompatActivity {
                         for (File f : localFiles)
                             f.delete();
                     }
-                }).start();
+                });
             }
 
             @Override
@@ -357,5 +360,14 @@ public class RecordingsActivity extends AppCompatActivity {
                 });
             }
         });
+    }
+
+    @Override
+    protected void onDestroy() {
+        if (downloader != null) {
+            downloader.shutdown();
+        }
+        backgroundExecutor.shutdownNow();
+        super.onDestroy();
     }
 }

@@ -52,10 +52,20 @@ public class AudioStreamRecorder {
 
         int minBufferSize = AudioRecord.getMinBufferSize(SAMPLE_RATE,
                 AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT);
+        if (minBufferSize <= 0) {
+            Log.e(TAG, "Invalid minimum audio buffer size: " + minBufferSize);
+            return false;
+        }
 
         audioRecord = new AudioRecord(MediaRecorder.AudioSource.MIC,
                 SAMPLE_RATE, AudioFormat.CHANNEL_IN_MONO,
                 AudioFormat.ENCODING_PCM_16BIT, minBufferSize);
+        if (audioRecord.getState() != AudioRecord.STATE_INITIALIZED) {
+            Log.e(TAG, "AudioRecord initialization failed");
+            audioRecord.release();
+            audioRecord = null;
+            return false;
+        }
 
         try {
             audioRecord.startRecording();
@@ -63,11 +73,28 @@ public class AudioStreamRecorder {
             isRecording = true;
         } catch (Exception e) {
             Log.e(TAG, "Failed to start recording: ", e);
+            if (audioRecord != null) {
+                try {
+                    audioRecord.release();
+                } catch (Exception releaseException) {
+                    Log.w(TAG, "Failed to release AudioRecord after start failure", releaseException);
+                }
+                audioRecord = null;
+            }
+            if (encoder != null) {
+                try {
+                    encoder.release();
+                } catch (Exception releaseException) {
+                    Log.w(TAG, "Failed to release encoder after start failure", releaseException);
+                }
+                encoder = null;
+            }
             return false;
         }
 
-        processingThread = new Thread(this::processAudio);
+        processingThread = new Thread(this::processAudio, "AudioStreamRecorderThread");
         processingThread.start();
+        Log.i(TAG, "Audio recorder started");
         return true;
     }
 
@@ -143,6 +170,9 @@ public class AudioStreamRecorder {
                             encoder.queueInputBuffer(inputBufferIndex, 0, readSize, System.nanoTime() / 1000, 0);
                         }
                     }
+                } else if (readSize < 0) {
+                    Log.w(TAG, "AudioRecord read error code: " + readSize);
+                    break;
                 }
 
                 // 2. Retrieve AAC from Encoder

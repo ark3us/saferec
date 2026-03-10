@@ -4,8 +4,6 @@ import android.content.Intent;
 import android.content.res.Configuration;
 import android.graphics.SurfaceTexture;
 import android.os.Bundle;
-import android.os.Handler;
-import android.os.Looper;
 import android.util.Log;
 import android.view.TextureView;
 import android.view.View;
@@ -37,6 +35,8 @@ import net.ark3us.saferec.net.GoogleDriveClient;
 import net.ark3us.saferec.services.SafeRecService;
 
 import javax.annotation.Nullable;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 public class MainActivity extends AppCompatActivity {
 
@@ -57,6 +57,7 @@ public class MainActivity extends AppCompatActivity {
     private View errorContainer;
     private TextView errorMessageText;
     private PermissionsManager permissionsManager;
+    private final ExecutorService backgroundExecutor = Executors.newSingleThreadExecutor();
 
     private static boolean isStarted(@Nullable String status) {
         return SafeRecService.STATUS_STARTED.equals(status);
@@ -71,7 +72,7 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private @Nullable String getCommand() {
-        return getIntent() != null ? getIntent().getStringExtra("command") : null;
+        return getIntent() != null ? getIntent().getStringExtra(SafeRecService.EXTRA_COMMAND) : null;
     }
 
     private void updateToggleButtonState(boolean onlyAudio) {
@@ -310,7 +311,10 @@ public class MainActivity extends AppCompatActivity {
                             Settings.setChunkSizeMB(this, 0);
                             Toast.makeText(this, getString(R.string.chunk_size) + ": " + getString(R.string.chunk_auto), Toast.LENGTH_SHORT).show();
                         }
-                    } catch (NumberFormatException ignored) {}
+                    } catch (NumberFormatException e) {
+                        Log.w(TAG, "Invalid manual chunk size value: " + val, e);
+                        Toast.makeText(this, R.string.chunk_invalid_input, Toast.LENGTH_SHORT).show();
+                    }
                 }
             })
             .setNegativeButton("Cancel", null)
@@ -326,22 +330,28 @@ public class MainActivity extends AppCompatActivity {
 
         Toast.makeText(this, "Generating sharing link...", Toast.LENGTH_SHORT).show();
 
-        new Thread(() -> {
-            GoogleDriveClient client = new GoogleDriveClient(accessToken);
-            String link = client.shareBaseFolder();
+        backgroundExecutor.execute(() -> {
+            try {
+                GoogleDriveClient client = new GoogleDriveClient(accessToken);
+                String link = client.shareBaseFolder();
 
-            runOnUiThread(() -> {
-                if (link != null) {
-                    Intent shareIntent = new Intent(Intent.ACTION_SEND);
-                    shareIntent.setType("text/plain");
-                    shareIntent.putExtra(Intent.EXTRA_SUBJECT, "Shared SafeRec Folder");
-                    shareIntent.putExtra(Intent.EXTRA_TEXT, "Here is the link to my SafeRec recordings: " + link);
-                    startActivity(Intent.createChooser(shareIntent, "Share Folder Link"));
-                } else {
-                    Toast.makeText(MainActivity.this, "Failed to get sharing link", Toast.LENGTH_SHORT).show();
-                }
-            });
-        }).start();
+                runOnUiThread(() -> {
+                    if (link != null) {
+                        Intent shareIntent = new Intent(Intent.ACTION_SEND);
+                        shareIntent.setType("text/plain");
+                        shareIntent.putExtra(Intent.EXTRA_SUBJECT, "Shared SafeRec Folder");
+                        shareIntent.putExtra(Intent.EXTRA_TEXT, "Here is the link to my SafeRec recordings: " + link);
+                        startActivity(Intent.createChooser(shareIntent, "Share Folder Link"));
+                    } else {
+                        Toast.makeText(MainActivity.this, "Failed to get sharing link", Toast.LENGTH_SHORT).show();
+                    }
+                });
+            } catch (Exception e) {
+                Log.e(TAG, "Failed to share root folder", e);
+                runOnUiThread(() ->
+                        Toast.makeText(MainActivity.this, "Failed to get sharing link", Toast.LENGTH_SHORT).show());
+            }
+        });
     }
 
     private void showTutorialOverlay(int step) {
@@ -427,8 +437,8 @@ public class MainActivity extends AppCompatActivity {
                 startSafeRecService(SafeRecService.CMD_UPLOAD_PENDING);
 
                 String command = getCommand();
-                boolean fromTile = getIntent().getBooleanExtra("from_tile", false);
-                boolean fromNotification = getIntent().getBooleanExtra("from_notification", false);
+                boolean fromTile = getIntent().getBooleanExtra(SafeRecService.EXTRA_FROM_TILE, false);
+                boolean fromNotification = getIntent().getBooleanExtra(SafeRecService.EXTRA_FROM_NOTIFICATION, false);
                 boolean autoStart = Settings.isAutoStartOnLaunch(this);
 
                 Log.i(TAG, "Launch info: command=" + command + ", fromTile=" + fromTile + ", fromNotification="
@@ -481,7 +491,6 @@ public class MainActivity extends AppCompatActivity {
             });
         }
         videoPreview.setVisibility(View.VISIBLE);
-        videoPreview.setVisibility(View.VISIBLE);
         previewRecorder.configureTransform(videoPreview);
     }
 
@@ -529,16 +538,20 @@ public class MainActivity extends AppCompatActivity {
         if (SafeRecService.CMD_START.equals(command) || SafeRecService.CMD_STOP.equals(command)) {
             updateStartButtonState(null);
         }
-        Intent intent = new Intent(this, SafeRecService.class);
-        intent.putExtra("command", command);
+        Intent intent = SafeRecService.createCommandIntent(this, command);
         startForegroundService(intent);
     }
 
     private void stopRecording() {
         Log.i(TAG, "Stopping recording");
         updateStartButtonState(null);
-        Intent intent = new Intent(this, SafeRecService.class);
-        intent.putExtra("command", SafeRecService.CMD_STOP);
+        Intent intent = SafeRecService.createCommandIntent(this, SafeRecService.CMD_STOP);
         startForegroundService(intent);
+    }
+
+    @Override
+    protected void onDestroy() {
+        backgroundExecutor.shutdownNow();
+        super.onDestroy();
     }
 }

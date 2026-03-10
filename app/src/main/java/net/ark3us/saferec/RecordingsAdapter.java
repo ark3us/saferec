@@ -19,9 +19,12 @@ import com.google.api.services.drive.model.File;
 import net.ark3us.saferec.net.FileDownloader;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 public class RecordingsAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
+    private static final String TAG = RecordingsAdapter.class.getSimpleName();
 
     private static final int TYPE_HEADER = 0;
     private static final int TYPE_ITEM = 1;
@@ -68,35 +71,30 @@ public class RecordingsAdapter extends RecyclerView.Adapter<RecyclerView.ViewHol
     }
 
     public void setFiles(List<FileDownloader.RecordingItem> newItems) {
-        Log.d("RecordingsAdapter",
-                "setFiles: updating with " + (newItems != null ? newItems.size() : 0) + " items");
+        Log.d(TAG, "setFiles: updating with " + (newItems != null ? newItems.size() : 0) + " items");
         displayItems.clear();
         if (newItems != null && !newItems.isEmpty()) {
             List<FileDownloader.RecordingItem> mediaItems = new ArrayList<>();
-            List<FileDownloader.RecordingItem> tsaItems = new ArrayList<>();
+            Map<String, FileDownloader.RecordingItem> tsaItemsByChunk = new HashMap<>();
             for (FileDownloader.RecordingItem item : newItems) {
                 if ("tsa".equalsIgnoreCase(item.mediaFile.getExtension())) {
-                    tsaItems.add(item);
+                    tsaItemsByChunk.put(buildChunkKey(item.mediaFile.sessionId, item.mediaFile.dataType,
+                            item.mediaFile.sequenceNumber), item);
                 } else {
                     mediaItems.add(item);
                 }
             }
 
-            String currentSession = null;
+            String currentGroupKey = null;
             for (FileDownloader.RecordingItem item : mediaItems) {
-                if (currentSession == null || !currentSession.equals(item.mediaFile.sessionId)) {
-                    currentSession = item.mediaFile.sessionId;
-                    displayItems.add(new DisplayItem(currentSession, item.mediaFile.dataType));
+                String nextGroupKey = item.mediaFile.sessionId + "|" + item.mediaFile.dataType;
+                if (currentGroupKey == null || !currentGroupKey.equals(nextGroupKey)) {
+                    currentGroupKey = nextGroupKey;
+                    displayItems.add(new DisplayItem(item.mediaFile.sessionId, item.mediaFile.dataType));
                 }
                 DisplayItem displayItem = new DisplayItem(item);
-                for (FileDownloader.RecordingItem tsa : tsaItems) {
-                    if (tsa.mediaFile.sessionId.equals(item.mediaFile.sessionId) &&
-                        tsa.mediaFile.dataType.equals(item.mediaFile.dataType) &&
-                        tsa.mediaFile.sequenceNumber == item.mediaFile.sequenceNumber) {
-                        displayItem.tsaRecording = tsa;
-                        break;
-                    }
-                }
+                displayItem.tsaRecording = tsaItemsByChunk.get(buildChunkKey(item.mediaFile.sessionId,
+                        item.mediaFile.dataType, item.mediaFile.sequenceNumber));
                 displayItems.add(displayItem);
             }
         }
@@ -104,7 +102,7 @@ public class RecordingsAdapter extends RecyclerView.Adapter<RecyclerView.ViewHol
     }
 
     public void removeItems(List<FileDownloader.RecordingItem> itemsToRemove) {
-        Log.d("RecordingsAdapter", "removeItems: removing " + itemsToRemove.size() + " items");
+        Log.d(TAG, "removeItems: removing " + itemsToRemove.size() + " items");
         for (FileDownloader.RecordingItem item : itemsToRemove) {
             for (int i = 0; i < displayItems.size(); i++) {
                 DisplayItem di = displayItems.get(i);
@@ -203,7 +201,7 @@ public class RecordingsAdapter extends RecyclerView.Adapter<RecyclerView.ViewHol
                 String type = "video".equalsIgnoreCase(displayItem.dataType) ? "video" : "audio";
                 headerText = dateTime + " - " + type;
             } catch (NumberFormatException e) {
-                Log.e("RecordingsAdapter", "Invalid session ID: " + displayItem.sessionId);
+                Log.e(TAG, "Invalid session ID: " + displayItem.sessionId);
             }
             ((HeaderViewHolder) holder).sessionIdText.setText(headerText);
             ((HeaderViewHolder) holder).btnMerge
@@ -306,5 +304,9 @@ public class RecordingsAdapter extends RecyclerView.Adapter<RecyclerView.ViewHol
             btnOpen = itemView.findViewById(R.id.btn_open);
             btnTsa = itemView.findViewById(R.id.btn_tsa);
         }
+    }
+
+    private static String buildChunkKey(String sessionId, String dataType, int sequenceNumber) {
+        return sessionId + "|" + dataType + "|" + sequenceNumber;
     }
 }
