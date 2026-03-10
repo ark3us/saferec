@@ -19,8 +19,8 @@ android {
         applicationId = "net.ark3us.saferec"
         minSdk = 26
         targetSdk = 36
-        versionCode = 5
-        versionName = "1.4"
+        versionCode = 6
+        versionName = "1.5"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -51,9 +51,9 @@ dependencies {
     implementation(libs.constraintlayout)
     implementation(libs.swiperefreshlayout)
 
-    implementation("com.google.android.gms:play-services-auth:21.5.1")
+    implementation(libs.play.services.auth)
 // Google API Client (Android) + Drive v3 generated library
-    implementation("com.google.api-client:google-api-client-android:2.9.0")
-    implementation("com.google.apis:google-api-services-drive:v3-rev20251210-2.0.0")
+    implementation(libs.google.api.client.android)
+    implementation(libs.google.api.services.drive)
 
 }

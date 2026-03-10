@@ -164,7 +164,11 @@ public class MuxerSink {
         }
     
         if (!isStarted) {
-            pendingPackets.add(new PendingPacket(isVideo, buffer, info));
+            if (pendingPackets.size() < 100) {
+                pendingPackets.add(new PendingPacket(isVideo, buffer, info));
+            } else {
+                Log.w(TAG, "Dropped " + (isVideo ? "video" : "audio") + " packet: muxer not started and pending queue full");
+            }
             return true;
         }
     

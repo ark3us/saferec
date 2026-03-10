@@ -27,18 +27,18 @@ public class GoogleDriveFileUploader extends FileUploader {
         String key = cacheKey(sessionId, dataType);
         String cached = sessionFolderIdCache.get(key);
         if (cached != null) return cached;
-        if (cachedBaseFolderId == null) {
-            synchronized (this) {
-                if (cachedBaseFolderId == null) {
-                    cachedBaseFolderId = driveClient.getOrCreateBaseFolderId();
-                }
+        synchronized (this) {
+            cached = sessionFolderIdCache.get(key);
+            if (cached != null) return cached;
+            if (cachedBaseFolderId == null) {
+                cachedBaseFolderId = driveClient.getOrCreateBaseFolderId();
             }
+            if (cachedBaseFolderId == null) return null;
+            String destPath = String.format("%s/%s", sessionId, dataType);
+            String folderId = driveClient.getOrCreateNestedFolders(destPath, cachedBaseFolderId);
+            if (folderId != null) sessionFolderIdCache.put(key, folderId);
+            return folderId;
         }
-        if (cachedBaseFolderId == null) return null;
-        String destPath = String.format("%s/%s", sessionId, dataType);
-        String folderId = driveClient.getOrCreateNestedFolders(destPath, cachedBaseFolderId);
-        if (folderId != null) sessionFolderIdCache.put(key, folderId);
-        return folderId;
     }
 
     @Override
