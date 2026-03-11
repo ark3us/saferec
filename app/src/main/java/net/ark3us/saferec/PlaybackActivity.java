@@ -1,6 +1,7 @@
 package net.ark3us.saferec;
 
 import android.net.Uri;
+import android.content.res.Configuration;
 import android.os.Bundle;
 import android.util.Log;
 import android.view.View;
@@ -27,6 +28,9 @@ public class PlaybackActivity extends AppCompatActivity {
 
     private VideoView videoView;
     private ProgressBar progressBar;
+    private MediaController mediaController;
+    private int preparedVideoWidth;
+    private int preparedVideoHeight;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -73,47 +77,19 @@ public class PlaybackActivity extends AppCompatActivity {
         Map<String, String> headers = new HashMap<>();
         headers.put("Authorization", "Bearer " + accessToken);
 
-        MediaController mediaController = new MediaController(this);
+        mediaController = new MediaController(this);
         mediaController.setAnchorView(videoView);
         videoView.setMediaController(mediaController);
 
         videoView.setVideoURI(uri, headers);
 
         videoView.setOnPreparedListener(mp -> {
-            int videoWidth = mp.getVideoWidth();
-            int videoHeight = mp.getVideoHeight();
-            Log.i(TAG, "Video prepared. Dimensions: " + videoWidth + "x" + videoHeight);
+            preparedVideoWidth = mp.getVideoWidth();
+            preparedVideoHeight = mp.getVideoHeight();
+            Log.i(TAG, "Video prepared. Dimensions: " + preparedVideoWidth + "x" + preparedVideoHeight);
 
             progressBar.setVisibility(View.GONE);
-
-            if (videoWidth > 0 && videoHeight > 0) {
-                float videoAspect = (float) videoWidth / videoHeight;
-                View container = findViewById(R.id.main);
-                int containerWidth = container.getWidth();
-                int containerHeight = container.getHeight();
-
-                if (containerWidth <= 0 || containerHeight <= 0) {
-                    containerWidth = getResources().getDisplayMetrics().widthPixels;
-                    containerHeight = getResources().getDisplayMetrics().heightPixels;
-                }
-
-                if (containerWidth > 0 && containerHeight > 0) {
-                    float containerAspect = (float) containerWidth / containerHeight;
-                    ViewGroup.LayoutParams lp = videoView.getLayoutParams();
-
-                    if (videoAspect > containerAspect) {
-                        // Video is wider than screen aspect
-                        lp.width = containerWidth;
-                        lp.height = (int) (containerWidth / videoAspect);
-                    } else {
-                        // Video is taller than screen aspect
-                        lp.height = containerHeight;
-                        lp.width = (int) (containerHeight * videoAspect);
-                    }
-                    Log.i(TAG, "Adjusting VideoView layout: " + lp.width + "x" + lp.height);
-                    videoView.setLayoutParams(lp);
-                }
-            }
+            adjustVideoLayout(preparedVideoWidth, preparedVideoHeight);
             videoView.start();
         });
 
@@ -128,5 +104,57 @@ public class PlaybackActivity extends AppCompatActivity {
         videoView.setOnCompletionListener(mp -> {
             // Optional: finish or show replay UI
         });
+    }
+
+    private void adjustVideoLayout(int videoWidth, int videoHeight) {
+        if (videoWidth <= 0 || videoHeight <= 0) {
+            return;
+        }
+        float videoAspect = (float) videoWidth / videoHeight;
+        View container = findViewById(R.id.main);
+        int containerWidth = container.getWidth();
+        int containerHeight = container.getHeight();
+
+        if (containerWidth <= 0 || containerHeight <= 0) {
+            containerWidth = getResources().getDisplayMetrics().widthPixels;
+            containerHeight = getResources().getDisplayMetrics().heightPixels;
+        }
+
+        if (containerWidth <= 0 || containerHeight <= 0) {
+            return;
+        }
+
+        float containerAspect = (float) containerWidth / containerHeight;
+        ViewGroup.LayoutParams lp = videoView.getLayoutParams();
+        if (videoAspect > containerAspect) {
+            lp.width = containerWidth;
+            lp.height = (int) (containerWidth / videoAspect);
+        } else {
+            lp.height = containerHeight;
+            lp.width = (int) (containerHeight * videoAspect);
+        }
+        Log.i(TAG, "Adjusting VideoView layout: " + lp.width + "x" + lp.height);
+        videoView.setLayoutParams(lp);
+    }
+
+    @Override
+    public void onConfigurationChanged(Configuration newConfig) {
+        super.onConfigurationChanged(newConfig);
+        if (preparedVideoWidth > 0 && preparedVideoHeight > 0 && videoView != null) {
+            videoView.post(() -> adjustVideoLayout(preparedVideoWidth, preparedVideoHeight));
+        }
+    }
+
+    @Override
+    protected void onDestroy() {
+        if (mediaController != null) {
+            mediaController.hide();
+            mediaController = null;
+        }
+        if (videoView != null) {
+            videoView.stopPlayback();
+            videoView.setMediaController(null);
+        }
+        super.onDestroy();
     }
 }

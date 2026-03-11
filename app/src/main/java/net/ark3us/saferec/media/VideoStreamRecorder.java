@@ -4,6 +4,7 @@ import android.Manifest;
 import android.content.Context;
 import android.content.pm.PackageManager;
 import android.graphics.Matrix;
+import android.graphics.Rect;
 import android.graphics.RectF;
 import android.graphics.SurfaceTexture;
 import android.hardware.camera2.*;
@@ -95,6 +96,8 @@ public class VideoStreamRecorder {
     private int recordingRotation;
     private DisplayManager.DisplayListener rotationListener;
     private final AtomicInteger sessionConfigCount = new AtomicInteger(0);
+    private final AtomicInteger cameraOpenRequestCount = new AtomicInteger(0);
+    private TimestampRenderer timestampRenderer;
 
     private static VideoStreamRecorder instance;
 
@@ -259,6 +262,7 @@ public class VideoStreamRecorder {
     public void stop() {
         Log.i(TAG, "stop() called - current recording state: " + isRecording);
         isRecording = false;
+        cameraOpenRequestCount.incrementAndGet();
         unregisterRotationListener();
         closeSafely(captureSession);
         captureSession = null;
@@ -338,6 +342,10 @@ public class VideoStreamRecorder {
 
     private void releaseEncoder() {
         encoderRunning = false;
+        if (timestampRenderer != null) {
+            timestampRenderer.release();
+            timestampRenderer = null;
+        }
         if (encoder != null) {
             try {
                 encoder.stop();
@@ -373,6 +381,7 @@ public class VideoStreamRecorder {
                     if (newRotation != recordingRotation) {
                         Log.i(TAG, "Device rotated: " + recordingRotation + "° → " + newRotation + "°");
                         recordingRotation = newRotation;
+                        if (timestampRenderer != null) timestampRenderer.setRotation(newRotation);
                         localMuxer.updateVideoRotation(newRotation);
                     }
                 } catch (Exception e) {
@@ -500,6 +509,12 @@ public class VideoStreamRecorder {
         encoder.configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE);
         encoderSurface = encoder.createInputSurface();
 
+        timestampRenderer = new TimestampRenderer(
+                encoderSurface,
+                previewSize.getWidth(), previewSize.getHeight(),
+                recordingRotation);
+        Log.i(TAG, "Timestamp overlay renderer created");
+
         encoder.setCallback(new MediaCodec.Callback() {
             @Override
             public void onInputBufferAvailable(@NonNull MediaCodec codec, int index) {
@@ -580,10 +595,16 @@ public class VideoStreamRecorder {
             }
         }
         try {
+            final int requestId = cameraOpenRequestCount.incrementAndGet();
             Handler mainHandler = new Handler(Looper.getMainLooper());
             manager.openCamera(cameraId, new CameraDevice.StateCallback() {
                 @Override
                 public void onOpened(@NonNull CameraDevice camera) {
+                    if (requestId != cameraOpenRequestCount.get()) {
+                        Log.w(TAG, "Ignoring stale camera open callback for request " + requestId);
+                        camera.close();
+                        return;
+                    }
                     cameraDevice = camera;
                     startCaptureSession();
                 }
@@ -630,13 +651,24 @@ public class VideoStreamRecorder {
             captureSession = null;
 
             boolean hasEncoder = encoderSurface != null;
-            int template = hasEncoder ? CameraDevice.TEMPLATE_RECORD : CameraDevice.TEMPLATE_PREVIEW;
+            int template = CameraDevice.TEMPLATE_RECORD;
             final CaptureRequest.Builder localBuilder = cameraDevice.createCaptureRequest(template);
             localBuilder.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_VIDEO);
+            try {
+                Rect sensorRect = manager.getCameraCharacteristics(cameraDevice.getId())
+                        .get(CameraCharacteristics.SENSOR_INFO_ACTIVE_ARRAY_SIZE);
+                if (sensorRect != null) {
+                    localBuilder.set(CaptureRequest.SCALER_CROP_REGION, sensorRect);
+                }
+            } catch (CameraAccessException e) {
+                Log.w(TAG, "Failed to set crop region", e);
+            }
             List<Surface> targets = new ArrayList<>();
             if (hasEncoder) {
-                localBuilder.addTarget(encoderSurface);
-                targets.add(encoderSurface);
+                Surface videoTarget = (timestampRenderer != null)
+                        ? timestampRenderer.getInputSurface() : encoderSurface;
+                localBuilder.addTarget(videoTarget);
+                targets.add(videoTarget);
             }
             if (previewSurface != null) {
                 localBuilder.addTarget(previewSurface);
