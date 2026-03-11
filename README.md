@@ -30,8 +30,7 @@ SafeRec solves this fundamental flaw by continuously uploading video and audio c
 
 ## Technical Details
 
-- **Language & Architecture**: Built entirely in Java using native Android APIs.
-- **Camera API**: Utilizes the modern `Camera2` API for robust video capture seamlessly routed to a `MediaMuxer`.
+- **Burned-in Timestamp Overlay**: Every video frame passes through a small OpenGL ES 2.0 pipeline that draws the current date/time directly into the image, with correct orientation in both portrait and landscape.
 - **Cloud Integration**: Powered by the Google Drive API v3 and Google Play Services Auth for secure, token-based uploads.
 - **Minimum SDK**: Android 8.0 (API Level 26).
 - **Target SDK**: Android 16 (API Level 36).
