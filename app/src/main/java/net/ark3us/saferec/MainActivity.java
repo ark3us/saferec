@@ -232,7 +232,7 @@ public class MainActivity extends AppCompatActivity {
         menu.add(0, 1, 1, getString(R.string.auto_start) + (autoStart ? " ✓" : ""));
 
         boolean tsEnabled = Settings.isTimestampingEnabled(this);
-        menu.add(0, 8, 4, "Enable Timestamping" + (tsEnabled ? " ✓" : ""));
+        menu.add(0, 8, 4, getString(R.string.enable_timestamping) + (tsEnabled ? " ✓" : ""));
 
         // Use a SubMenu for quality grouping
         SubMenu qualityMenu = menu.addSubMenu(0, 5, 2, R.string.video_quality);
@@ -255,13 +255,13 @@ public class MainActivity extends AppCompatActivity {
                 case 1:
                     boolean newValue = !Settings.isAutoStartOnLaunch(this);
                     Settings.setAutoStartOnLaunch(this, newValue);
-                    Toast.makeText(this, (newValue ? "Enabled" : "Disabled") + ": " + getString(R.string.auto_start),
+                    Toast.makeText(this, (newValue ? getString(R.string.enabled) : getString(R.string.disabled)) + ": " + getString(R.string.auto_start),
                             Toast.LENGTH_SHORT).show();
                     break;
                 case 8:
                     boolean newTsEnabled = !Settings.isTimestampingEnabled(this);
                     Settings.setTimestampingEnabled(this, newTsEnabled);
-                    Toast.makeText(this, (newTsEnabled ? "Enabled" : "Disabled") + ": Timestamping",
+                    Toast.makeText(this, (newTsEnabled ? getString(R.string.enabled) : getString(R.string.disabled)) + ": " + getString(R.string.enable_timestamping),
                             Toast.LENGTH_SHORT).show();
                     break;
                 case 2:
@@ -324,11 +324,11 @@ public class MainActivity extends AppCompatActivity {
     private void shareRootFolder() {
         String accessToken = Settings.getAccessToken(this);
         if (accessToken == null || accessToken.isEmpty()) {
-            Toast.makeText(this, "Not connected to Google Drive", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, R.string.not_connected_drive, Toast.LENGTH_SHORT).show();
             return;
         }
 
-        Toast.makeText(this, "Generating sharing link...", Toast.LENGTH_SHORT).show();
+        Toast.makeText(this, R.string.generating_link, Toast.LENGTH_SHORT).show();
 
         backgroundExecutor.execute(() -> {
             try {
@@ -339,17 +339,17 @@ public class MainActivity extends AppCompatActivity {
                     if (link != null) {
                         Intent shareIntent = new Intent(Intent.ACTION_SEND);
                         shareIntent.setType("text/plain");
-                        shareIntent.putExtra(Intent.EXTRA_SUBJECT, "Shared SafeRec Folder");
-                        shareIntent.putExtra(Intent.EXTRA_TEXT, "Here is the link to my SafeRec recordings: " + link);
-                        startActivity(Intent.createChooser(shareIntent, "Share Folder Link"));
+                        shareIntent.putExtra(Intent.EXTRA_SUBJECT, getString(R.string.shared_folder_subject));
+                        shareIntent.putExtra(Intent.EXTRA_TEXT, getString(R.string.shared_folder_text, link));
+                        startActivity(Intent.createChooser(shareIntent, getString(R.string.share_folder_link)));
                     } else {
-                        Toast.makeText(MainActivity.this, "Failed to get sharing link", Toast.LENGTH_SHORT).show();
+                        Toast.makeText(MainActivity.this, R.string.failed_get_link, Toast.LENGTH_SHORT).show();
                     }
                 });
             } catch (Exception e) {
                 Log.e(TAG, "Failed to share root folder", e);
                 runOnUiThread(() ->
-                        Toast.makeText(MainActivity.this, "Failed to get sharing link", Toast.LENGTH_SHORT).show());
+                        Toast.makeText(MainActivity.this, R.string.failed_get_link, Toast.LENGTH_SHORT).show());
             }
         });
     }
@@ -386,7 +386,8 @@ public class MainActivity extends AppCompatActivity {
                 break;
             case 5:
                 target = btnSettings;
-                message = getText(R.string.tutorial_step_quality);
+                title = getText(R.string.tutorial_step_settings_title);
+                message = getText(R.string.tutorial_step_settings_message);
                 break;
             case 6:
                 // Tile tutorial step

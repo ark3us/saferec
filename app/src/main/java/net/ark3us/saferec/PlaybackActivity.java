@@ -59,7 +59,7 @@ public class PlaybackActivity extends AppCompatActivity {
         String accessToken = getIntent().getStringExtra(EXTRA_ACCESS_TOKEN);
 
         if (fileId == null || accessToken == null) {
-            Toast.makeText(this, "Error: Missing file information", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, R.string.error_missing_file, Toast.LENGTH_SHORT).show();
             finish();
             return;
         }
@@ -96,7 +96,7 @@ public class PlaybackActivity extends AppCompatActivity {
         videoView.setOnErrorListener((mp, what, extra) -> {
             Log.e(TAG, "VideoView Error: what=" + what + " extra=" + extra);
             progressBar.setVisibility(View.GONE);
-            Toast.makeText(this, "Failed to play video. It might still be processing or requires a different player.",
+            Toast.makeText(this, R.string.failed_play_video,
                     Toast.LENGTH_LONG).show();
             return false;
         });

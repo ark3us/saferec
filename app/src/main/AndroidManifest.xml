@@ -36,7 +36,7 @@
         </activity>
         <activity
             android:name=".RecordingsActivity"
-            android:label="My Recordings"
+            android:label="@string/my_recordings"
             android:theme="@style/Theme.SafeRec" />
         <activity
             android:name=".PlaybackActivity"

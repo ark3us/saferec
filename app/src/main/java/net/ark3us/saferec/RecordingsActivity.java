@@ -6,17 +6,17 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
+import android.view.Menu;
+import android.view.MenuItem;
 import android.view.View;
+import android.view.ViewGroup;
 import android.widget.CheckBox;
 import android.widget.ProgressBar;
 import android.widget.TextView;
 import android.widget.Toast;
-import android.view.Menu;
-import android.view.MenuItem;
 
 import androidx.activity.EdgeToEdge;
 import androidx.annotation.NonNull;
-
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.appcompat.widget.Toolbar;
 import androidx.core.content.FileProvider;
@@ -32,6 +32,7 @@ import net.ark3us.saferec.misc.Settings;
 import net.ark3us.saferec.net.FileDownloader;
 import net.ark3us.saferec.net.GoogleDriveFileDownloader;
 import net.ark3us.saferec.services.SafeRecService;
+import net.ark3us.saferec.ui.TutorialOverlayView;
 
 import java.io.File;
 import java.util.ArrayList;
@@ -42,7 +43,8 @@ import java.util.concurrent.Executors;
 public class RecordingsActivity extends AppCompatActivity {
 
     private static final String TAG = RecordingsActivity.class.getSimpleName();
-
+    private final Handler mainHandler = new Handler(Looper.getMainLooper());
+    private final ExecutorService backgroundExecutor = Executors.newSingleThreadExecutor();
     private RecyclerView recyclerView;
     private RecordingsAdapter adapter;
     private ProgressBar progressBar;
@@ -52,8 +54,6 @@ public class RecordingsActivity extends AppCompatActivity {
     private TextView selectionCountText;
     private CheckBox selectAllCheckbox;
     private FileDownloader downloader;
-    private final Handler mainHandler = new Handler(Looper.getMainLooper());
-    private final ExecutorService backgroundExecutor = Executors.newSingleThreadExecutor();
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -140,6 +140,9 @@ public class RecordingsActivity extends AppCompatActivity {
         if (item.getItemId() == R.id.action_refresh) {
             loadRecordings();
             return true;
+        } else if (item.getItemId() == R.id.action_tutorial) {
+            showTutorialOverlay(-1);
+            return true;
         }
         return super.onOptionsItemSelected(item);
     }
@@ -186,7 +189,7 @@ public class RecordingsActivity extends AppCompatActivity {
             emptyState.setVisibility(View.VISIBLE);
             emptyState.setText(R.string.no_recordings_found);
         }
-        Toast.makeText(this, "Deleting " + selected.size() + " recordings in background...", Toast.LENGTH_SHORT).show();
+        Toast.makeText(this, getString(R.string.deleting_recordings_bg, selected.size()), Toast.LENGTH_SHORT).show();
     }
 
     private void shareSelected() {
@@ -212,7 +215,7 @@ public class RecordingsActivity extends AppCompatActivity {
                     }
                     intent.setType("*/*");
                     intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-                    startActivity(Intent.createChooser(intent, "Share Recording"));
+                    startActivity(Intent.createChooser(intent, getString(R.string.share_recording)));
                 });
             }
 
@@ -221,7 +224,7 @@ public class RecordingsActivity extends AppCompatActivity {
                 Log.e(TAG, "Share failed", e);
                 mainHandler.post(() -> {
                     progressBar.setVisibility(View.GONE);
-                    Toast.makeText(RecordingsActivity.this, "Share failed: " + e.getMessage(), Toast.LENGTH_LONG)
+                    Toast.makeText(RecordingsActivity.this, getString(R.string.share_failed, e.getMessage()), Toast.LENGTH_LONG)
                             .show();
                 });
             }
@@ -241,7 +244,7 @@ public class RecordingsActivity extends AppCompatActivity {
                     intent.setType("application/timestamp-reply");
                     intent.putExtra(Intent.EXTRA_STREAM, uris.get(0));
                     intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-                    startActivity(Intent.createChooser(intent, "Share TSA Signature"));
+                    startActivity(Intent.createChooser(intent, getString(R.string.share_tsa_signature)));
                 });
             }
 
@@ -250,7 +253,7 @@ public class RecordingsActivity extends AppCompatActivity {
                 Log.e(TAG, "Share TSA failed", e);
                 mainHandler.post(() -> {
                     progressBar.setVisibility(View.GONE);
-                    Toast.makeText(RecordingsActivity.this, "Share failed: " + e.getMessage(), Toast.LENGTH_LONG).show();
+                    Toast.makeText(RecordingsActivity.this, getString(R.string.share_failed, e.getMessage()), Toast.LENGTH_LONG).show();
                 });
             }
         });
@@ -273,6 +276,10 @@ public class RecordingsActivity extends AppCompatActivity {
                     } else {
                         emptyState.setVisibility(View.VISIBLE);
                         emptyState.setText(R.string.no_recordings_found);
+                    }
+
+                    if (!Settings.isRecordingsTutorialShown(RecordingsActivity.this)) {
+                        mainHandler.postDelayed(() -> showTutorialOverlay(-1), 500);
                     }
                 });
             }
@@ -298,7 +305,7 @@ public class RecordingsActivity extends AppCompatActivity {
             intent.putExtra(PlaybackActivity.EXTRA_ACCESS_TOKEN, accessToken);
             startActivity(intent);
         } else {
-            Toast.makeText(this, "Session expired, please log in again", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, R.string.session_expired, Toast.LENGTH_SHORT).show();
         }
     }
 
@@ -308,7 +315,7 @@ public class RecordingsActivity extends AppCompatActivity {
             return;
 
         progressBar.setVisibility(View.VISIBLE);
-        Toast.makeText(this, "Downloading chunks...", Toast.LENGTH_SHORT).show();
+        Toast.makeText(this, R.string.downloading_chunks, Toast.LENGTH_SHORT).show();
 
         downloader.downloadFiles(sessionItems, new FileDownloader.Callback<List<File>>() {
             @Override
@@ -332,14 +339,14 @@ public class RecordingsActivity extends AppCompatActivity {
                             intent.setType("video/mp4");
                             intent.putExtra(Intent.EXTRA_STREAM, contentUri);
                             intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-                            startActivity(Intent.createChooser(intent, "Share Merged Recording"));
+                            startActivity(Intent.createChooser(intent, getString(R.string.share_merged_recording)));
                         });
 
                     } catch (Exception e) {
                         Log.e(TAG, "Merge failed", e);
                         mainHandler.post(() -> {
                             progressBar.setVisibility(View.GONE);
-                            Toast.makeText(RecordingsActivity.this, "Merge failed: " + e.getMessage(),
+                            Toast.makeText(RecordingsActivity.this, getString(R.string.merge_failed, e.getMessage()),
                                     Toast.LENGTH_LONG).show();
                         });
                     } finally {
@@ -355,7 +362,7 @@ public class RecordingsActivity extends AppCompatActivity {
                 Log.e(TAG, "Download for merge failed", e);
                 mainHandler.post(() -> {
                     progressBar.setVisibility(View.GONE);
-                    Toast.makeText(RecordingsActivity.this, "Download failed: " + e.getMessage(), Toast.LENGTH_LONG)
+                    Toast.makeText(RecordingsActivity.this, getString(R.string.download_failed, e.getMessage()), Toast.LENGTH_LONG)
                             .show();
                 });
             }
@@ -369,5 +376,66 @@ public class RecordingsActivity extends AppCompatActivity {
         }
         backgroundExecutor.shutdownNow();
         super.onDestroy();
+    }
+
+    private void showTutorialOverlay(int step) {
+        View target = null;
+        CharSequence title = null;
+        CharSequence message = "";
+
+        switch (step) {
+            case -1:
+                title = getText(R.string.tutorial_recordings_title);
+                message = getText(R.string.tutorial_recordings_message);
+                break;
+            case 0:
+                // View recording
+                target = recyclerView.getChildAt(0);
+                message = getText(R.string.tutorial_recordings_step_view);
+                break;
+            case 1:
+                // TSA info
+                target = recyclerView.getChildAt(0);
+                if (target != null) {
+                    target = target.findViewById(R.id.btn_tsa);
+                }
+                message = getText(R.string.tutorial_recordings_step_tsa);
+                break;
+            case 2:
+                // Merge session
+                target = recyclerView.getChildAt(0);
+                if (target != null) {
+                    // Try to find if the first item is a header or has a merge button
+                    View header = recyclerView.findViewById(R.id.btn_merge);
+                    if (header != null) target = header;
+                }
+                message = getText(R.string.tutorial_recordings_step_merge);
+                break;
+            case 3:
+                // Selection mode
+                target = recyclerView.getChildAt(0);
+                message = getText(R.string.tutorial_recordings_step_selection);
+                break;
+            default:
+                // End of tutorial
+                View overlay = findViewById(R.id.tutorial_overlay);
+                if (overlay != null) {
+                    ((ViewGroup) overlay.getParent()).removeView(overlay);
+                }
+                Settings.setRecordingsTutorialShown(this, true);
+                return;
+        }
+
+        TutorialOverlayView overlay = findViewById(R.id.tutorial_overlay);
+        if (overlay == null) {
+            overlay = new TutorialOverlayView(this);
+            overlay.setId(R.id.tutorial_overlay);
+            addContentView(overlay, new ViewGroup.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.MATCH_PARENT));
+        }
+
+        final int nextStep = step + 1;
+        overlay.setTarget(target, title, message, () -> showTutorialOverlay(nextStep));
     }
 }

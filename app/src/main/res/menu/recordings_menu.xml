@@ -7,4 +7,8 @@
         android:title="@string/refresh"
         app:showAsAction="ifRoom"
         app:iconTint="@color/white" />
+    <item
+        android:id="@+id/action_tutorial"
+        android:title="@string/show_tutorial"
+        app:showAsAction="never" />
 </menu>

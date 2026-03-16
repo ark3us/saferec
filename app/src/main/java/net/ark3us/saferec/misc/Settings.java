@@ -57,6 +57,14 @@ public class Settings {
         getPrefs(context).edit().putBoolean("tutorialShown", shown).apply();
     }
 
+    public static boolean isRecordingsTutorialShown(Context context) {
+        return getPrefs(context).getBoolean("recordingsTutorialShown", false);
+    }
+
+    public static void setRecordingsTutorialShown(Context context, boolean shown) {
+        getPrefs(context).edit().putBoolean("recordingsTutorialShown", shown).apply();
+    }
+
     public static boolean isAutoStartOnLaunch(Context context) {
         return getPrefs(context).getBoolean("autoStartOnLaunch", false);
     }

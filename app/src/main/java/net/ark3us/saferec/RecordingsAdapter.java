@@ -198,7 +198,9 @@ public class RecordingsAdapter extends RecyclerView.Adapter<RecyclerView.ViewHol
             try {
                 long ts = Long.parseLong(displayItem.sessionId);
                 String dateTime = DateFormat.format("yyyy-MM-dd HH:mm:ss", ts).toString();
-                String type = "video".equalsIgnoreCase(displayItem.dataType) ? "video" : "audio";
+                String type = "video".equalsIgnoreCase(displayItem.dataType)
+                        ? holder.itemView.getContext().getString(R.string.video)
+                        : holder.itemView.getContext().getString(R.string.audio);
                 headerText = dateTime + " - " + type;
             } catch (NumberFormatException e) {
                 Log.e(TAG, "Invalid session ID: " + displayItem.sessionId);
@@ -212,7 +214,8 @@ public class RecordingsAdapter extends RecyclerView.Adapter<RecyclerView.ViewHol
             File file = recording.driveFile;
 
             // dataType: sequenceNumber
-            String name = String.format("Chunk %s", recording.mediaFile.sequenceNumber);
+            String name = recordingHolder.itemView.getContext().getString(R.string.chunk_name,
+                    String.valueOf(recording.mediaFile.sequenceNumber));
             recordingHolder.fileName.setText(name);
             recordingHolder.fileDate.setText(DateFormat.format("HH:mm:ss", recording.mediaFile.timestamp));
 

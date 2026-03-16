@@ -6,6 +6,8 @@ import android.os.Looper;
 import android.util.Log;
 import android.widget.Toast;
 
+import net.ark3us.saferec.R;
+
 import org.bouncycastle.asn1.ASN1ObjectIdentifier;
 import org.bouncycastle.tsp.TimeStampRequest;
 import org.bouncycastle.tsp.TimeStampRequestGenerator;
@@ -63,21 +65,21 @@ public class FreeTSAClient {
             int responseCode = connection.getResponseCode();
             if (responseCode != HttpURLConnection.HTTP_OK) {
                 Log.e(TAG, "TSA responded with code " + responseCode);
-                showToast(context, "TSA connection failed (code " + responseCode + ")");
+                showToast(context, context.getString(R.string.tsa_failed_code, responseCode));
                 return false;
             }
 
             String contentType = connection.getContentType();
             if (contentType == null || !contentType.toLowerCase().startsWith("application/timestamp-reply")) {
                 Log.e(TAG, "Invalid content type from TSA: " + contentType);
-                showToast(context, "TSA returned invalid response type");
+                showToast(context, context.getString(R.string.tsa_invalid_response));
                 return false;
             }
 
             // 4. Read response and save
             try (InputStream is = connection.getInputStream();
                  FileOutputStream fos = new FileOutputStream(outputFile)) {
-                
+
                 ByteArrayOutputStream baos = new ByteArrayOutputStream();
                 byte[] buffer = new byte[8192];
                 int read;
@@ -85,13 +87,13 @@ public class FreeTSAClient {
                     baos.write(buffer, 0, read);
                     fos.write(buffer, 0, read);
                 }
-                
+
                 byte[] responseBytes = baos.toByteArray();
                 Log.i(TAG, "TSA responded with " + responseBytes.length + " bytes");
-                
+
                 if (responseBytes.length == 0) {
                     Log.e(TAG, "TSA response is empty");
-                    showToast(context, "TSA response was empty");
+                    showToast(context, context.getString(R.string.tsa_empty_response));
                     return false;
                 }
 
@@ -104,7 +106,7 @@ public class FreeTSAClient {
                     // We still save the file even if validation fails, just to inspect it locally if needed
                     // Wait, actually if validation fails it might be a malformed response.
                     // But an exception here prevents returning true.
-                    showToast(context, "TSA validation failed");
+                    showToast(context, context.getString(R.string.tsa_validation_failed));
                     return false;
                 }
             }
@@ -113,15 +115,15 @@ public class FreeTSAClient {
             return true;
         } catch (Exception e) {
             Log.e(TAG, "Failed to timestamp file", e);
-            showToast(context, "TSA unreachable or error occurred");
+            showToast(context, context.getString(R.string.tsa_unreachable));
             return false;
         }
     }
-    
+
     private static void showToast(Context context, String message) {
         if (context != null) {
-            new Handler(Looper.getMainLooper()).post(() -> 
-                Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+            new Handler(Looper.getMainLooper()).post(() ->
+                    Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
             );
         }
     }

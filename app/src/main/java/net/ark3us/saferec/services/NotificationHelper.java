@@ -28,7 +28,7 @@ public class NotificationHelper {
         }
         NotificationChannel serviceChannel = new NotificationChannel(
                 CHANNEL_ID,
-                "SafeRec Service Channel",
+                context.getString(R.string.notif_channel_name),
                 NotificationManager.IMPORTANCE_DEFAULT);
         manager.createNotificationChannel(serviceChannel);
     }
@@ -40,29 +40,29 @@ public class NotificationHelper {
         PendingIntent pendingIntent = PendingIntent.getActivity(
                 context, 0, intent, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
 
-        String title = isRecording ? "SafeRec Recording" : "SafeRec Service";
+        String title = isRecording ? context.getString(R.string.notif_title_recording) : context.getString(R.string.notif_title_service);
         StringBuilder contentText = new StringBuilder();
         if (isRecording) {
-            contentText.append("Recording in progress...");
+            contentText.append(context.getString(R.string.notif_content_recording));
         } else if (activeTimestamping > 0) {
-            contentText.append("Timestamping...");
+            contentText.append(context.getString(R.string.notif_content_timestamping));
         } else if (activeDeletions > 0) {
-            contentText.append("Deleting recordings...");
+            contentText.append(context.getString(R.string.notif_content_deleting));
         } else if (activeUploads > 0) {
-            contentText.append("Uploading...");
+            contentText.append(context.getString(R.string.notif_content_uploading));
         } else {
-            contentText.append("Service is idle");
+            contentText.append(context.getString(R.string.notif_content_idle));
         }
 
         List<String> statusParts = new ArrayList<>();
         if (activeTimestamping > 0) {
-            statusParts.add("Timestamping " + activeTimestamping + " file" + (activeTimestamping > 1 ? "s" : ""));
+            statusParts.add(context.getString(R.string.notif_status_timestamping, activeTimestamping));
         }
         if (activeUploads > 0) {
-            statusParts.add("Uploading " + activeUploads + " file" + (activeUploads > 1 ? "s" : ""));
+            statusParts.add(context.getString(R.string.notif_status_uploading, activeUploads));
         }
         if (activeDeletions > 0) {
-            statusParts.add("Deleting " + activeDeletions + " file" + (activeDeletions > 1 ? "s" : ""));
+            statusParts.add(context.getString(R.string.notif_status_deleting, activeDeletions));
         }
 
         if (!statusParts.isEmpty()) {
