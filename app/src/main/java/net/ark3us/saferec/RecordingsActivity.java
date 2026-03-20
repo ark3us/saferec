@@ -36,6 +36,7 @@ import net.ark3us.saferec.ui.TutorialOverlayView;
 
 import java.io.File;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -43,6 +44,8 @@ import java.util.concurrent.Executors;
 public class RecordingsActivity extends AppCompatActivity {
 
     private static final String TAG = RecordingsActivity.class.getSimpleName();
+    private static final Comparator<FileDownloader.RecordingItem> MERGE_ORDER =
+            Comparator.comparingInt(item -> item.mediaFile.sequenceNumber);
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private final ExecutorService backgroundExecutor = Executors.newSingleThreadExecutor();
     private RecyclerView recyclerView;
@@ -150,8 +153,7 @@ public class RecordingsActivity extends AppCompatActivity {
     private void updateSelectionUI(int count) {
         if (count > 0) {
             selectionToolbar.setVisibility(View.VISIBLE);
-            selectionCountText.setText(
-                    count == 0 ? getString(R.string.no_selection) : getString(R.string.selection_count, count));
+            selectionCountText.setText(getResources().getQuantityString(R.plurals.selection_count, count, count));
         } else {
             exitSelectionMode();
         }
@@ -189,7 +191,9 @@ public class RecordingsActivity extends AppCompatActivity {
             emptyState.setVisibility(View.VISIBLE);
             emptyState.setText(R.string.no_recordings_found);
         }
-        Toast.makeText(this, getString(R.string.deleting_recordings_bg, selected.size()), Toast.LENGTH_SHORT).show();
+        Toast.makeText(this,
+                getResources().getQuantityString(R.plurals.deleting_recordings_bg, selected.size(), selected.size()),
+                Toast.LENGTH_SHORT).show();
     }
 
     private void shareSelected() {
@@ -313,6 +317,8 @@ public class RecordingsActivity extends AppCompatActivity {
         List<FileDownloader.RecordingItem> sessionItems = adapter.getItemsBySession(sessionId);
         if (sessionItems.isEmpty())
             return;
+        sessionItems.sort(MERGE_ORDER);
+        Log.i(TAG, "Merging session " + sessionId + " with " + sessionItems.size() + " chunks");
 
         progressBar.setVisibility(View.VISIBLE);
         Toast.makeText(this, R.string.downloading_chunks, Toast.LENGTH_SHORT).show();

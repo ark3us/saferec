@@ -3,6 +3,7 @@ package net.ark3us.saferec;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
 import android.content.pm.PermissionInfo;
+import android.os.Build;
 import android.util.Log;
 
 import androidx.activity.result.ActivityResultLauncher;
@@ -112,6 +113,13 @@ public class PermissionsManager {
                 });
     }
 
+    private static boolean isDangerousPermission(PermissionInfo permissionInfo) {
+        int protection = Build.VERSION.SDK_INT >= Build.VERSION_CODES.P
+                ? permissionInfo.getProtection()
+                : permissionInfo.protectionLevel;
+        return (protection & PermissionInfo.PROTECTION_MASK_BASE) == PermissionInfo.PROTECTION_DANGEROUS;
+    }
+
     public void requestAllPermissions(Callback callback) {
         try {
             this.callback = callback;
@@ -126,8 +134,7 @@ public class PermissionsManager {
             for (String permission : requested) {
                 try {
                     PermissionInfo permissionInfo = pm.getPermissionInfo(permission, 0);
-                    int baseProtection = permissionInfo.getProtection() & PermissionInfo.PROTECTION_MASK_BASE;
-                    if (baseProtection == PermissionInfo.PROTECTION_DANGEROUS) {
+                    if (isDangerousPermission(permissionInfo)) {
                         runtimePermissions.add(permission);
                     }
                 } catch (PackageManager.NameNotFoundException e) {

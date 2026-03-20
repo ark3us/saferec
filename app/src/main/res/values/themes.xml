@@ -5,9 +5,18 @@
         <item name="colorAccent">@color/primary_variant</item>
         <item name="colorSurface">@color/surface_dark</item>
         <item name="colorSurfaceVariant">@color/surface_elevated</item>
+        <item name="android:windowBackground">@null</item>
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
     </style>
 
     <style name="Theme.SafeRec" parent="Base.Theme.SafeRec" />
+
+    <style name="Theme.SafeRec.Surface" parent="Theme.SafeRec">
+        <item name="android:windowBackground">@color/surface_dark</item>
+    </style>
+
+    <style name="Theme.SafeRec.Playback" parent="Theme.SafeRec">
+        <item name="android:windowBackground">#000000</item>
+    </style>
 </resources>

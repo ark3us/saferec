@@ -56,13 +56,16 @@ public class NotificationHelper {
 
         List<String> statusParts = new ArrayList<>();
         if (activeTimestamping > 0) {
-            statusParts.add(context.getString(R.string.notif_status_timestamping, activeTimestamping));
+            statusParts.add(context.getResources().getQuantityString(
+                    R.plurals.notif_status_timestamping, activeTimestamping, activeTimestamping));
         }
         if (activeUploads > 0) {
-            statusParts.add(context.getString(R.string.notif_status_uploading, activeUploads));
+            statusParts.add(context.getResources().getQuantityString(
+                    R.plurals.notif_status_uploading, activeUploads, activeUploads));
         }
         if (activeDeletions > 0) {
-            statusParts.add(context.getString(R.string.notif_status_deleting, activeDeletions));
+            statusParts.add(context.getResources().getQuantityString(
+                    R.plurals.notif_status_deleting, activeDeletions, activeDeletions));
         }
 
         if (!statusParts.isEmpty()) {

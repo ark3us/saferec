@@ -3,6 +3,7 @@ package net.ark3us.saferec.net;
 import android.util.Log;
 
 import java.io.File;
+import java.util.Locale;
 
 public class MediaFile {
     private static final String TAG = MediaFile.class.getSimpleName();
@@ -13,7 +14,8 @@ public class MediaFile {
     public String extension; // added field for extension
 
     public String getFileName() {
-        return String.format("%s_%s_%d.%d.%s", sessionId, dataType, timestamp, sequenceNumber, extension != null ? extension : "mp4");
+        return String.format(Locale.ROOT, "%s_%s_%d.%d.%s",
+                sessionId, dataType, timestamp, sequenceNumber, extension != null ? extension : "mp4");
     }
 
     public MediaFile(String sessionId, String dataType, long timestamp, int sequenceNumber, String extension) {

@@ -73,31 +73,7 @@ public class RecordingsAdapter extends RecyclerView.Adapter<RecyclerView.ViewHol
     public void setFiles(List<FileDownloader.RecordingItem> newItems) {
         Log.d(TAG, "setFiles: updating with " + (newItems != null ? newItems.size() : 0) + " items");
         displayItems.clear();
-        if (newItems != null && !newItems.isEmpty()) {
-            List<FileDownloader.RecordingItem> mediaItems = new ArrayList<>();
-            Map<String, FileDownloader.RecordingItem> tsaItemsByChunk = new HashMap<>();
-            for (FileDownloader.RecordingItem item : newItems) {
-                if ("tsa".equalsIgnoreCase(item.mediaFile.getExtension())) {
-                    tsaItemsByChunk.put(buildChunkKey(item.mediaFile.sessionId, item.mediaFile.dataType,
-                            item.mediaFile.sequenceNumber), item);
-                } else {
-                    mediaItems.add(item);
-                }
-            }
-
-            String currentGroupKey = null;
-            for (FileDownloader.RecordingItem item : mediaItems) {
-                String nextGroupKey = item.mediaFile.sessionId + "|" + item.mediaFile.dataType;
-                if (currentGroupKey == null || !currentGroupKey.equals(nextGroupKey)) {
-                    currentGroupKey = nextGroupKey;
-                    displayItems.add(new DisplayItem(item.mediaFile.sessionId, item.mediaFile.dataType));
-                }
-                DisplayItem displayItem = new DisplayItem(item);
-                displayItem.tsaRecording = tsaItemsByChunk.get(buildChunkKey(item.mediaFile.sessionId,
-                        item.mediaFile.dataType, item.mediaFile.sequenceNumber));
-                displayItems.add(displayItem);
-            }
-        }
+        displayItems.addAll(buildDisplayItems(newItems));
         notifyDataSetChanged();
     }
 
@@ -112,7 +88,6 @@ public class RecordingsAdapter extends RecyclerView.Adapter<RecyclerView.ViewHol
                 }
             }
         }
-        // Cleanup empty headers
         for (int i = displayItems.size() - 1; i >= 0; i--) {
             if (displayItems.get(i).type == TYPE_HEADER) {
                 if (i == displayItems.size() - 1 || displayItems.get(i + 1).type == TYPE_HEADER) {
@@ -129,7 +104,7 @@ public class RecordingsAdapter extends RecyclerView.Adapter<RecyclerView.ViewHol
             for (DisplayItem item : displayItems)
                 item.selected = false;
         }
-        notifyDataSetChanged();
+        notifyAllItemsChanged();
     }
 
     public void selectAll(boolean selected) {
@@ -137,8 +112,46 @@ public class RecordingsAdapter extends RecyclerView.Adapter<RecyclerView.ViewHol
             if (item.type == TYPE_ITEM)
                 item.selected = selected;
         }
-        notifyDataSetChanged();
+        notifyAllItemsChanged();
         listener.onSelectionChanged(getSelectedCount());
+    }
+
+    private void notifyAllItemsChanged() {
+        if (!displayItems.isEmpty()) {
+            notifyItemRangeChanged(0, displayItems.size());
+        }
+    }
+
+    private static List<DisplayItem> buildDisplayItems(List<FileDownloader.RecordingItem> newItems) {
+        List<DisplayItem> items = new ArrayList<>();
+        if (newItems == null || newItems.isEmpty()) {
+            return items;
+        }
+
+        List<FileDownloader.RecordingItem> mediaItems = new ArrayList<>();
+        Map<String, FileDownloader.RecordingItem> tsaItemsByChunk = new HashMap<>();
+        for (FileDownloader.RecordingItem item : newItems) {
+            if ("tsa".equalsIgnoreCase(item.mediaFile.getExtension())) {
+                tsaItemsByChunk.put(buildChunkKey(item.mediaFile.sessionId, item.mediaFile.dataType,
+                        item.mediaFile.sequenceNumber), item);
+            } else {
+                mediaItems.add(item);
+            }
+        }
+
+        String currentGroupKey = null;
+        for (FileDownloader.RecordingItem item : mediaItems) {
+            String nextGroupKey = item.mediaFile.sessionId + "|" + item.mediaFile.dataType;
+            if (currentGroupKey == null || !currentGroupKey.equals(nextGroupKey)) {
+                currentGroupKey = nextGroupKey;
+                items.add(new DisplayItem(item.mediaFile.sessionId, item.mediaFile.dataType));
+            }
+            DisplayItem displayItem = new DisplayItem(item);
+            displayItem.tsaRecording = tsaItemsByChunk.get(buildChunkKey(item.mediaFile.sessionId,
+                    item.mediaFile.dataType, item.mediaFile.sequenceNumber));
+            items.add(displayItem);
+        }
+        return items;
     }
 
     public int getSelectedCount() {

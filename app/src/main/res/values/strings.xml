@@ -1,12 +1,9 @@
 <resources>
     <string name="app_name">SafeRec</string>
     <string name="tile_name_start">Start SafeRec</string>
-    <string name="tile_name_stop">Stop SafeRec</string>
     <string name="tile_description">Quick settings tile to start or stop SafeRec recording</string>
-    <string name="recording_mode_title">Start recording</string>
     <string name="start_recording">Start</string>
     <string name="stop_recording">Stop</string>
-    <string name="audio_only">Audio only</string>
     <string name="switch_camera">Switch camera</string>
     <string name="toggle_camera">Toggle camera</string>
     <string name="video_quality">Video Quality</string>
@@ -22,7 +19,6 @@
     <string name="back">Back</string>
     <string name="my_recordings">My Recordings</string>
     <string name="all_recordings">All</string>
-    <string name="selection_count">%1$d selected</string>
     <string name="no_selection">0 selected</string>
     <string name="video">video</string>
     <string name="audio">audio</string>
@@ -34,7 +30,6 @@
     <string name="play_recording">Play recording</string>
     <string name="merge_chunks">Merge chunks</string>
     <string name="refresh">Refresh</string>
-    <string name="tutorial_title">Quick Tutorial</string>
     <string name="tutorial_general_title">Your safety cannot wait</string>
     <string name="tutorial_general_message"><b>Record, protect, and store in real-time.</b>\n\nIn emergency or dangerous situations, every second is vital. <b>SafeRec</b> ensures your evidence is safe, no matter what happens to your phone.\n\nSafeRec uploads the stream <b>instantly to your Google Drive</b>. If your phone is broken or taken, your recording is already secure in your cloud.</string>
     <string name="tutorial_step_start">Tap here to start or stop your secure recording.</string>
@@ -44,32 +39,26 @@
     <string name="tutorial_step_list">Access and manage all your saved recordings here.</string>
     <string name="tutorial_step_settings_title">Advanced Protection</string>
     <string name="tutorial_step_settings_message">Here you can adjust <b>Video Quality</b>, set <b>Manual Chunk Size</b>, or enable <b>Auto-start</b>.\n\nMost importantly, you can enable <b>Cryptographic Timestamping (TSA)</b>: this proves that your recording existed at a specific time and hasn\'t been tampered with, making it solid legal evidence.</string>
-    <string name="tutorial_start">Got it!</string>
     <string name="settings">Settings</string>
     <string name="show_tutorial">Show Tutorial</string>
     <string name="auto_start">Auto-start on Tile/Notification launch</string>
     <string name="tutorial_step_tile"><![CDATA[<b>Quick Actions Tile</b><br/><br/>SafeRec includes a shortcut button for your Android system panel. To setup:<br/>1. Open your <b>notification drawer</b> fully by swiping down from the very top of the screen until you see all shortcuts.<br/>2. Tap the <b>Edit</b> (pencil) icon generally found at the bottom or top corner.<br/>3. Look for the <b>SafeRec</b> tile in the list of available shortcuts.<br/>4. Drag and drop it into your main active panel.<br/><br/>Now you can trigger a secure recording instantly, even when the screen is locked!]]></string>
-    <string name="select_quality">Select Video Quality</string>
     <string name="quality_high">High (720p)</string>
     <string name="quality_medium">Medium (480p)</string>
     <string name="quality_low">Low (360p)</string>
     <string name="chunk_size">Chunk Size</string>
     <string name="chunk_auto">Auto</string>
-    <string name="chunk_custom">Manual...</string>
+    <string name="chunk_custom">Manual…</string>
     <string name="chunk_manual_title">Enter Chunk Size (MB)</string>
     <string name="chunk_invalid_input">Invalid chunk size</string>
     <string name="error_missing_file">Error: Missing file information</string>
     <string name="failed_play_video">Failed to play video. It might still be processing or requires a different player.</string>
-    <string name="enabled">Enabled</string>
-    <string name="disabled">Disabled</string>
-    <string name="timestamping">Timestamping</string>
     <string name="not_connected_drive">Not connected to Google Drive</string>
-    <string name="generating_link">Generating sharing link...</string>
+    <string name="generating_link">Generating sharing link…</string>
     <string name="failed_get_link">Failed to get sharing link</string>
-    <string name="deleting_recordings_bg">Deleting %1$d recordings in background...</string>
     <string name="share_failed">Share failed: %1$s</string>
     <string name="session_expired">Session expired, please log in again</string>
-    <string name="downloading_chunks">Downloading chunks...</string>
+    <string name="downloading_chunks">Downloading chunks…</string>
     <string name="merge_failed">Merge failed: %1$s</string>
     <string name="download_failed">Download failed: %1$s</string>
     <string name="enable_timestamping">Enable Timestamping</string>
@@ -82,14 +71,11 @@
     <string name="notif_channel_name">SafeRec Service Channel</string>
     <string name="notif_title_recording">SafeRec Recording</string>
     <string name="notif_title_service">SafeRec Service</string>
-    <string name="notif_content_recording">Recording in progress...</string>
-    <string name="notif_content_timestamping">Timestamping...</string>
-    <string name="notif_content_deleting">Deleting recordings...</string>
-    <string name="notif_content_uploading">Uploading...</string>
+    <string name="notif_content_recording">Recording in progress…</string>
+    <string name="notif_content_timestamping">Timestamping…</string>
+    <string name="notif_content_deleting">Deleting recordings…</string>
+    <string name="notif_content_uploading">Uploading…</string>
     <string name="notif_content_idle">Service is idle</string>
-    <string name="notif_status_timestamping">Timestamping %1$d file(s)</string>
-    <string name="notif_status_uploading">Uploading %1$d file(s)</string>
-    <string name="notif_status_deleting">Deleting %1$d file(s)</string>
     <string name="tsa_failed_code">TSA connection failed (code %1$d)</string>
     <string name="tsa_invalid_response">TSA returned invalid response type</string>
     <string name="tsa_empty_response">TSA response was empty</string>
@@ -101,4 +87,25 @@
     <string name="tutorial_recordings_step_tsa">The TSA label appears when a chunk is cryptographically certified. Tap it to share the certificate.</string>
     <string name="tutorial_recordings_step_merge">Tap the merge icon to download and combine all chunks of a session into a single file.</string>
     <string name="tutorial_recordings_step_selection">Long press any item to enter selection mode, allowing you to delete or share multiple files at once.</string>
+    <string name="tsa_label">TSA</string>
+    <plurals name="selection_count">
+        <item quantity="one">%1$d selected</item>
+        <item quantity="other">%1$d selected</item>
+    </plurals>
+    <plurals name="deleting_recordings_bg">
+        <item quantity="one">Deleting %1$d recording in background…</item>
+        <item quantity="other">Deleting %1$d recordings in background…</item>
+    </plurals>
+    <plurals name="notif_status_timestamping">
+        <item quantity="one">Timestamping %1$d file</item>
+        <item quantity="other">Timestamping %1$d files</item>
+    </plurals>
+    <plurals name="notif_status_uploading">
+        <item quantity="one">Uploading %1$d file</item>
+        <item quantity="other">Uploading %1$d files</item>
+    </plurals>
+    <plurals name="notif_status_deleting">
+        <item quantity="one">Deleting %1$d file</item>
+        <item quantity="other">Deleting %1$d files</item>
+    </plurals>
 </resources>

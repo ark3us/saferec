@@ -12,12 +12,16 @@ import java.nio.ByteBuffer;
 import java.util.List;
 
 public class MediaMerger {
-    private static final String TAG = "MediaMerger";
+    private static final String TAG = MediaMerger.class.getSimpleName();
+
+    private static final long MIN_TRACK_GAP_US = 1;
 
     public static void merge(List<File> inputFiles, File outputFile) throws IOException {
         if (inputFiles == null || inputFiles.isEmpty()) {
             throw new IllegalArgumentException("Input files list is empty");
         }
+
+        Log.i(TAG, "Merging " + inputFiles.size() + " files into " + outputFile.getAbsolutePath());
 
         MediaMuxer muxer = new MediaMuxer(outputFile.getAbsolutePath(), MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4);
 
@@ -34,6 +38,7 @@ public class MediaMerger {
 
             // First pass: find formats from the first file that has them
             for (File file : inputFiles) {
+                Log.i(TAG, "Scanning tracks from " + file.getName());
                 MediaExtractor extractor = new MediaExtractor();
                 extractor.setDataSource(file.getAbsolutePath());
 
@@ -101,8 +106,16 @@ public class MediaMerger {
 
                 long fileVideoMaxTsUs = 0;
                 long fileAudioMaxTsUs = 0;
+                long previousVideoPtsUs = -1;
+                long previousAudioPtsUs = -1;
+                long videoFrameDurationUs = 0;
+                long audioFrameDurationUs = 0;
                 long startVideoOffsetUs = videoOffset;
                 long startAudioOffsetUs = audioOffset;
+
+                Log.i(TAG, "Appending " + file.getName()
+                        + " with offsets video=" + startVideoOffsetUs
+                        + "us audio=" + startAudioOffsetUs + "us");
 
                 while (true) {
                     int trackIndex = extractor.getSampleTrackIndex();
@@ -135,12 +148,20 @@ public class MediaMerger {
                             if (pts > fileVideoMaxTsUs) {
                                 fileVideoMaxTsUs = pts;
                             }
+                            if (previousVideoPtsUs >= 0 && pts > previousVideoPtsUs) {
+                                videoFrameDurationUs = pts - previousVideoPtsUs;
+                            }
+                            previousVideoPtsUs = pts;
                         } else if (trackIndex == fileAudioTrack && audioTrackIndex != -1) {
                             bufferInfo.presentationTimeUs = startAudioOffsetUs + pts;
                             muxer.writeSampleData(audioTrackIndex, buffer, bufferInfo);
                             if (pts > fileAudioMaxTsUs) {
                                 fileAudioMaxTsUs = pts;
                             }
+                            if (previousAudioPtsUs >= 0 && pts > previousAudioPtsUs) {
+                                audioFrameDurationUs = pts - previousAudioPtsUs;
+                            }
+                            previousAudioPtsUs = pts;
                         }
                     } catch (Exception e) {
                         Log.e(TAG, "Failed to write sample data for track: " + trackIndex, e);
@@ -153,11 +174,17 @@ public class MediaMerger {
 
                 // Update offsets for the next file
                 if (fileVideoTrack != -1 && videoTrackIndex != -1) {
-                    videoOffset += fileVideoMaxTsUs + 33333; // ~30fps frame duration
+                    videoOffset += fileVideoMaxTsUs + Math.max(videoFrameDurationUs, MIN_TRACK_GAP_US);
                 }
                 if (fileAudioTrack != -1 && audioTrackIndex != -1) {
-                    audioOffset += fileAudioMaxTsUs + 23220; // ~1024 samples at 44.1kHz
+                    audioOffset += fileAudioMaxTsUs + Math.max(audioFrameDurationUs, MIN_TRACK_GAP_US);
                 }
+
+                Log.i(TAG, "Finished " + file.getName()
+                        + " lastVideoPts=" + fileVideoMaxTsUs
+                        + "us lastAudioPts=" + fileAudioMaxTsUs
+                        + "us nextVideoOffset=" + videoOffset
+                        + "us nextAudioOffset=" + audioOffset + "us");
             }
 
             muxer.stop();

@@ -28,6 +28,7 @@ public class TutorialOverlayView extends FrameLayout {
     private Paint arrowPaint;
     private View targetView;
     private OnStepClickListener listener;
+    private final int[] targetLocation = new int[2];
 
     public interface OnStepClickListener {
         void onStepClick();
@@ -122,9 +123,8 @@ public class TutorialOverlayView extends FrameLayout {
         LayoutParams params = new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT);
 
         if (targetView != null) {
-            int[] location = new int[2];
-            targetView.getLocationInWindow(location);
-            int y = location[1];
+            targetView.getLocationInWindow(targetLocation);
+            int y = targetLocation[1];
             int height = getResources().getDisplayMetrics().heightPixels;
 
             if (y > height / 2) {
@@ -149,11 +149,9 @@ public class TutorialOverlayView extends FrameLayout {
         canvas.drawRect(0, 0, getWidth(), getHeight(), backgroundPaint);
 
         if (targetView != null) {
-            int[] location = new int[2];
-            targetView.getLocationInWindow(location);
-
-            float centerX = location[0] + targetView.getWidth() / 2f;
-            float centerY = location[1] + targetView.getHeight() / 2f;
+            targetView.getLocationInWindow(targetLocation);
+            float centerX = targetLocation[0] + targetView.getWidth() / 2f;
+            float centerY = targetLocation[1] + targetView.getHeight() / 2f;
             float radius = Math.max(targetView.getWidth(), targetView.getHeight()) / 1.5f;
 
             canvas.drawCircle(centerX, centerY, radius, holePaint);

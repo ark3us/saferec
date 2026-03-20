@@ -1,12 +1,9 @@
 <resources>
     <string name="app_name">SafeRec</string>
     <string name="tile_name_start">Avvia SafeRec</string>
-    <string name="tile_name_stop">Ferma SafeRec</string>
     <string name="tile_description">Riquadro impostazioni rapide per avviare o fermare la registrazione SafeRec</string>
-    <string name="recording_mode_title">Avvia registrazione</string>
     <string name="start_recording">Avvia</string>
     <string name="stop_recording">Ferma</string>
-    <string name="audio_only">Solo audio</string>
     <string name="switch_camera">Cambia fotocamera</string>
     <string name="toggle_camera">Inverti fotocamera</string>
     <string name="video_quality">Qualità video</string>
@@ -22,7 +19,6 @@
     <string name="back">Indietro</string>
     <string name="my_recordings">Le mie registrazioni</string>
     <string name="all_recordings">Tutte</string>
-    <string name="selection_count">%1$d selezionati</string>
     <string name="no_selection">0 selezionati</string>
     <string name="video">video</string>
     <string name="audio">audio</string>
@@ -34,7 +30,6 @@
     <string name="play_recording">Riproduci registrazione</string>
     <string name="merge_chunks">Unisci frammenti</string>
     <string name="refresh">Aggiorna</string>
-    <string name="tutorial_title">Tutorial rapido</string>
     <string name="tutorial_general_title">La tua sicurezza non può aspettare</string>
     <string name="tutorial_general_message"><b>Registra, proteggi e archivia in tempo reale.</b>\n\nIn situazioni di emergenza o di pericolo, ogni secondo è fondamentale. <b>SafeRec</b> garantisce che le tue prove siano al sicuro, indipendentemente da ciò che accade al tuo telefono.\n\nSafeRec carica il flusso <b>istantaneamente sul tuo Google Drive</b>. Se il tuo telefono viene rotto o sottratto, la tua registrazione è già al sicuro sul tuo cloud.</string>
     <string name="tutorial_step_start">Tocca qui per avviare o fermare la tua registrazione sicura.</string>
@@ -44,32 +39,26 @@
     <string name="tutorial_step_list">Accedi e gestisci tutte le tue registrazioni salvate qui.</string>
     <string name="tutorial_step_settings_title">Protezione Avanzata</string>
     <string name="tutorial_step_settings_message">Qui puoi regolare la <b>Qualità Video</b>, impostare la <b>Dimensione Frammento</b> manuale o attivare l\'<b>Avvio Automatico</b>.\n\nInoltre, puoi abilitare la <b>Marcatura Temporale Crittografica (TSA)</b>: prova che la tua registrazione esisteva in un momento preciso e non è stata manomessa, costituendo una solida prova legale.</string>
-    <string name="tutorial_start">Capito!</string>
     <string name="settings">Impostazioni</string>
     <string name="show_tutorial">Mostra Tutorial</string>
     <string name="auto_start">Avvio automatico al lancio dal Tile/Notifica</string>
     <string name="tutorial_step_tile"><![CDATA[<b>Scorciatoia Pannello Rapido</b><br/><br/>SafeRec include un pulsante per il pannello di sistema di Android. Per configurarlo:<br/>1. Apri completamente la <b>tendina delle notifiche</b> scorrendo dal bordo superiore dello schermo verso il basso fino a visualizzare tutte le icone rapide.<br/>2. Tocca l\'icona <b>Modifica</b> (solitamente una matita) in un angolo del pannello.<br/>3. Cerca il riquadro <b>SafeRec</b> tra le icone disponibili in basso.<br/>4. Trascinalo in alto tra i tuoi pulsanti principali.<br/><br/>Così potrai avviare una registrazione sicura all\'istante, anche a schermo bloccato!]]></string>
-    <string name="select_quality">Seleziona Qualità Video</string>
     <string name="quality_high">Alta (720p)</string>
     <string name="quality_medium">Media (480p)</string>
     <string name="quality_low">Bassa (360p)</string>
     <string name="chunk_size">Dimensione Frammento</string>
     <string name="chunk_auto">Auto</string>
-    <string name="chunk_custom">Manuale...</string>
+    <string name="chunk_custom">Manuale…</string>
     <string name="chunk_manual_title">Inserisci Dimensione Frammento (MB)</string>
     <string name="chunk_invalid_input">Dimensione frammento non valida</string>
     <string name="error_missing_file">Errore: Informazioni file mancanti</string>
     <string name="failed_play_video">Impossibile riprodurre il video. Potrebbe essere ancora in fase di elaborazione o richiede un player diverso.</string>
-    <string name="enabled">Abilitato</string>
-    <string name="disabled">Disabilitato</string>
-    <string name="timestamping">Marcatura temporale</string>
     <string name="not_connected_drive">Non connesso a Google Drive</string>
-    <string name="generating_link">Generazione link di condivisione...</string>
+    <string name="generating_link">Generazione link di condivisione…</string>
     <string name="failed_get_link">Impossibile ottenere il link di condivisione</string>
-    <string name="deleting_recordings_bg">Eliminazione di %1$d registrazioni in background...</string>
     <string name="share_failed">Condivisione fallita: %1$s</string>
     <string name="session_expired">Sessione scaduta, effettua nuovamente l\'accesso</string>
-    <string name="downloading_chunks">Download dei frammenti...</string>
+    <string name="downloading_chunks">Download dei frammenti…</string>
     <string name="merge_failed">Unione fallita: %1$s</string>
     <string name="download_failed">Download fallito: %1$s</string>
     <string name="enable_timestamping">Attiva marcatura temporale</string>
@@ -82,14 +71,11 @@
     <string name="notif_channel_name">Canale Servizio SafeRec</string>
     <string name="notif_title_recording">Registrazione SafeRec</string>
     <string name="notif_title_service">Servizio SafeRec</string>
-    <string name="notif_content_recording">Registrazione in corso...</string>
-    <string name="notif_content_timestamping">Marcatura temporale in corso...</string>
-    <string name="notif_content_deleting">Eliminazione registrazioni...</string>
-    <string name="notif_content_uploading">Caricamento in corso...</string>
+    <string name="notif_content_recording">Registrazione in corso…</string>
+    <string name="notif_content_timestamping">Marcatura temporale in corso…</string>
+    <string name="notif_content_deleting">Eliminazione registrazioni…</string>
+    <string name="notif_content_uploading">Caricamento in corso…</string>
     <string name="notif_content_idle">Servizio inattivo</string>
-    <string name="notif_status_timestamping">Marcatura temporale di %1$d file</string>
-    <string name="notif_status_uploading">Caricamento di %1$d file</string>
-    <string name="notif_status_deleting">Eliminazione di %1$d file</string>
     <string name="tsa_failed_code">Connessione TSA fallita (codice %1$d)</string>
     <string name="tsa_invalid_response">La TSA ha restituito un tipo di risposta non valido</string>
     <string name="tsa_empty_response">La risposta della TSA è vuota</string>
@@ -101,4 +87,30 @@
     <string name="tutorial_recordings_step_tsa">L\'etichetta TSA appare quando un frammento è certificato crittograficamente. Toccala per condividere il certificato.</string>
     <string name="tutorial_recordings_step_merge">Tocca l\'icona di unione per scaricare e combinare tutti i frammenti di una sessione in un unico file.</string>
     <string name="tutorial_recordings_step_selection">Premi a lungo su qualsiasi elemento per entrare in modalità selezione, permettendoti di eliminare o condividere più file contemporaneamente.</string>
+    <string name="tsa_label">TSA</string>
+    <plurals name="selection_count">
+        <item quantity="one">%1$d selezionato</item>
+        <item quantity="many">%1$d selezionati</item>
+        <item quantity="other">%1$d selezionati</item>
+    </plurals>
+    <plurals name="deleting_recordings_bg">
+        <item quantity="one">Eliminazione di %1$d registrazione in background…</item>
+        <item quantity="many">Eliminazione di %1$d registrazioni in background…</item>
+        <item quantity="other">Eliminazione di %1$d registrazioni in background…</item>
+    </plurals>
+    <plurals name="notif_status_timestamping">
+        <item quantity="one">Marcatura temporale di %1$d file</item>
+        <item quantity="many">Marcatura temporale di %1$d file</item>
+        <item quantity="other">Marcatura temporale di %1$d file</item>
+    </plurals>
+    <plurals name="notif_status_uploading">
+        <item quantity="one">Caricamento di %1$d file</item>
+        <item quantity="many">Caricamento di %1$d file</item>
+        <item quantity="other">Caricamento di %1$d file</item>
+    </plurals>
+    <plurals name="notif_status_deleting">
+        <item quantity="one">Eliminazione di %1$d file</item>
+        <item quantity="many">Eliminazione di %1$d file</item>
+        <item quantity="other">Eliminazione di %1$d file</item>
+    </plurals>
 </resources>

@@ -22,6 +22,7 @@
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
+            android:paddingStart="16dp"
             android:paddingEnd="16dp"
             android:textAppearance="@style/TextAppearance.Material3.BodyMedium"
             android:textColor="@color/white"
@@ -46,7 +47,8 @@
             android:layout_width="24dp"
             android:layout_height="24dp"
             android:layout_gravity="center"
-            android:tint="@color/primary"
+            android:contentDescription="@null"
+            app:tint="@color/primary"
             android:visibility="gone" />
 
     </LinearLayout>

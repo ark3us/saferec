@@ -77,13 +77,13 @@
             android:gravity="center"
             android:paddingHorizontal="12dp"
             android:background="?attr/selectableItemBackgroundBorderless"
-            android:text="TSA"
+            android:text="@string/tsa_label"
             android:textColor="@color/primary"
             android:textStyle="bold"
             android:visibility="gone"
             android:clickable="true"
             android:focusable="true"
-            android:contentDescription="Share TSA" />
+            android:contentDescription="@string/share_tsa_signature" />
 
         <ImageButton
             android:id="@+id/btn_open"

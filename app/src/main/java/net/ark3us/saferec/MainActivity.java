@@ -223,15 +223,16 @@ public class MainActivity extends AppCompatActivity {
         btnShareRoot.setOnClickListener(v -> shareRootFolder());
 
         btnSettings = findViewById(R.id.btn_settings);
-        btnSettings.setOnClickListener(v -> showSettingsPopup(v));
+        btnSettings.setOnClickListener(v -> showSettingsPopup());
 
     }
 
 
 
-    private void showSettingsPopup(View v) {
+    private void showSettingsPopup() {
         BottomSheetDialog dialog = new BottomSheetDialog(this);
-        View sheetView = getLayoutInflater().inflate(R.layout.bottom_sheet_settings, null);
+        ViewGroup root = findViewById(android.R.id.content);
+        View sheetView = getLayoutInflater().inflate(R.layout.bottom_sheet_settings, root, false);
         LinearLayout container = sheetView.findViewById(R.id.settings_container);
 
         populateSettings(container, dialog);
@@ -358,37 +359,6 @@ public class MainActivity extends AppCompatActivity {
                         Settings.setChunkSizeMB(this, Math.max(0, size));
                         populateSettings(container, parent);
                     } catch (NumberFormatException e) {
-                        Toast.makeText(this, R.string.chunk_invalid_input, Toast.LENGTH_SHORT).show();
-                    }
-                }
-            })
-            .setNegativeButton("Cancel", null)
-            .show();
-    }
-
-    private void showChunkSizeInputDialog() {
-        final android.widget.EditText input = new android.widget.EditText(this);
-        input.setInputType(android.text.InputType.TYPE_CLASS_NUMBER);
-        int current = Settings.getChunkSizeMB(this);
-        if (current > 0) input.setText(String.valueOf(current));
-        
-        new AlertDialog.Builder(this)
-            .setTitle(R.string.chunk_manual_title)
-            .setView(input)
-            .setPositiveButton("OK", (dialog, which) -> {
-                String val = input.getText().toString();
-                if (!val.isEmpty()) {
-                    try {
-                        int size = Integer.parseInt(val);
-                        if (size > 0) {
-                            Settings.setChunkSizeMB(this, size);
-                            Toast.makeText(this, getString(R.string.chunk_size) + ": " + size + " MB", Toast.LENGTH_SHORT).show();
-                        } else {
-                            Settings.setChunkSizeMB(this, 0);
-                            Toast.makeText(this, getString(R.string.chunk_size) + ": " + getString(R.string.chunk_auto), Toast.LENGTH_SHORT).show();
-                        }
-                    } catch (NumberFormatException e) {
-                        Log.w(TAG, "Invalid manual chunk size value: " + val, e);
                         Toast.makeText(this, R.string.chunk_invalid_input, Toast.LENGTH_SHORT).show();
                     }
                 }

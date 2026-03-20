@@ -22,6 +22,7 @@ import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.security.MessageDigest;
+import java.util.Locale;
 
 public class FreeTSAClient {
     private static final String TAG = FreeTSAClient.class.getSimpleName();
@@ -70,7 +71,7 @@ public class FreeTSAClient {
             }
 
             String contentType = connection.getContentType();
-            if (contentType == null || !contentType.toLowerCase().startsWith("application/timestamp-reply")) {
+            if (contentType == null || !contentType.toLowerCase(Locale.ROOT).startsWith("application/timestamp-reply")) {
                 Log.e(TAG, "Invalid content type from TSA: " + contentType);
                 showToast(context, context.getString(R.string.tsa_invalid_response));
                 return false;
