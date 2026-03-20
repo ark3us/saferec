@@ -16,6 +16,13 @@ import android.widget.Toast;
 import android.view.Menu;
 import android.view.SubMenu;
 import android.view.ViewGroup;
+import android.view.LayoutInflater;
+import android.widget.LinearLayout;
+import android.widget.ImageView;
+import android.widget.CompoundButton;
+
+import com.google.android.material.bottomsheet.BottomSheetDialog;
+import com.google.android.material.materialswitch.MaterialSwitch;
 
 import androidx.activity.EdgeToEdge;
 import androidx.annotation.NonNull;
@@ -223,71 +230,140 @@ public class MainActivity extends AppCompatActivity {
 
 
     private void showSettingsPopup(View v) {
-        PopupMenu popup = new PopupMenu(this, v);
-        Menu menu = popup.getMenu();
+        BottomSheetDialog dialog = new BottomSheetDialog(this);
+        View sheetView = getLayoutInflater().inflate(R.layout.bottom_sheet_settings, null);
+        LinearLayout container = sheetView.findViewById(R.id.settings_container);
 
-        menu.add(0, 0, 0, R.string.show_tutorial);
+        populateSettings(container, dialog);
+        dialog.setContentView(sheetView);
+        
+        // Ensure background is dimmed but preview is still visible
+        dialog.getWindow().setDimAmount(0.4f);
+        dialog.show();
+    }
 
-        boolean autoStart = Settings.isAutoStartOnLaunch(this);
-        menu.add(0, 1, 1, getString(R.string.auto_start) + (autoStart ? " ✓" : ""));
-
-        boolean tsEnabled = Settings.isTimestampingEnabled(this);
-        menu.add(0, 8, 4, getString(R.string.enable_timestamping) + (tsEnabled ? " ✓" : ""));
-
-        // Use a SubMenu for quality grouping
-        SubMenu qualityMenu = menu.addSubMenu(0, 5, 2, R.string.video_quality);
-        String currentQuality = Settings.getVideoQuality(this);
-        qualityMenu.add(0, 2, 0, getString(R.string.quality_high) + ("HIGH".equals(currentQuality) ? " ✓" : ""));
-        qualityMenu.add(0, 3, 1, getString(R.string.quality_medium) + ("MEDIUM".equals(currentQuality) ? " ✓" : ""));
-        qualityMenu.add(0, 4, 2, getString(R.string.quality_low) + ("LOW".equals(currentQuality) ? " ✓" : ""));
-
-        // SubMenu for Chunk Size
-        SubMenu chunkMenu = menu.addSubMenu(0, 10, 3, R.string.chunk_size);
-        int currentChunk = Settings.getChunkSizeMB(this);
-        chunkMenu.add(0, 6, 0, getString(R.string.chunk_auto) + (currentChunk == 0 ? " ✓" : ""));
-        chunkMenu.add(0, 7, 1, getString(R.string.chunk_custom) + (currentChunk > 0 ? " (" + currentChunk + " MB) ✓" : ""));
-
-        popup.setOnMenuItemClickListener(item -> {
-            switch (item.getItemId()) {
-                case 0:
-                    showTutorialOverlay(-1);
-                    break;
-                case 1:
-                    boolean newValue = !Settings.isAutoStartOnLaunch(this);
-                    Settings.setAutoStartOnLaunch(this, newValue);
-                    Toast.makeText(this, (newValue ? getString(R.string.enabled) : getString(R.string.disabled)) + ": " + getString(R.string.auto_start),
-                            Toast.LENGTH_SHORT).show();
-                    break;
-                case 8:
-                    boolean newTsEnabled = !Settings.isTimestampingEnabled(this);
-                    Settings.setTimestampingEnabled(this, newTsEnabled);
-                    Toast.makeText(this, (newTsEnabled ? getString(R.string.enabled) : getString(R.string.disabled)) + ": " + getString(R.string.enable_timestamping),
-                            Toast.LENGTH_SHORT).show();
-                    break;
-                case 2:
-                    Settings.setVideoQuality(this, "HIGH");
-                    tryStartPreview();
-                    break;
-                case 3:
-                    Settings.setVideoQuality(this, "MEDIUM");
-                    tryStartPreview();
-                    break;
-                case 4:
-                    Settings.setVideoQuality(this, "LOW");
-                    tryStartPreview();
-                    break;
-                case 6:
-                    Settings.setChunkSizeMB(this, 0);
-                    Toast.makeText(this, getString(R.string.chunk_size) + ": " + getString(R.string.chunk_auto), Toast.LENGTH_SHORT).show();
-                    break;
-                case 7:
-                    showChunkSizeInputDialog();
-                    break;
-
-            }
-            return true;
+    private void populateSettings(LinearLayout container, BottomSheetDialog dialog) {
+        container.removeAllViews();
+        
+        // Show Tutorial
+        addSettingRow(container, getString(R.string.show_tutorial), null, null, v -> {
+            dialog.dismiss();
+            showTutorialOverlay(-1);
         });
-        popup.show();
+
+        // Auto-start
+        addToggleRow(container, getString(R.string.auto_start), Settings.isAutoStartOnLaunch(this), (btn, isChecked) -> {
+            Settings.setAutoStartOnLaunch(this, isChecked);
+        });
+
+        // Video Quality
+        String quality = Settings.getVideoQuality(this);
+        String qLabel = getString("HIGH".equals(quality) ? R.string.quality_high : ("MEDIUM".equals(quality) ? R.string.quality_medium : R.string.quality_low));
+        addSettingRow(container, getString(R.string.video_quality), qLabel, null, v -> showQualityDialog(container, dialog));
+
+        // Chunk Size
+        int currentChunk = Settings.getChunkSizeMB(this);
+        String cLabel = currentChunk == 0 ? getString(R.string.chunk_auto) : currentChunk + " MB";
+        addSettingRow(container, getString(R.string.chunk_size), cLabel, null, v -> showChunkSizeDialog(container, dialog));
+
+        // Timestamping
+        addToggleRow(container, getString(R.string.enable_timestamping), Settings.isTimestampingEnabled(this), (btn, isChecked) -> {
+            Settings.setTimestampingEnabled(this, isChecked);
+        });
+    }
+
+    private void addSettingRow(LinearLayout container, String title, @Nullable String value, @Nullable Integer iconRes, View.OnClickListener listener) {
+        View row = getLayoutInflater().inflate(R.layout.item_setting_row, container, false);
+        View root = row.findViewById(R.id.row_root);
+        TextView titleTv = row.findViewById(R.id.setting_title);
+        TextView valueTv = row.findViewById(R.id.setting_value);
+        ImageView iconIv = row.findViewById(R.id.setting_icon);
+
+        titleTv.setText(title);
+        if (value != null) {
+            valueTv.setText(value);
+            valueTv.setVisibility(View.VISIBLE);
+        }
+        if (iconRes != null) {
+            iconIv.setImageResource(iconRes);
+            iconIv.setVisibility(View.VISIBLE);
+        }
+        root.setOnClickListener(listener);
+        container.addView(row);
+    }
+
+    private void addToggleRow(LinearLayout container, String title, boolean checked, CompoundButton.OnCheckedChangeListener listener) {
+        View row = getLayoutInflater().inflate(R.layout.item_setting_row, container, false);
+        View root = row.findViewById(R.id.row_root);
+        TextView titleTv = row.findViewById(R.id.setting_title);
+        MaterialSwitch toggle = row.findViewById(R.id.setting_switch);
+
+        titleTv.setText(title);
+        toggle.setVisibility(View.VISIBLE);
+        toggle.setChecked(checked);
+        toggle.setOnCheckedChangeListener(listener);
+        root.setOnClickListener(v -> toggle.setChecked(!toggle.isChecked()));
+        container.addView(row);
+    }
+
+    private void showQualityDialog(LinearLayout container, BottomSheetDialog parent) {
+        String[] qualities = {getString(R.string.quality_high), getString(R.string.quality_medium), getString(R.string.quality_low)};
+        String[] values = {"HIGH", "MEDIUM", "LOW"};
+        String current = Settings.getVideoQuality(this);
+        int selected = "HIGH".equals(current) ? 0 : ("MEDIUM".equals(current) ? 1 : 2);
+
+        new AlertDialog.Builder(this)
+            .setTitle(R.string.video_quality)
+            .setSingleChoiceItems(qualities, selected, (dialog, which) -> {
+                Settings.setVideoQuality(this, values[which]);
+                tryStartPreview();
+                dialog.dismiss();
+                populateSettings(container, parent);
+            })
+            .show();
+    }
+
+    private void showChunkSizeDialog(LinearLayout container, BottomSheetDialog parent) {
+        CharSequence[] items = {getString(R.string.chunk_auto), getString(R.string.chunk_custom)};
+        int current = Settings.getChunkSizeMB(this) == 0 ? 0 : 1;
+
+        new AlertDialog.Builder(this)
+            .setTitle(R.string.chunk_size)
+            .setSingleChoiceItems(items, current, (dialog, which) -> {
+                dialog.dismiss();
+                if (which == 0) {
+                    Settings.setChunkSizeMB(this, 0);
+                    populateSettings(container, parent);
+                } else {
+                    showChunkSizeInputDialog(container, parent);
+                }
+            })
+            .show();
+    }
+
+    private void showChunkSizeInputDialog(LinearLayout container, BottomSheetDialog parent) {
+        final android.widget.EditText input = new android.widget.EditText(this);
+        input.setInputType(android.text.InputType.TYPE_CLASS_NUMBER);
+        int current = Settings.getChunkSizeMB(this);
+        if (current > 0) input.setText(String.valueOf(current));
+        
+        new AlertDialog.Builder(this)
+            .setTitle(R.string.chunk_manual_title)
+            .setView(input)
+            .setPositiveButton("OK", (dialog, which) -> {
+                String val = input.getText().toString();
+                if (!val.isEmpty()) {
+                    try {
+                        int size = Integer.parseInt(val);
+                        Settings.setChunkSizeMB(this, Math.max(0, size));
+                        populateSettings(container, parent);
+                    } catch (NumberFormatException e) {
+                        Toast.makeText(this, R.string.chunk_invalid_input, Toast.LENGTH_SHORT).show();
+                    }
+                }
+            })
+            .setNegativeButton("Cancel", null)
+            .show();
     }
 
     private void showChunkSizeInputDialog() {
@@ -431,37 +507,51 @@ public class MainActivity extends AppCompatActivity {
 
         permissionsManager.requestAllPermissions((allGranted, accessToken) -> {
             if (allGranted && accessToken != null) {
-                Log.i(TAG, "All permissions granted and access token obtained.");
-                Settings.setAccessToken(this, accessToken);
-                errorContainer.setVisibility(View.GONE);
-                tryStartPreview();
-                startSafeRecService(SafeRecService.CMD_UPLOAD_PENDING);
+                backgroundExecutor.execute(() -> {
+                    GoogleDriveClient client = new GoogleDriveClient(accessToken);
+                    boolean authValid = client.checkAuthentication();
 
-                String command = getCommand();
-                boolean fromTile = getIntent().getBooleanExtra(SafeRecService.EXTRA_FROM_TILE, false);
-                boolean fromNotification = getIntent().getBooleanExtra(SafeRecService.EXTRA_FROM_NOTIFICATION, false);
-                boolean autoStart = Settings.isAutoStartOnLaunch(this);
+                    runOnUiThread(() -> {
+                        if (authValid) {
+                            Log.i(TAG, "All permissions granted and access token verified.");
+                            Settings.setAccessToken(this, accessToken);
+                            errorContainer.setVisibility(View.GONE);
+                            tryStartPreview();
+                            startSafeRecService(SafeRecService.CMD_UPLOAD_PENDING);
 
-                Log.i(TAG, "Launch info: command=" + command + ", fromTile=" + fromTile + ", fromNotification="
-                        + fromNotification + ", autoStart=" + autoStart);
+                            String command = getCommand();
+                            boolean fromTile = getIntent().getBooleanExtra(SafeRecService.EXTRA_FROM_TILE, false);
+                            boolean fromNotification = getIntent().getBooleanExtra(SafeRecService.EXTRA_FROM_NOTIFICATION, false);
+                            boolean autoStart = Settings.isAutoStartOnLaunch(this);
 
-                if (SafeRecService.CMD_START.equals(command)) {
-                    if ((fromTile || fromNotification) && !autoStart) {
-                        Log.i(TAG, "Ignoring CMD_START from tile/notification because autoStart is disabled");
-                        command = null;
-                    }
-                } else if (fromNotification && autoStart) {
-                    if (!isStarted(LiveData.getInstance().getStatus().getValue())) {
-                        Log.i(TAG, "Auto-starting recording from notification launch");
-                        command = SafeRecService.CMD_START;
-                    } else {
-                        Log.i(TAG, "Already recording, ignoring auto-start from notification launch");
-                    }
-                }
+                            Log.i(TAG, "Launch info: command=" + command + ", fromTile=" + fromTile + ", fromNotification="
+                                    + fromNotification + ", autoStart=" + autoStart);
 
-                if (command != null) {
-                    startSafeRecService(command);
-                }
+                            if (SafeRecService.CMD_START.equals(command)) {
+                                if ((fromTile || fromNotification) && !autoStart) {
+                                    Log.i(TAG, "Ignoring CMD_START from tile/notification because autoStart is disabled");
+                                    command = null;
+                                }
+                            } else if (fromNotification && autoStart) {
+                                if (!isStarted(LiveData.getInstance().getStatus().getValue())) {
+                                    Log.i(TAG, "Auto-starting recording from notification launch");
+                                    command = SafeRecService.CMD_START;
+                                } else {
+                                    Log.i(TAG, "Already recording, ignoring auto-start from notification launch");
+                                }
+                            }
+
+                            if (command != null) {
+                                startSafeRecService(command);
+                            }
+                        } else {
+                            Log.e(TAG, "Access token verification failed");
+                            Settings.setAccessToken(this, null);
+                            errorContainer.setVisibility(View.VISIBLE);
+                            errorMessageText.setText(R.string.google_drive_failed);
+                        }
+                    });
+                });
             } else {
                 Log.e(TAG, "Failed to initialize: allGranted=" + allGranted + ", token=" + (accessToken != null));
                 errorContainer.setVisibility(View.VISIBLE);

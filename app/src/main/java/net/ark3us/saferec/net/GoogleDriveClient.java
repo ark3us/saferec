@@ -214,6 +214,17 @@ public class GoogleDriveClient {
                 .executeMediaAndDownloadTo(outputStream);
     }
 
+    public boolean checkAuthentication() {
+        try {
+            // A simple lightweight call to check if the token is valid
+            driveService.files().list().setPageSize(1).setFields("files(id)").execute();
+            return true;
+        } catch (Exception e) {
+            Log.e(TAG, "Authentication check failed", e);
+            return false;
+        }
+    }
+
     public Drive getDriveService() {
         return driveService;
     }
