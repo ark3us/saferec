@@ -155,6 +155,8 @@ public class AudioStreamRecorder {
         MediaCodec.BufferInfo bufferInfo = new MediaCodec.BufferInfo();
         byte[] pcmBuffer = new byte[BUFFER_SIZE_IN_BYTES];
 
+        long totalBytesRead = 0;
+
         try {
             while (isRecording) {
                 // 1. Read PCM data
@@ -166,8 +168,12 @@ public class AudioStreamRecorder {
                         if (inputBuffer != null) {
                             inputBuffer.clear();
                             inputBuffer.put(pcmBuffer, 0, readSize);
-                            // Use System.nanoTime() / 1000 for timestamps (PTS)
-                            encoder.queueInputBuffer(inputBufferIndex, 0, readSize, System.nanoTime() / 1000, 0);
+                            
+                            // Audio presentation time in microseconds
+                            long presentationTimeUs = (totalBytesRead * 1000000L) / (SAMPLE_RATE * 2L);
+                            totalBytesRead += readSize;
+                            
+                            encoder.queueInputBuffer(inputBufferIndex, 0, readSize, presentationTimeUs, 0);
                         }
                     }
                 } else if (readSize < 0) {
@@ -183,7 +189,8 @@ public class AudioStreamRecorder {
             Log.i(TAG, "Signaling EOS to encoder");
             int eosIndex = encoder.dequeueInputBuffer(10000);
             if (eosIndex >= 0) {
-                encoder.queueInputBuffer(eosIndex, 0, 0, System.nanoTime() / 1000,
+                long presentationTimeUs = (totalBytesRead * 1000000L) / (SAMPLE_RATE * 2L);
+                encoder.queueInputBuffer(eosIndex, 0, 0, presentationTimeUs,
                         MediaCodec.BUFFER_FLAG_END_OF_STREAM);
             }
             drainEncoder(bufferInfo);

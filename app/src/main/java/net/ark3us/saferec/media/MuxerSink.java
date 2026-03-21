@@ -17,7 +17,7 @@ public class MuxerSink {
     private static final String TAG = MuxerSink.class.getSimpleName();
     public static final String DATA_TYPE_VIDEO = "video";
     public static final String DATA_TYPE_AUDIO = "audio";
-    public static final int DEFAULT_AUDIO_CHUNK = 64 * 1024;
+    public static final int DEFAULT_AUDIO_CHUNK = 2 * 1024 * 1024; // 2 MB
 
     private MediaMuxer muxer;
     private MediaFormat videoFormat;
