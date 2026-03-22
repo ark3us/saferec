@@ -169,7 +169,13 @@ sequenceDiagram
         end
         SRS->>GDFU: upload(mediaFile)
         GDFU->>GDFU: uploadFile() on thread pool (max 4 concurrent)
-        GDFU->>GDFU: file.delete() on success
+        alt Upload failed (401/Auth)
+            GDFU->>GDC: checkAuthentication()
+            GDFU->>S: clearAccessToken()
+            GDFU->>LD: updateStatus(STATUS_ERROR)
+        else Success
+            GDFU->>GDFU: file.delete()
+        end
     end
 ```
 
@@ -400,4 +406,4 @@ Chunks are uploaded immediately on completion and **deleted locally** on success
 1. **Camera switch = recording gap.** Switching cameras mid-session does a full stop+restart, creating a new muxer/session segment.
 2. **Mixed-rotation merge.** A single MP4 can only have one `setOrientationHint`. When chunks from different cameras (with different sensor orientations) or different device rotations are merged, some segments will display with wrong rotation.
 3. **No video mirroring.** Front camera video is recorded un-mirrored (you see yourself as others see you, not as a mirror reflection). This is standard for video recording.
-4. **Token expiry.** The Google Drive access token is stored in SharedPreferences. If it expires, uploads silently fail. No refresh token mechanism exists.
+4. **Background Auth Failure.** If the access token expires during background upload, the app clears the token and triggers `STATUS_ERROR`. The user must then re-authenticate to resume uploads. Automatic OAuth2 token refresh is not yet implemented.
