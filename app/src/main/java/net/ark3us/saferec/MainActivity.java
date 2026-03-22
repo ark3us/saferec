@@ -147,6 +147,9 @@ public class MainActivity extends AppCompatActivity {
             if (isStopped(status) || isStarted(status)) {
                 tryStartPreview();
             }
+            if (SafeRecService.STATUS_ERROR.equals(status)) {
+                showAuthError();
+            }
         });
 
         videoPreview = findViewById(R.id.video_preview);
@@ -608,6 +611,13 @@ public class MainActivity extends AppCompatActivity {
         updateStartButtonState(null);
         Intent intent = SafeRecService.createCommandIntent(this, SafeRecService.CMD_STOP);
         startForegroundService(intent);
+    }
+
+    private void showAuthError() {
+        Log.e(TAG, "Recording service reported an error — likely auth failure during background upload");
+        errorContainer.setVisibility(View.VISIBLE);
+        errorMessageText.setText(R.string.google_drive_failed);
+        stopRecording();
     }
 
     @Override

@@ -50,6 +50,7 @@ public class SafeRecService extends Service {
     private int activeDeletions = 0;
     private int activeTimestamping = 0;
     private String currentSessionId;
+    private String errorMessage;
     private GoogleDriveFileUploader sharedUploader;
     private int currentSequenceNumber = 0;
 
@@ -254,6 +255,7 @@ public class SafeRecService extends Service {
         }
         if (sink != null) {
             sink.stop();
+            // Sync currentSequenceNumber from sink before nulling it out
             currentSequenceNumber = sink.getSequenceNumber();
             sink = null;
         }
