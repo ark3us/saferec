@@ -247,6 +247,8 @@ public class MuxerSink {
             if (fileSavedCallback != null && bytesWritten > 0) {
                 fileSavedCallback.onFileSaved(currentFile);
             }
+            currentFile = null;
+            bytesWritten = 0;
         }
     }
 

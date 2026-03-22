@@ -59,10 +59,10 @@ public class GoogleDriveFileUploader extends FileUploader {
         String destName = String.format("%s.%s.%s", mediaFile.timestamp, mediaFile.sequenceNumber, mediaFile.getExtension());
         File destFile = new File(destPath, destName);
         @Nullable String parentFolderId = getOrCacheSessionFolderId(mediaFile.sessionId, mediaFile.dataType);
-        Log.i(TAG, "Uploading file to Google Drive: " + destFile.getAbsolutePath());
+        Log.i(TAG, "Uploading file (seq=" + mediaFile.sequenceNumber + ") to Google Drive: " + destFile.getName());
         com.google.api.services.drive.model.File res = driveClient.uploadFile(file, destFile, mediaFile.getMimeType(), parentFolderId, mediaFile.timestamp);
         if (res != null) {
-            Log.i(TAG, "File uploaded successfully: " + res.getName() + ", View Link: " + res.getWebViewLink());
+            Log.i(TAG, "File (seq=" + mediaFile.sequenceNumber + ") uploaded successfully: " + res.getName());
             if (!file.delete()) {
                 Log.w(TAG, "Failed to delete file after upload: " + file.getAbsolutePath());
             } else {
