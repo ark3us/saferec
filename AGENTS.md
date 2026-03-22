@@ -153,6 +153,7 @@ sequenceDiagram
     participant VSR as VideoStreamRecorder
     participant MS as MuxerSink
     participant GDFU as GoogleDriveFileUploader
+    participant GDC as GoogleDriveClient
 
     VSR-->>MS: writeVideoData(buffer, info)
     MS->>MS: (bytesWritten >= partSize && keyFrame) OR device rotated?
@@ -170,9 +171,14 @@ sequenceDiagram
         SRS->>GDFU: upload(mediaFile)
         GDFU->>GDFU: uploadFile() on thread pool (max 4 concurrent)
         alt Upload failed (401/Auth)
-            GDFU->>GDC: checkAuthentication()
-            GDFU->>S: clearAccessToken()
-            GDFU->>LD: updateStatus(STATUS_ERROR)
+            GDFU->>GDFU: attempt silent refresh (AuthorizationClient)
+            alt Refresh success
+                GDFU->>GDC: setAccessToken(newToken)
+                GDFU->>GDFU: retry upload
+            else Refresh failed/resolution required
+                GDFU->>S: clearAccessToken()
+                GDFU->>LD: updateStatus(STATUS_ERROR)
+            end
         else Success
             GDFU->>GDFU: file.delete()
         end
