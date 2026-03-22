@@ -38,6 +38,8 @@ import java.io.File;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Set;
+import java.util.HashSet;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -171,7 +173,7 @@ public class RecordingsActivity extends AppCompatActivity {
             return;
 
         List<String> fileIds = new ArrayList<>();
-        java.util.Set<String> folderIds = new java.util.HashSet<>();
+        Set<String> folderIds = new HashSet<>();
         for (FileDownloader.RecordingItem item : selected) {
             fileIds.add(item.driveFile.getId());
             if (item.driveFile.getParents() != null) {

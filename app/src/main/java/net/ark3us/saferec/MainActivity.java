@@ -20,6 +20,8 @@ import android.view.LayoutInflater;
 import android.widget.LinearLayout;
 import android.widget.ImageView;
 import android.widget.CompoundButton;
+import android.widget.EditText;
+import android.text.InputType;
 
 import com.google.android.material.bottomsheet.BottomSheetDialog;
 import com.google.android.material.materialswitch.MaterialSwitch;
@@ -346,8 +348,8 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void showChunkSizeInputDialog(LinearLayout container, BottomSheetDialog parent) {
-        final android.widget.EditText input = new android.widget.EditText(this);
-        input.setInputType(android.text.InputType.TYPE_CLASS_NUMBER);
+        final EditText input = new EditText(this);
+        input.setInputType(InputType.TYPE_CLASS_NUMBER);
         int current = Settings.getChunkSizeMB(this);
         if (current > 0) input.setText(String.valueOf(current));
         

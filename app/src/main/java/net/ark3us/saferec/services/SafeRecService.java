@@ -21,7 +21,11 @@ import net.ark3us.saferec.net.GoogleDriveFileDownloader;
 import net.ark3us.saferec.net.GoogleDriveFileUploader;
 
 import java.io.File;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -306,10 +310,10 @@ public class SafeRecService extends Service {
 
             GoogleDriveFileDownloader downloader = new GoogleDriveFileDownloader(this, accessToken);
             
-            List<String> fileIdList = java.util.Arrays.asList(fileIds);
-            java.util.Set<String> folderIdSet = new java.util.HashSet<>();
+            List<String> fileIdList = Arrays.asList(fileIds);
+            Set<String> folderIdSet = new HashSet<>();
             if (folderIds != null) {
-                java.util.Collections.addAll(folderIdSet, folderIds);
+                Collections.addAll(folderIdSet, folderIds);
             }
 
             downloader.deleteFilesById(fileIdList, folderIdSet, new FileDownloader.Callback<Void>() {
