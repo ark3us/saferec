@@ -154,7 +154,7 @@ public class SafeRecService extends Service {
         Log.i(TAG, "Starting recording session id=" + sessionId + " sequence=" + currentSequenceNumber);
         
         if (sharedUploader == null) {
-            sharedUploader = new GoogleDriveFileUploader(accessToken);
+            sharedUploader = new GoogleDriveFileUploader(this, accessToken);
             sharedUploader.setListener(num -> {
                 activeUploads = num;
                 updateNotification();
@@ -269,7 +269,7 @@ public class SafeRecService extends Service {
                 return;
             }
             if (sharedUploader == null) {
-                sharedUploader = new GoogleDriveFileUploader(accessToken);
+                sharedUploader = new GoogleDriveFileUploader(this, accessToken);
                 sharedUploader.setListener(num -> {
                     activeUploads = num;
                     updateNotification();

@@ -6,16 +6,23 @@ import androidx.annotation.Nullable;
 
 import java.io.File;
 import java.util.concurrent.ConcurrentHashMap;
+import android.content.Context;
+
+import net.ark3us.saferec.data.LiveData;
+import net.ark3us.saferec.misc.Settings;
+import net.ark3us.saferec.services.SafeRecService;
 
 public class GoogleDriveFileUploader extends FileUploader {
 
     private static final String TAG = GoogleDriveFileUploader.class.getSimpleName();
     private final GoogleDriveClient driveClient;
+    private final Context context;
     /** Cache parent folder ID per session+dataType to avoid repeated Drive API folder lookups. */
     private final ConcurrentHashMap<String, String> sessionFolderIdCache = new ConcurrentHashMap<>();
     private volatile String cachedBaseFolderId;
 
-    public GoogleDriveFileUploader(String accessToken) {
+    public GoogleDriveFileUploader(Context context, String accessToken) {
+        this.context = context.getApplicationContext();
         this.driveClient = new GoogleDriveClient(accessToken);
     }
 
@@ -53,7 +60,7 @@ public class GoogleDriveFileUploader extends FileUploader {
         File destFile = new File(destPath, destName);
         @Nullable String parentFolderId = getOrCacheSessionFolderId(mediaFile.sessionId, mediaFile.dataType);
         Log.i(TAG, "Uploading file to Google Drive: " + destFile.getAbsolutePath());
-        com.google.api.services.drive.model.File res = driveClient.uploadFile(file, destFile, mediaFile.getMimeType(), parentFolderId);
+        com.google.api.services.drive.model.File res = driveClient.uploadFile(file, destFile, mediaFile.getMimeType(), parentFolderId, mediaFile.timestamp);
         if (res != null) {
             Log.i(TAG, "File uploaded successfully: " + res.getName() + ", View Link: " + res.getWebViewLink());
             if (!file.delete()) {
@@ -63,6 +70,11 @@ public class GoogleDriveFileUploader extends FileUploader {
             }
         } else {
             Log.e(TAG, "File upload failed: " + file.getAbsolutePath());
+            if (!driveClient.checkAuthentication()) {
+                Log.e(TAG, "Authentication check failed during upload. Clearing token and reporting error.");
+                Settings.setAccessToken(context, null);
+                LiveData.getInstance().updateStatus(SafeRecService.STATUS_ERROR);
+            }
         }
     }
 }
