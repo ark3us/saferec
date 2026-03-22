@@ -12,6 +12,15 @@ import net.ark3us.saferec.data.LiveData;
 import net.ark3us.saferec.misc.Settings;
 import net.ark3us.saferec.services.SafeRecService;
 
+import com.google.android.gms.auth.api.identity.AuthorizationRequest;
+import com.google.android.gms.auth.api.identity.AuthorizationResult;
+import com.google.android.gms.auth.api.identity.Identity;
+import com.google.android.gms.common.api.Scope;
+import com.google.api.services.drive.DriveScopes;
+import com.google.android.gms.tasks.Tasks;
+import java.util.Collections;
+import java.util.concurrent.TimeUnit;
+
 public class GoogleDriveFileUploader extends FileUploader {
 
     private static final String TAG = GoogleDriveFileUploader.class.getSimpleName();
@@ -71,9 +80,45 @@ public class GoogleDriveFileUploader extends FileUploader {
         } else {
             Log.e(TAG, "File upload failed: " + file.getAbsolutePath());
             if (!driveClient.checkAuthentication()) {
-                Log.e(TAG, "Authentication check failed during upload. Clearing token and reporting error.");
-                Settings.setAccessToken(context, null);
-                LiveData.getInstance().updateStatus(SafeRecService.STATUS_ERROR);
+                Log.e(TAG, "Authentication check failed during upload. Attempting silent token refresh...");
+                try {
+                    AuthorizationRequest req = AuthorizationRequest.builder()
+                            .setRequestedScopes(Collections.singletonList(new Scope(DriveScopes.DRIVE_FILE)))
+                            .build();
+
+                    AuthorizationResult authResult = Tasks.await(
+                            Identity.getAuthorizationClient(context).authorize(req),
+                            30, TimeUnit.SECONDS);
+
+                    if (authResult.hasResolution()) {
+                        Log.e(TAG, "Silent refresh requires user interaction (resolution). Failing.");
+                        Settings.setAccessToken(context, null);
+                        LiveData.getInstance().updateStatus(SafeRecService.STATUS_ERROR);
+                    } else {
+                        String newToken = authResult.getAccessToken();
+                        if (newToken != null) {
+                            Log.i(TAG, "Silent refresh succeeded! Updating token and retrying upload.");
+                            Settings.setAccessToken(context, newToken);
+                            driveClient.setAccessToken(newToken);
+                            // Retry upload once
+                            com.google.api.services.drive.model.File retryRes = driveClient.uploadFile(file, destFile, mediaFile.getMimeType(), parentFolderId, mediaFile.timestamp);
+                            if (retryRes != null) {
+                                Log.i(TAG, "Retry successful: " + retryRes.getName());
+                                file.delete();
+                            } else {
+                                Log.e(TAG, "Retry upload failed despite fresh token.");
+                            }
+                        } else {
+                            Log.e(TAG, "Silent refresh returned null token. Failing.");
+                            Settings.setAccessToken(context, null);
+                            LiveData.getInstance().updateStatus(SafeRecService.STATUS_ERROR);
+                        }
+                    }
+                } catch (Exception e) {
+                    Log.e(TAG, "Exception during silent token refresh", e);
+                    Settings.setAccessToken(context, null);
+                    LiveData.getInstance().updateStatus(SafeRecService.STATUS_ERROR);
+                }
             }
         }
     }

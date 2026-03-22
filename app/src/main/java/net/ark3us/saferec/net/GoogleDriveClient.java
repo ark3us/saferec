@@ -29,7 +29,7 @@ public class GoogleDriveClient {
     private static final String TAG = GoogleDriveClient.class.getSimpleName();
     private static final String BASE_FOLDER = "SafeRec";
 
-    private final Drive driveService;
+    private Drive driveService;
 
     public GoogleDriveClient(String accessToken) {
         HttpRequestInitializer initializer = (HttpRequest request) -> {
@@ -40,6 +40,16 @@ public class GoogleDriveClient {
                 new NetHttpTransport(),
                 new GsonFactory(),
                 initializer).setApplicationName("SafeRec").build();
+    }
+
+    public void setAccessToken(String newAccessToken) {
+        // To change the token, we just recreate the driveService with a new initializer
+        driveService = new Drive.Builder(
+                new NetHttpTransport(),
+                new GsonFactory(),
+                (HttpRequest request) -> {
+                    request.getHeaders().setAuthorization("Bearer " + newAccessToken);
+                }).setApplicationName("SafeRec").build();
     }
 
     public String findFolderId(String folderName, @Nullable String parentFolderId) {
