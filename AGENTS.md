@@ -69,6 +69,18 @@ graph TD
 
 ---
 
+## Reliability Rules
+
+The app exists to save evidence when things go wrong. Keep these invariants:
+
+1. **Record first, sync later.** Starting a recording never waits for the network, Drive or a valid token. Chunks wait on disk until an upload succeeds.
+2. **Errors never stop a recording.** Upload, auth and TSA failures are reported as error events; only a total loss of camera *and* microphone ends a session.
+3. **Network errors are not auth errors.** The access token is cleared only when Drive answers HTTP 401 and a silent refresh needs user interaction.
+4. **Chunks never wait for the TSA.** Hash first, upload, then timestamp the hash.
+5. **Degrade gracefully.** Camera lost → continue audio-only.
+
+---
+
 ## Package Structure
 
 ```
@@ -156,28 +168,35 @@ sequenceDiagram
     participant GDC as GoogleDriveClient
 
     VSR-->>MS: writeVideoData(buffer, info)
-    MS->>MS: (bytesWritten >= partSize && keyFrame) OR device rotated?
+    MS->>MS: (keyFrame && chunk full: 10 s or manual MB) OR device rotated?
     alt Chunk complete
         MS->>MS: rotate() → closeFile() + onFileSaved(completedChunkFile)
         MS-->>SRS: onFileSaved() callback
         alt Timestamping enabled
-            SRS->>FTSA: timestampFile(chunkFile, tsaFile)
-            FTSA->>FTSA: HTTP POST to Sectigo (Background Thread)
-            FTSA-->>SRS: success/fail
+            SRS->>FTSA: sha256(chunkFile) (local, before upload deletes it)
+        end
+        SRS->>GDFU: upload(mediaFile) (never waits for the TSA)
+        alt Timestamping enabled
+            SRS->>FTSA: timestampHash(hash, tsaFile) on tsaExecutor
+            FTSA->>FTSA: HTTP POST to Sectigo
             alt Success
                 SRS->>GDFU: upload(tsaFile)
             end
         end
-        SRS->>GDFU: upload(mediaFile)
         GDFU->>GDFU: uploadFile() on thread pool (max 4 concurrent)
-        alt Upload failed (401/Auth)
-            GDFU->>GDFU: attempt silent refresh (AuthorizationClient)
-            alt Refresh success
-                GDFU->>GDC: setAccessToken(newToken)
-                GDFU->>GDFU: retry upload
-            else Refresh failed/resolution required
-                GDFU->>S: clearAccessToken()
-                GDFU->>LD: updateStatus(STATUS_ERROR)
+        alt Upload failed
+            GDFU->>GDC: checkAuthentication()
+            alt INVALID (HTTP 401)
+                GDFU->>GDFU: attempt silent refresh (AuthorizationClient)
+                alt Refresh success
+                    GDFU->>GDC: setAccessToken(newToken)
+                    GDFU->>GDFU: retry upload
+                else Resolution required
+                    GDFU->>S: setAccessToken(null)
+                    GDFU->>LD: reportError(ERROR_AUTH)
+                end
+            else UNKNOWN (network/Drive down)
+                GDFU->>GDFU: keep token and file for a later upload
             end
         else Success
             GDFU->>GDFU: file.delete()
@@ -285,14 +304,16 @@ Thread-safe (`synchronized`) wrapper around `MediaMuxer` with automatic chunking
 |---------|---------------|
 | **Track readiness** | Waits for both audio+video tracks (or just audio if audio-only) before `muxer.start()` |
 | **Pending packets** | Buffers up to 100 packets while tracks aren't ready |
-| **Chunk rotation** | On video key-frame when `bytesWritten >= partSize`, or when device rotation changes |
+| **Chunk rotation** | When the chunk is full (duration or size limit): on a video key-frame, or on any audio packet when there is no video. Also when device rotation changes |
+| **Camera lost** | `setExpectedVideo(false)`: following chunks carry audio only (still under the `video` folder) |
 | **PTS normalization** | 3-layer: session base → chunk base → final (always ≥ 0) |
 | **File naming** | `{sessionId}_{dataType}_{timestamp}.{seq}` via [MediaFile](file:///home/ark3us/Filen/Dev/SafeRec/app/src/main/java/net/ark3us/saferec/net/MediaFile.java#7-71) |
 
-**Chunk size** is determined by:
-1. Manual setting (`Settings.getChunkSizeMB`) if > 0
-2. `Quality.getRecommendedChunkSize()` = [(bitRate / 8) * 10](file:///home/ark3us/Filen/Dev/SafeRec/app/src/main/java/net/ark3us/saferec/media/VideoStreamRecorder.java#240-255) (~10s of video)
-3. `DEFAULT_AUDIO_CHUNK` = 64 KB (audio-only mode)
+**Chunk limit** is determined by:
+1. Manual setting (`Settings.getChunkSizeMB`) if > 0: split by size, no duration limit
+2. Otherwise (auto): split by duration, `DEFAULT_CHUNK_DURATION_MS` = 10 s (wall clock), for both video and audio-only
+
+Duration, not bytes, is what bounds data loss: a static or dark scene compresses well and would otherwise stretch a size-based chunk.
 
 ### [FreeTSAClient](file:///home/ark3us/Filen/Dev/SafeRec/app/src/main/java/net/ark3us/saferec/net/FreeTSAClient.java) — [FreeTSAClient.java](file:///home/ark3us/Filen/Dev/SafeRec/app/src/main/java/net/ark3us/saferec/net/FreeTSAClient.java)
 
@@ -302,21 +323,22 @@ Utility to obtain cryptographically secure RFC 3161 timestamps.
 - **Provider:** `https://timestamp.sectigo.com` (Sectigo)
 - **Library:** BouncyCastle (for TSQ/TSR handling)
 - **Local Cache:** Saves `.tsa` files side-by-side with media chunks during background upload.
+- **Off the critical path:** `sha256()` runs before the chunk upload; `timestampHash()` only needs the hash and runs later on `SafeRecService.tsaExecutor`, so a slow TSA never delays uploads. Failed timestamps are not retried.
 
 
 ### [TimestampRenderer](file:///home/ark3us/Filen/Dev/SafeRec/app/src/main/java/net/ark3us/saferec/media/TimestampRenderer.java) — [TimestampRenderer.java](file:///home/ark3us/Filen/Dev/SafeRec/app/src/main/java/net/ark3us/saferec/media/TimestampRenderer.java)
 
 OpenGL ES 2.0 pipeline that composites a burned-in date/time overlay onto camera frames before they reach the encoder. Always active during video recording.
 
-- **Pipeline:** Camera → SurfaceTexture (OES texture) → GL render (camera quad + timestamp quad) → encoder input Surface → MediaCodec, and optionally to the preview Surface (TextureView)
+- **Pipeline:** Camera → SurfaceTexture (OES texture) → GL render (camera quad + timestamp quad) → encoder input Surface → MediaCodec
 - **GL thread:** Dedicated `HandlerThread` ("TimestampGL") for all EGL/GL operations
 - **Shaders:** OES external sampler for the camera pass-through, regular `sampler2D` for the text bitmap overlay
 - **Text rendering:** Android `Canvas` draws the current date/time into a `Bitmap`, uploaded as a GL texture; only regenerated when the wall-clock second changes
 - **Orientation:** The overlay position is defined in "display NDC" and rotated by `+recordingRotation` (CCW in GL = inverse of player's CW rotation) to map to raw-frame NDC. This single rotation matrix handles both position and text orientation for all four orientations (0°/90°/180°/270°).
 - **Preview/recording parity:** Uses the same raw camera frames as the encoder (no extra sensor-rotation transform) so the recorded video orientation matches what the player expects.
 - **Presentation time:** Forwards the `SurfaceTexture` timestamp to EGL via `eglPresentationTimeANDROID` for correct A/V sync
-- **Preview overlay:** When a preview surface is available at record start, it is passed to the renderer. The renderer draws the same frame (camera + timestamp) to both the encoder and the preview, so the on-screen preview matches the recorded video. Late attach/detach is supported via `attachPreviewOutput()` and `detachPreviewOutput()`.
-- **Integration:** Created in `VideoStreamRecorder.setupEncoder()` for every video recording; its input surface replaces `encoderSurface` in the camera capture session targets. When the renderer has preview output, the preview surface is not added to the camera targets — the renderer feeds it instead.
+- **Preview:** The renderer only feeds the encoder. The preview Surface (TextureView) is a separate camera target, so the on-screen preview does not show the overlay.
+- **Integration:** Created in `VideoStreamRecorder.setupEncoder()` for every video recording; its input surface replaces `encoderSurface` in the camera capture session targets.
 
 ### [MediaMerger](file:///home/ark3us/Filen/Dev/SafeRec/app/src/main/java/net/ark3us/saferec/media/MediaMerger.java#14-169) — [MediaMerger.java](file:///home/ark3us/Filen/Dev/SafeRec/app/src/main/java/net/ark3us/saferec/media/MediaMerger.java)
 
@@ -336,8 +358,13 @@ Foreground service orchestrating the recording. Commands via `Intent` extras:
 | `CMD_START` | If already recording: stop + restart (camera switch). Otherwise: start new recording |
 | `CMD_STOP` | Stop recording, reset session |
 | `CMD_UPLOAD_PENDING` | Upload any leftover local chunks to Drive |
+| `CMD_DELETE` | Delete Drive files (`EXTRA_FILE_IDS`) and clean up empty folders (`EXTRA_FOLDER_IDS`) |
 
-State is broadcast via [LiveData](file:///home/ark3us/Filen/Dev/SafeRec/app/src/main/java/net/ark3us/saferec/data/LiveData.java#5-26) singleton: `STATUS_READY` → `STATUS_STARTED` → `STATUS_STOPPED` / `STATUS_ERROR`
+State is broadcast via [LiveData](file:///home/ark3us/Filen/Dev/SafeRec/app/src/main/java/net/ark3us/saferec/data/LiveData.java) singleton: `STATUS_READY` → `STATUS_STARTED` → `STATUS_STOPPED`.
+
+Errors are a separate one-shot channel (`reportError()` / `getError()` / `clearError()`): `ERROR_AUTH` (Drive needs re-authentication), `ERROR_CAMERA` (camera lost, recording continues audio-only), `ERROR_RECORDING` (nothing can be recorded). Errors never change the recording status and never stop a recording.
+
+Camera/encoder callbacks are posted to the main thread (`onVideoResult`) and ignored if they belong to a previous session.
 
 ### [Settings](file:///home/ark3us/Filen/Dev/SafeRec/app/src/main/java/net/ark3us/saferec/misc/Settings.java#7-78) — [Settings.java](file:///home/ark3us/Filen/Dev/SafeRec/app/src/main/java/net/ark3us/saferec/misc/Settings.java)
 
@@ -349,7 +376,7 @@ SharedPreferences wrapper. Keys:
 | [onlyAudio](file:///home/ark3us/Filen/Dev/SafeRec/app/src/main/java/net/ark3us/saferec/misc/Settings.java#25-28) | boolean | false |
 | `useFrontCamera` | boolean | false |
 | `videoQuality` | String | "LOW" |
-| `chunkSizeMB` | int | 0 (auto) |
+| `chunkSizeMB` | int | 0 (auto = 10 s chunks) |
 | `autoStartOnLaunch` | boolean | false |
 | `tutorialShown` | boolean | false |
 | `timestampingEnabled` | boolean | false |
@@ -412,4 +439,5 @@ Chunks are uploaded immediately on completion and **deleted locally** on success
 1. **Camera switch = recording gap.** Switching cameras mid-session does a full stop+restart, creating a new muxer/session segment.
 2. **Mixed-rotation merge.** A single MP4 can only have one `setOrientationHint`. When chunks from different cameras (with different sensor orientations) or different device rotations are merged, some segments will display with wrong rotation.
 3. **No video mirroring.** Front camera video is recorded un-mirrored (you see yourself as others see you, not as a mirror reflection). This is standard for video recording.
-4. **Background Auth Failure.** If the access token expires during background upload, the app attempts a silent token refresh via Google Identity Services. If successful, the upload seamlessly resumes. If the refresh requires user interaction (e.g., token revoked or password changed), it clears the token and triggers `STATUS_ERROR`, prompting the user to manually re-authenticate.
+4. **Background Auth Failure.** If Drive rejects the access token (HTTP 401) during background upload, the app attempts a silent token refresh via Google Identity Services. If successful, the upload seamlessly resumes. If the refresh requires user interaction (e.g., token revoked or password changed), it clears the token and reports `ERROR_AUTH`, prompting the user to re-authenticate. The recording keeps going. Network errors never clear the token.
+5. **No upload retry during a session.** A chunk whose upload fails stays in `data_store/` and is only retried by `CMD_UPLOAD_PENDING`, sent at app launch when Drive is reachable and no recording is running.
