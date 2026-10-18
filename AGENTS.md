@@ -442,3 +442,12 @@ Chunks are uploaded immediately on completion and **deleted locally** on success
 4. **Background Auth Failure.** If Drive rejects the access token (HTTP 401) during background upload, the app attempts a silent token refresh via Google Identity Services. If successful, the upload seamlessly resumes. If the refresh requires user interaction (e.g., token revoked or password changed), it clears the token and reports `ERROR_AUTH`, prompting the user to re-authenticate. The recording keeps going. Network errors never clear the token.
 5. **No upload retry during a session.** A chunk whose upload fails stays in `data_store/` and is only retried by `CMD_UPLOAD_PENDING`, sent at app launch when Drive is reachable and no recording is running.
 6. **Preview rebuild failure drops video.** `onConfigureFailed` during `attachPreview`/`detachPreview` is handled like a camera loss: the rest of the session is audio-only.
+7. **Audio ~1 s behind video.** Audio and video are normalized to their own first packet, but audio starts before the camera delivers its first frame. Measured on a Galaxy S10+: chunk #0 holds ~10.1 s of audio vs ~9.0 s of video, and the offset persists for the session. A few audio frames (~70 ms) are also dropped at each chunk boundary. Fix needs one shared clock for both tracks.
+
+---
+
+## Testing on a Device
+
+`scripts/device-tests.sh` drives a connected phone (debug build, `ANDROID_SERIAL` to pick one) and checks logcat, the chunk store and chunk durations with ffprobe. Scenarios: `offline_start`, `audio_only`, `camera_stolen`, `replay`, `errors_dont_stop`, `network_drop`, `tsa`, plus a whole-run crash check. It toggles airplane mode, records camera and mic, rewrites SafeRec settings, and restores everything on exit. It refuses to run if the chunk store is not empty.
+
+Lesson learned: video encoders emit SPS/PPS as a `BUFFER_FLAG_CODEC_CONFIG` buffer with PTS 0. Writing it as a sample made 0 the video time base and silently dropped all audio after the first chunk. Codec config buffers must never reach `MuxerSink`.
