@@ -135,6 +135,10 @@ public class MuxerSink {
     // --- Track management ---
 
     public synchronized void addVideoTrack(MediaFormat format, int rotation) {
+        if (!expectedVideo) {
+            // Camera already dropped: the muxer may be started audio-only, addTrack would throw
+            return;
+        }
         init();
         videoFormat = format;
         // Strip KEY_ROTATION from the encoder format — we control rotation

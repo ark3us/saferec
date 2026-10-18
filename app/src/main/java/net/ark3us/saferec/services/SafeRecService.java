@@ -239,7 +239,8 @@ public class SafeRecService extends Service {
         }
         if (audioRecorder != null && audioRecorder.isRecording()) {
             Log.w(TAG, "Video recorder failed, continuing with audio only");
-            videoRecorder.stopRecording();
+            // stop(), not stopRecording(): with a preview attached the latter keeps the camera open
+            videoRecorder.stop();
             videoRecorder = null;
             sink.setExpectedVideo(false);
             LiveData.getInstance().reportError(LiveData.ERROR_CAMERA);
