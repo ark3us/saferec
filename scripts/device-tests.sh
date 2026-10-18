@@ -53,7 +53,16 @@ record() { # scenario status detail
 # --- Device helpers -----------------------------------------------------------
 
 app_sh() { adb shell run-as "$PKG" "$@"; } # runs as the app, debug builds only
-logs() { adb logcat -d -v threadtime -s "${TAGS[@]}"; }
+
+# Logs come from the host-side capture started in setup: the device buffer wraps
+# under load (failed uploads log long stack traces) and silently drops old lines.
+SCENARIO_LINE=1
+TAG_RE=$(
+    IFS='|'
+    echo "${TAGS[*]}"
+)
+mark_scenario() { SCENARIO_LINE=$(($(wc -l <"$OUT/full.log") + 1)); }
+logs() { tail -n +"$SCENARIO_LINE" "$OUT/full.log" | grep -E " [VDIWEF] ($TAG_RE) *: "; }
 count_log() { logs | grep -cE "$1"; }
 wait_log() { # pattern timeout_s
     local end=$((SECONDS + $2))
@@ -126,7 +135,7 @@ launch() { # -f must come before --activity-clear-task, which adds to the flags
 }
 tile_start() { launch --activity-clear-task --es command START --ez from_tile true; }
 start_recording() { # -> 0 when the service logs the session start
-    adb logcat -c
+    mark_scenario
     tile_start
     wait_log "Starting recording session" 15
 }
@@ -138,6 +147,7 @@ stop_recording() {
 }
 premature_stops() { count_log "AudioRecorder stopped"; } # call before stop_recording
 saved_chunks() { count_log "Processing saved chunk: .*\.mp4"; }
+duplicate_uploads() { count_log "Failed to delete file after upload"; } # 2nd copy of an uploaded file
 
 # --- Chunk analysis -------------------------------------------------------------
 
@@ -268,7 +278,7 @@ scenario_replay() {
     say "replay: relaunch from Recents must not replay the tile's START"
     write_prefs false false
     clear_store
-    adb logcat -c
+    mark_scenario
     # NEW_TASK | LAUNCHED_FROM_HISTORY, like Recents re-delivering the tile intent
     launch -f 0x10100000 --activity-clear-task --es command START --ez from_tile true
     sleep 8
@@ -291,15 +301,17 @@ scenario_errors_dont_stop() {
     go_online || { record errors_dont_stop FAIL "could not go online"; return; }
     start_recording || { record errors_dont_stop FAIL "recording did not start"; return; }
     sleep 40
-    local premature auth_errors uploads saved ok=1
+    local premature auth_errors uploads saved dups ok=1
     premature=$(premature_stops)
     auth_errors=$(count_log "Silent refresh requires user interaction|Silent refresh returned null")
     uploads=$(count_log "uploaded successfully")
     stop_recording
+    sleep 8 # the relaunch after STOP scans pending files: duplicates would show up now
     saved=$(saved_chunks)
+    dups=$(duplicate_uploads)
     logs >"$OUT/errors_dont_stop.log"
-    note "auth errors $auth_errors, successful uploads $uploads, saved chunks $saved, premature stops $premature"
-    ((premature == 0 && saved >= 4 && (auth_errors + uploads) >= 1)) || ok=0
+    note "auth errors $auth_errors, successful uploads $uploads, saved chunks $saved, premature stops $premature, duplicates $dups"
+    ((premature == 0 && saved >= 4 && (auth_errors + uploads) >= 1 && dups == 0)) || ok=0
     if ((ok)); then
         if ((uploads > 0)); then
             record errors_dont_stop PASS "uploads worked ($uploads), recording ran the full 40 s"
@@ -307,7 +319,7 @@ scenario_errors_dont_stop() {
             record errors_dont_stop PASS "$auth_errors auth errors reported, recording ran the full 40 s"
         fi
     else
-        record errors_dont_stop FAIL "premature=$premature saved=$saved auth_errors=$auth_errors uploads=$uploads"
+        record errors_dont_stop FAIL "premature=$premature saved=$saved auth_errors=$auth_errors uploads=$uploads dups=$dups"
     fi
 }
 
@@ -324,21 +336,23 @@ scenario_network_drop() {
     sleep 30
     go_online || note "warning: network did not come back"
     sleep 12
-    local premature unknown saved ok=1
+    local premature unknown saved dups ok=1
     premature=$(premature_stops)
     unknown=$(count_log "auth UNKNOWN")
     stop_recording
+    sleep 8 # let the post-STOP pending scan run
     saved=$(saved_chunks)
+    dups=$(duplicate_uploads)
     token_after=$(token_fingerprint)
     logs >"$OUT/network_drop.log"
-    note "saved chunks $saved, premature stops $premature, kept-for-later uploads $unknown"
+    note "saved chunks $saved, premature stops $premature, kept-for-later uploads $unknown, duplicates $dups"
     note "token before/after: $token_before / $token_after"
-    ((premature == 0 && saved >= 5 && unknown >= 1)) || ok=0
+    ((premature == 0 && saved >= 5 && unknown >= 1 && dups == 0)) || ok=0
     [[ $token_before == "$token_after" ]] || ok=0
     if ((ok)); then
         record network_drop PASS "recording continued through the outage, token unchanged ($token_after)"
     else
-        record network_drop FAIL "premature=$premature saved=$saved unknown=$unknown token $token_before→$token_after"
+        record network_drop FAIL "premature=$premature saved=$saved unknown=$unknown dups=$dups token $token_before→$token_after"
     fi
 }
 
@@ -351,8 +365,9 @@ scenario_tsa() {
     sleep 33
     stop_recording
     sleep 10 # TSA requests finish after the stop
-    local saved attempts stamped tsa_failed ok=1
+    local saved attempts stamped tsa_failed dups ok=1
     saved=$(saved_chunks)
+    dups=$(duplicate_uploads)
     attempts=$(count_log "Uploading file \(seq=[0-9]+\) to Google Drive: .*\.mp4")
     stamped=$(count_log "Successfully timestamped")
     tsa_failed=$(count_log "Failed to timestamp|TSA responded with code|Invalid content type|validate TSA")
@@ -360,13 +375,14 @@ scenario_tsa() {
     # Per chunk: when it was saved, when its upload started, when its timestamp came back
     logs | grep -E "Processing saved chunk: .*\.mp4|Uploading file \(seq=.*\.mp4|Successfully timestamped" |
         awk '{ print "    " $2 " " substr($0, index($0, $7)) }' >"$OUT/tsa-timeline.txt"
-    note "saved chunks $saved, upload attempts $attempts, timestamps $stamped, TSA failures $tsa_failed"
+    note "saved chunks $saved, upload attempts $attempts, timestamps $stamped, TSA failures $tsa_failed, duplicates $dups"
     sed 's/^/  /' "$OUT/tsa-timeline.txt"
-    ((saved >= 3 && attempts >= saved && stamped >= saved - 1)) || ok=0
+    # One upload attempt per chunk: more means a chunk was uploaded twice
+    ((saved >= 3 && attempts == saved && dups == 0 && stamped >= saved - 1)) || ok=0
     if ((ok)); then
-        record tsa PASS "$attempts upload attempts for $saved chunks, $stamped timestamps"
+        record tsa PASS "$attempts upload attempts for $saved chunks, $stamped timestamps, no duplicates"
     else
-        record tsa FAIL "saved=$saved attempts=$attempts stamped=$stamped tsa_failed=$tsa_failed"
+        record tsa FAIL "saved=$saved attempts=$attempts stamped=$stamped tsa_failed=$tsa_failed dups=$dups"
     fi
 }
 
