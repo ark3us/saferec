@@ -30,9 +30,9 @@ public class FreeTSAClient {
     // SHA-256 OID: 2.16.840.1.101.3.4.2.1
     private static final String SHA256_OID = "2.16.840.1.101.3.4.2.1";
 
-    public static boolean timestampFile(Context context, File dataFile, File outputFile) {
+    /** Returns the SHA-256 of the file, or null if it cannot be read. */
+    public static byte[] sha256(File dataFile) {
         try {
-            // 1. Hash the local file
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
             try (FileInputStream fis = new FileInputStream(dataFile)) {
                 byte[] buffer = new byte[8192];
@@ -41,15 +41,26 @@ public class FreeTSAClient {
                     digest.update(buffer, 0, read);
                 }
             }
-            byte[] hash = digest.digest();
+            return digest.digest();
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to hash file: " + dataFile.getName(), e);
+            return null;
+        }
+    }
 
-            // 2. Generate TSQ
+    /**
+     * Requests an RFC 3161 timestamp for a SHA-256 hash and saves the reply to outputFile.
+     * Only the hash is needed, so this can run after the data file is gone.
+     */
+    public static boolean timestampHash(Context context, byte[] hash, File outputFile) {
+        try {
+            // 1. Generate TSQ
             TimeStampRequestGenerator tsqGenerator = new TimeStampRequestGenerator();
             tsqGenerator.setCertReq(true);
             TimeStampRequest request = tsqGenerator.generate(new ASN1ObjectIdentifier(SHA256_OID), hash);
             byte[] requestBytes = request.getEncoded();
 
-            // 3. Send via HTTP
+            // 2. Send via HTTP
             URL url = new URL(TSA_URL);
             HttpURLConnection connection = (HttpURLConnection) url.openConnection();
             connection.setDoOutput(true);
@@ -77,7 +88,7 @@ public class FreeTSAClient {
                 return false;
             }
 
-            // 4. Read response and save
+            // 3. Read response and save
             try (InputStream is = connection.getInputStream();
                  FileOutputStream fos = new FileOutputStream(outputFile)) {
 
@@ -104,15 +115,12 @@ public class FreeTSAClient {
                     tsResponse.validate(request);
                 } catch (Exception e) {
                     Log.e(TAG, "Failed to parse/validate TSA response: " + e.getMessage(), e);
-                    // We still save the file even if validation fails, just to inspect it locally if needed
-                    // Wait, actually if validation fails it might be a malformed response.
-                    // But an exception here prevents returning true.
                     showToast(context, context.getString(R.string.tsa_validation_failed));
                     return false;
                 }
             }
 
-            Log.i(TAG, "Successfully timestamped file: " + dataFile.getName());
+            Log.i(TAG, "Successfully timestamped: " + outputFile.getName());
             return true;
         } catch (Exception e) {
             Log.e(TAG, "Failed to timestamp file", e);

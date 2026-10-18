@@ -57,8 +57,10 @@ public class SafeRecService extends Service {
     private GoogleDriveFileUploader sharedUploader;
     private int currentSequenceNumber = 0;
 
-    private ExecutorService executor = Executors.newSingleThreadExecutor();
-    private ExecutorService postProcessExecutor = Executors.newSingleThreadExecutor();
+    private final ExecutorService executor = Executors.newSingleThreadExecutor();
+    private final ExecutorService postProcessExecutor = Executors.newSingleThreadExecutor();
+    // Separate from postProcessExecutor so a slow TSA never delays chunk uploads
+    private final ExecutorService tsaExecutor = Executors.newSingleThreadExecutor();
 
     public static Intent createCommandIntent(Context context, @Nullable String command) {
         Intent intent = new Intent(context, SafeRecService.class);
@@ -70,8 +72,6 @@ public class SafeRecService extends Service {
     public void onCreate() {
         super.onCreate();
         NotificationHelper.createNotificationChannel(this);
-        executor = Executors.newSingleThreadExecutor();
-        postProcessExecutor = Executors.newSingleThreadExecutor();
     }
 
     private Notification buildNotification() {
@@ -184,24 +184,13 @@ public class SafeRecService extends Service {
         MuxerSink.FileSavedCallback callback = file -> {
             postProcessExecutor.execute(() -> {
                 Log.i(TAG, "Processing saved chunk: " + file.getName());
-                if (Settings.isTimestampingEnabled(this)) {
-                    synchronized (this) {
-                        activeTimestamping++;
-                        updateNotification();
-                    }
-                    String path = file.getAbsolutePath();
-                    int dotIndex = path.lastIndexOf('.');
-                    File tsaFile = new File((dotIndex > 0 ? path.substring(0, dotIndex) : path) + ".tsa");
-                    boolean success = FreeTSAClient.timestampFile(this, file, tsaFile);
-                    synchronized (this) {
-                        activeTimestamping--;
-                        updateNotification();
-                    }
-                    if (success) {
-                        sharedUploader.upload(tsaFile);
-                    }
-                }
+                // Hash before uploading: the uploader deletes the local file once it is on Drive
+                byte[] hash = Settings.isTimestampingEnabled(this) ? FreeTSAClient.sha256(file) : null;
+                // The chunk is the evidence: it never waits for the TSA, the timestamp can come later
                 sharedUploader.upload(file);
+                if (hash != null) {
+                    tsaExecutor.execute(() -> timestampChunk(file, hash));
+                }
             });
         };
 
@@ -236,6 +225,24 @@ public class SafeRecService extends Service {
         }
 
         updateNotification();
+    }
+
+    private void timestampChunk(File chunkFile, byte[] hash) {
+        synchronized (this) {
+            activeTimestamping++;
+            updateNotification();
+        }
+        String path = chunkFile.getAbsolutePath();
+        int dotIndex = path.lastIndexOf('.');
+        File tsaFile = new File((dotIndex > 0 ? path.substring(0, dotIndex) : path) + ".tsa");
+        boolean success = FreeTSAClient.timestampHash(this, hash, tsaFile);
+        synchronized (this) {
+            activeTimestamping--;
+            updateNotification();
+        }
+        if (success) {
+            sharedUploader.upload(tsaFile);
+        }
     }
 
     private void stopRecording() {
@@ -343,6 +350,7 @@ public class SafeRecService extends Service {
         }
         executor.shutdown();
         postProcessExecutor.shutdown();
+        tsaExecutor.shutdown();
         super.onDestroy();
     }
 
