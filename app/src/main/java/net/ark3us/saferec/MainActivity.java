@@ -487,15 +487,16 @@ public class MainActivity extends AppCompatActivity {
             return;
         }
 
-        // Record first, sync later: a launch command never waits for Google Drive
-        if (hasRecordingPermissions()) {
-            btnStart.post(this::handleLaunchCommand);
-        }
-
-        permissionsManager.requestAllPermissions((allGranted, accessToken) -> {
+        // Record first, sync later: a launch command never waits for Google Drive.
+        // Posted on a view so the service starts only once the activity is visible.
+        Runnable launchIfPermitted = () -> {
             if (hasRecordingPermissions()) {
-                handleLaunchCommand();
+                btnStart.post(this::handleLaunchCommand);
             }
+        };
+        launchIfPermitted.run();
+
+        permissionsManager.requestAllPermissions(launchIfPermitted, (allGranted, accessToken) -> {
             if (allGranted && accessToken != null) {
                 backgroundExecutor.execute(() -> {
                     GoogleDriveClient client = new GoogleDriveClient(accessToken);

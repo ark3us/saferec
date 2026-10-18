@@ -34,6 +34,9 @@ public class PermissionsManager {
     private ActivityResultLauncher<String[]> requestPermissionsLauncher;
     private ActivityResultLauncher<IntentSenderRequest> startAuthIntent;
     private Callback callback;
+    // Runs as soon as runtime permissions are settled, before Drive authorization
+    @Nullable
+    private Runnable onPermissionsResult;
     boolean allGranted = false;
 
     public PermissionsManager(AppCompatActivity context) {
@@ -56,6 +59,7 @@ public class PermissionsManager {
                         }
                     }
                     Log.i(TAG, "Permission request completed. allGranted=" + allGranted);
+                    notifyPermissionsResult();
                     requestDriveAuthorization();
                 });
 
@@ -120,13 +124,25 @@ public class PermissionsManager {
         return (protection & PermissionInfo.PROTECTION_MASK_BASE) == PermissionInfo.PROTECTION_DANGEROUS;
     }
 
-    public void requestAllPermissions(Callback callback) {
+    private void notifyPermissionsResult() {
+        if (onPermissionsResult != null) {
+            onPermissionsResult.run();
+        }
+    }
+
+    /**
+     * Requests runtime permissions, then Drive authorization.
+     * onPermissionsResult runs in between, so callers can act without waiting for Drive.
+     */
+    public void requestAllPermissions(@Nullable Runnable onPermissionsResult, Callback callback) {
         try {
             this.callback = callback;
+            this.onPermissionsResult = onPermissionsResult;
             PackageManager pm = context.getPackageManager();
             PackageInfo pi = pm.getPackageInfo(context.getPackageName(), PackageManager.GET_PERMISSIONS);
             String[] requested = pi.requestedPermissions;
             if (requested == null || requested.length == 0) {
+                notifyPermissionsResult();
                 requestDriveAuthorization();
                 return;
             }
@@ -144,6 +160,7 @@ public class PermissionsManager {
 
             if (runtimePermissions.isEmpty()) {
                 Log.i(TAG, "No runtime permissions to request");
+                notifyPermissionsResult();
                 requestDriveAuthorization();
                 return;
             }
