@@ -1,6 +1,8 @@
 package net.ark3us.saferec;
 
+import android.Manifest;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.content.res.Configuration;
 import android.graphics.SurfaceTexture;
 import android.os.Bundle;
@@ -66,6 +68,7 @@ public class MainActivity extends AppCompatActivity {
     private View errorContainer;
     private TextView errorMessageText;
     private PermissionsManager permissionsManager;
+    private boolean launchCommandHandled = false;
     private final ExecutorService backgroundExecutor = Executors.newSingleThreadExecutor();
 
     private static boolean isStarted(@Nullable String status) {
@@ -484,7 +487,15 @@ public class MainActivity extends AppCompatActivity {
             return;
         }
 
+        // Record first, sync later: a launch command never waits for Google Drive
+        if (hasRecordingPermissions()) {
+            btnStart.post(this::handleLaunchCommand);
+        }
+
         permissionsManager.requestAllPermissions((allGranted, accessToken) -> {
+            if (hasRecordingPermissions()) {
+                handleLaunchCommand();
+            }
             if (allGranted && accessToken != null) {
                 backgroundExecutor.execute(() -> {
                     GoogleDriveClient client = new GoogleDriveClient(accessToken);
@@ -504,32 +515,6 @@ public class MainActivity extends AppCompatActivity {
                                 errorMessageText.setText(R.string.google_drive_failed);
                             }
                             tryStartPreview();
-
-                            String command = getCommand();
-                            boolean fromTile = getIntent().getBooleanExtra(SafeRecService.EXTRA_FROM_TILE, false);
-                            boolean fromNotification = getIntent().getBooleanExtra(SafeRecService.EXTRA_FROM_NOTIFICATION, false);
-                            boolean autoStart = Settings.isAutoStartOnLaunch(this);
-
-                            Log.i(TAG, "Launch info: command=" + command + ", fromTile=" + fromTile + ", fromNotification="
-                                    + fromNotification + ", autoStart=" + autoStart);
-
-                            if (SafeRecService.CMD_START.equals(command)) {
-                                if ((fromTile || fromNotification) && !autoStart) {
-                                    Log.i(TAG, "Ignoring CMD_START from tile/notification because autoStart is disabled");
-                                    command = null;
-                                }
-                            } else if (fromNotification && autoStart) {
-                                if (!isStarted(LiveData.getInstance().getStatus().getValue())) {
-                                    Log.i(TAG, "Auto-starting recording from notification launch");
-                                    command = SafeRecService.CMD_START;
-                                } else {
-                                    Log.i(TAG, "Already recording, ignoring auto-start from notification launch");
-                                }
-                            }
-
-                            if (command != null) {
-                                startSafeRecService(command);
-                            }
                         } else {
                             Log.e(TAG, "Access token rejected by Drive");
                             Settings.setAccessToken(this, null);
@@ -548,6 +533,47 @@ public class MainActivity extends AppCompatActivity {
                 }
             }
         });
+    }
+
+    private boolean hasRecordingPermissions() {
+        boolean audio = checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED;
+        boolean camera = Settings.onlyAudio(this)
+                || checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED;
+        return audio && camera;
+    }
+
+    /** Runs the command from the tile, notification or auto-start setting, once per launch. */
+    private void handleLaunchCommand() {
+        if (launchCommandHandled) {
+            return;
+        }
+        launchCommandHandled = true;
+
+        String command = getCommand();
+        boolean fromTile = getIntent().getBooleanExtra(SafeRecService.EXTRA_FROM_TILE, false);
+        boolean fromNotification = getIntent().getBooleanExtra(SafeRecService.EXTRA_FROM_NOTIFICATION, false);
+        boolean autoStart = Settings.isAutoStartOnLaunch(this);
+
+        Log.i(TAG, "Launch info: command=" + command + ", fromTile=" + fromTile + ", fromNotification="
+                + fromNotification + ", autoStart=" + autoStart);
+
+        if (SafeRecService.CMD_START.equals(command)) {
+            if ((fromTile || fromNotification) && !autoStart) {
+                Log.i(TAG, "Ignoring CMD_START from tile/notification because autoStart is disabled");
+                command = null;
+            }
+        } else if (fromNotification && autoStart) {
+            if (!isStarted(LiveData.getInstance().getStatus().getValue())) {
+                Log.i(TAG, "Auto-starting recording from notification launch");
+                command = SafeRecService.CMD_START;
+            } else {
+                Log.i(TAG, "Already recording, ignoring auto-start from notification launch");
+            }
+        }
+
+        if (command != null) {
+            startSafeRecService(command);
+        }
     }
 
     private void tryStartPreview() {

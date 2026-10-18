@@ -142,12 +142,11 @@ public class SafeRecService extends Service {
             Log.w(TAG, "Recording is already in progress");
             return;
         }
+        // No token gate: recording never depends on Drive. Without a valid token
+        // the uploader tries a silent refresh, otherwise chunks wait on disk.
         String accessToken = Settings.getAccessToken(this);
         if (accessToken == null || accessToken.isEmpty()) {
-            Log.e(TAG, "Cannot start recording: missing access token");
-            LiveData.getInstance().reportError(LiveData.ERROR_AUTH);
-            LiveData.getInstance().updateStatus(STATUS_STOPPED);
-            return;
+            Log.w(TAG, "Recording without access token: chunks are kept until Drive is reachable");
         }
         isRecording = true;
         LiveData.getInstance().updateStatus(STATUS_STARTED);
