@@ -1,6 +1,8 @@
 package net.ark3us.saferec.net;
 
 import java.io.File;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -10,6 +12,7 @@ public abstract class FileUploader {
     protected final ExecutorService uploadExecutor = Executors.newFixedThreadPool(MAX_CONCURRENT_UPLOADS);
     protected final ExecutorService scanExecutor = Executors.newSingleThreadExecutor();
     private final AtomicInteger activeUploads = new AtomicInteger(0);
+    private final Set<String> queuedFiles = ConcurrentHashMap.newKeySet();
 
     public interface UploadListener {
         void onUploadStatusChanged(int activeUploads);
@@ -48,6 +51,25 @@ public abstract class FileUploader {
         }
     }
 
+    /**
+     * A pending-files scan can find a chunk whose upload is already queued or running:
+     * uploading it twice would duplicate it on Drive, so each file is queued at most once.
+     */
+    private void submit(File file) {
+        String path = file.getAbsolutePath();
+        // exists(): a scan may list a file that was uploaded and deleted meanwhile
+        if (!file.exists() || !queuedFiles.add(path)) {
+            return;
+        }
+        uploadExecutor.submit(() -> {
+            try {
+                wrappedUploadFile(file);
+            } finally {
+                queuedFiles.remove(path);
+            }
+        });
+    }
+
     private void uploadInternal(File fileOrDir) {
         if (fileOrDir.isDirectory()) {
             File[] files = fileOrDir.listFiles();
@@ -57,7 +79,7 @@ public abstract class FileUploader {
                 }
             }
         } else {
-            uploadExecutor.submit(() -> wrappedUploadFile(fileOrDir));
+            submit(fileOrDir);
         }
     }
 
@@ -67,7 +89,7 @@ public abstract class FileUploader {
             return;
         }
         if (!fileOrDir.isDirectory()) {
-            uploadExecutor.submit(() -> wrappedUploadFile(fileOrDir));
+            submit(fileOrDir);
             return;
         }
         scanExecutor.submit(() -> uploadInternal(fileOrDir));
