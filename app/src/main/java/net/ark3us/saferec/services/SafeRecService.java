@@ -42,7 +42,6 @@ public class SafeRecService extends Service {
     public static final String STATUS_READY = "READY";
     public static final String STATUS_STARTED = "STARTED";
     public static final String STATUS_STOPPED = "STOPPED";
-    public static final String STATUS_ERROR = "ERROR";
     private static final String TAG = "SafeRecService";
     private VideoStreamRecorder videoRecorder;
     private AudioStreamRecorder audioRecorder;
@@ -146,7 +145,8 @@ public class SafeRecService extends Service {
         String accessToken = Settings.getAccessToken(this);
         if (accessToken == null || accessToken.isEmpty()) {
             Log.e(TAG, "Cannot start recording: missing access token");
-            LiveData.getInstance().updateStatus(STATUS_ERROR);
+            LiveData.getInstance().reportError(LiveData.ERROR_AUTH);
+            LiveData.getInstance().updateStatus(STATUS_STOPPED);
             return;
         }
         isRecording = true;
@@ -220,7 +220,7 @@ public class SafeRecService extends Service {
                     Log.i(TAG, "Video recorder started successfully");
                 } else {
                     Log.e(TAG, "Video recorder failed to start, reporting error");
-                    LiveData.getInstance().updateStatus(STATUS_ERROR);
+                    LiveData.getInstance().reportError(LiveData.ERROR_RECORDING);
                     stopRecording();
                 }
             });
@@ -234,7 +234,7 @@ public class SafeRecService extends Service {
                 sink.setExpectedAudio(false);
             } else {
                 Log.e(TAG, "Audio-only mode failed, stopping");
-                LiveData.getInstance().updateStatus(STATUS_ERROR);
+                LiveData.getInstance().reportError(LiveData.ERROR_RECORDING);
                 stopRecording();
             }
         }

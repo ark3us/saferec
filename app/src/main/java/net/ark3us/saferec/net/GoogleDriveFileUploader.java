@@ -10,7 +10,6 @@ import android.content.Context;
 
 import net.ark3us.saferec.data.LiveData;
 import net.ark3us.saferec.misc.Settings;
-import net.ark3us.saferec.services.SafeRecService;
 
 import com.google.android.gms.auth.api.identity.AuthorizationRequest;
 import com.google.android.gms.auth.api.identity.AuthorizationResult;
@@ -93,7 +92,7 @@ public class GoogleDriveFileUploader extends FileUploader {
                     if (authResult.hasResolution()) {
                         Log.e(TAG, "Silent refresh requires user interaction (resolution). Failing.");
                         Settings.setAccessToken(context, null);
-                        LiveData.getInstance().updateStatus(SafeRecService.STATUS_ERROR);
+                        LiveData.getInstance().reportError(LiveData.ERROR_AUTH);
                     } else {
                         String newToken = authResult.getAccessToken();
                         if (newToken != null) {
@@ -111,13 +110,13 @@ public class GoogleDriveFileUploader extends FileUploader {
                         } else {
                             Log.e(TAG, "Silent refresh returned null token. Failing.");
                             Settings.setAccessToken(context, null);
-                            LiveData.getInstance().updateStatus(SafeRecService.STATUS_ERROR);
+                            LiveData.getInstance().reportError(LiveData.ERROR_AUTH);
                         }
                     }
                 } catch (Exception e) {
                     Log.e(TAG, "Exception during silent token refresh", e);
                     Settings.setAccessToken(context, null);
-                    LiveData.getInstance().updateStatus(SafeRecService.STATUS_ERROR);
+                    LiveData.getInstance().reportError(LiveData.ERROR_AUTH);
                 }
             }
         }

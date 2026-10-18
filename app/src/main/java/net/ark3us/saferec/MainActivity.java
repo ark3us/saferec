@@ -149,9 +149,13 @@ public class MainActivity extends AppCompatActivity {
             if (isStopped(status) || isStarted(status)) {
                 tryStartPreview();
             }
-            if (SafeRecService.STATUS_ERROR.equals(status)) {
-                showAuthError();
+        });
+        LiveData.getInstance().getError().observe(this, error -> {
+            if (error == null) {
+                return;
             }
+            showError(error);
+            LiveData.getInstance().clearError();
         });
 
         videoPreview = findViewById(R.id.video_preview);
@@ -615,11 +619,15 @@ public class MainActivity extends AppCompatActivity {
         startForegroundService(intent);
     }
 
-    private void showAuthError() {
-        Log.e(TAG, "Recording service reported an error — likely auth failure during background upload");
-        errorContainer.setVisibility(View.VISIBLE);
-        errorMessageText.setText(R.string.google_drive_failed);
-        stopRecording();
+    /** Shows an error reported by the service. Never stops the recording: losing Drive must not lose evidence. */
+    private void showError(String error) {
+        Log.e(TAG, "Recording service reported an error: " + error);
+        if (LiveData.ERROR_AUTH.equals(error)) {
+            errorContainer.setVisibility(View.VISIBLE);
+            errorMessageText.setText(R.string.google_drive_failed);
+        } else {
+            Toast.makeText(this, R.string.error_recording_failed, Toast.LENGTH_LONG).show();
+        }
     }
 
     @Override
