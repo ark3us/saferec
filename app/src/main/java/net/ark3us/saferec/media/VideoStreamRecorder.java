@@ -524,7 +524,11 @@ public class VideoStreamRecorder {
                 try {
                     MuxerSink localMuxer = muxer;
                     ByteBuffer buffer = codec.getOutputBuffer(index);
-                    if (buffer != null && info.size > 0 && localMuxer != null) {
+                    // SPS/PPS already reach the muxer through the track format. Written as a
+                    // sample, their PTS of 0 became the video time base and pushed all audio
+                    // after the first chunk to negative timestamps, so it was dropped.
+                    boolean isConfig = (info.flags & MediaCodec.BUFFER_FLAG_CODEC_CONFIG) != 0;
+                    if (buffer != null && info.size > 0 && !isConfig && localMuxer != null) {
                         localMuxer.writeVideoData(buffer, info);
                     }
                 } catch (IllegalStateException e) {
