@@ -168,20 +168,17 @@ public class SafeRecService extends Service {
         File baseDir = new File(getFilesDir(), "data_store");
         boolean includeVideo = !Settings.onlyAudio(this);
         String dataType = includeVideo ? MuxerSink.DATA_TYPE_VIDEO : MuxerSink.DATA_TYPE_AUDIO;
-        int chunkSize;
+        long chunkSize = 0;
+        long chunkDurationMs = 0;
 
         int prefChunkSizeMB = Settings.getChunkSizeMB(this);
         if (prefChunkSizeMB > 0) {
-            chunkSize = prefChunkSizeMB * 1024 * 1024;
+            chunkSize = prefChunkSizeMB * 1024L * 1024L;
             Log.i(TAG, "Using manual chunk size: " + prefChunkSizeMB + " MB (" + chunkSize + " bytes)");
-        } else if (includeVideo) {
-            VideoStreamRecorder vr = VideoStreamRecorder.getInstance();
-            vr.syncQuality(this);
-            chunkSize = vr.getQuality().getRecommendedChunkSize();
-            Log.i(TAG, "Using dynamic chunk size for video: " + chunkSize + " bytes");
         } else {
-            chunkSize = MuxerSink.DEFAULT_AUDIO_CHUNK;
-            Log.i(TAG, "Using default audio chunk size: " + chunkSize + " bytes");
+            // Split by time, not bytes: a silent or static scene must not stretch a chunk
+            chunkDurationMs = MuxerSink.DEFAULT_CHUNK_DURATION_MS;
+            Log.i(TAG, "Using chunk duration: " + chunkDurationMs + " ms");
         }
 
         MuxerSink.FileSavedCallback callback = file -> {
@@ -208,7 +205,7 @@ public class SafeRecService extends Service {
             });
         };
 
-        sink = new MuxerSink(baseDir, callback, dataType, sessionId, chunkSize);
+        sink = new MuxerSink(baseDir, callback, dataType, sessionId, chunkSize, chunkDurationMs);
         sink.setSequenceNumber(currentSequenceNumber);
         audioRecorder = new AudioStreamRecorder(this);
         if (includeVideo) {

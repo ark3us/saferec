@@ -50,11 +50,6 @@ public class VideoStreamRecorder {
             this.frameRate = frameRate;
         }
 
-        public int getRecommendedChunkSize() {
-            // Aim for roughly 10 seconds of video per chunk
-            return (bitRate / 8) * 10;
-        }
-
         public static final Quality HIGH = new Quality(1280, 720, 2000000, 30);
         public static final Quality MEDIUM = new Quality(854, 480, 1000000, 30);
         public static final Quality LOW = new Quality(640, 360, 500000, 30);

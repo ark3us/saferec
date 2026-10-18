@@ -3,6 +3,7 @@ package net.ark3us.saferec.media;
 import android.media.MediaCodec;
 import android.media.MediaFormat;
 import android.media.MediaMuxer;
+import android.os.SystemClock;
 import android.util.Log;
 
 import net.ark3us.saferec.net.MediaFile;
@@ -17,7 +18,9 @@ public class MuxerSink {
     private static final String TAG = MuxerSink.class.getSimpleName();
     public static final String DATA_TYPE_VIDEO = "video";
     public static final String DATA_TYPE_AUDIO = "audio";
-    public static final int DEFAULT_AUDIO_CHUNK = 2 * 1024 * 1024; // 2 MB
+    // A chunk is only safe once closed and uploaded: its duration is the most
+    // media that can be lost if the phone is taken or destroyed.
+    public static final long DEFAULT_CHUNK_DURATION_MS = 10_000;
 
     private MediaMuxer muxer;
     private MediaFormat videoFormat;
@@ -34,7 +37,9 @@ public class MuxerSink {
     private final File storeDir;
     private final String dataType;
     private final String sessionId;
-    private final int partSize;
+    private final long partSize; // bytes, 0 = no size limit
+    private final long maxChunkDurationMs; // 0 = no duration limit
+    private long chunkStartMs = 0;
     private File currentFile;
     private int sequenceNumber = 0;
     private boolean isStarted = false;
@@ -72,12 +77,14 @@ public class MuxerSink {
 
     private final List<PendingPacket> pendingPackets = new ArrayList<>();
 
-    public MuxerSink(File storeDir, FileSavedCallback fileSavedCallback, String dataType, String sessionId, int partSize) {
+    public MuxerSink(File storeDir, FileSavedCallback fileSavedCallback, String dataType, String sessionId,
+            long partSize, long maxChunkDurationMs) {
         this.storeDir = storeDir;
         this.fileSavedCallback = fileSavedCallback;
         this.dataType = dataType;
         this.sessionId = sessionId;
         this.partSize = partSize;
+        this.maxChunkDurationMs = maxChunkDurationMs;
         this.expectedAudio = true;
         this.expectedVideo = DATA_TYPE_VIDEO.equals(dataType);
 
@@ -147,17 +154,29 @@ public class MuxerSink {
 
     public synchronized boolean writeVideoData(ByteBuffer buffer, MediaCodec.BufferInfo info) {
         boolean isKeyFrame = (info.flags & MediaCodec.BUFFER_FLAG_KEY_FRAME) != 0;
-        if (bytesWritten >= partSize && isKeyFrame) {
+        if (isKeyFrame && isChunkFull()) {
             rotate();
         }
         return writeData(buffer, info, true);
     }
 
     public synchronized boolean writeAudioData(ByteBuffer buffer, MediaCodec.BufferInfo info) {
-        if (DATA_TYPE_AUDIO.equals(dataType) && bytesWritten >= partSize) {
+        if (DATA_TYPE_AUDIO.equals(dataType) && isChunkFull()) {
             rotate();
         }
         return writeData(buffer, info, false);
+    }
+
+    /** True once the open chunk hits the size limit or the duration limit, whichever comes first. */
+    private boolean isChunkFull() {
+        if (!isStarted) {
+            return false;
+        }
+        if (partSize > 0 && bytesWritten >= partSize) {
+            return true;
+        }
+        return maxChunkDurationMs > 0
+                && SystemClock.elapsedRealtime() - chunkStartMs >= maxChunkDurationMs;
     }
 
     private boolean writeData(ByteBuffer buffer, MediaCodec.BufferInfo info, boolean isVideo) {
@@ -279,6 +298,7 @@ public class MuxerSink {
             return;
         muxer.start();
         isStarted = true;
+        chunkStartMs = SystemClock.elapsedRealtime();
 
         List<PendingPacket> toFlush = new ArrayList<>(pendingPackets);
         pendingPackets.clear();
