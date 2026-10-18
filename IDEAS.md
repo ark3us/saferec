@@ -35,5 +35,8 @@ After closing each chunk, check it with `MediaExtractor`: both tracks have sampl
 ### Device tests as a release gate
 No Play Store bundle unless `scripts/device-tests.sh` passes on at least one real phone.
 
+### Signing check before Drive tests
+When Drive authorization fails with `UNREGISTERED_ON_API_CONSOLE`, have `scripts/device-tests.sh` print the APK's signing SHA-1 and the exact Cloud Console steps to register it. A new dev machine then costs two minutes instead of an investigation.
+
 ### Device health guard in device tests
 Record `MemAvailable` and `SUnreclaim` (kernel unreclaimable memory) before and after each run, and refuse to run on a thrashing device. A custom-ROM kernel leak (5.3 GB of unreclaimable slab) once caused an ANR that looked like an app bug.
