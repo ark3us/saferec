@@ -535,11 +535,13 @@ public class MainActivity extends AppCompatActivity {
         });
     }
 
+    /**
+     * Camera is required even in audio-only mode: the service is declared as
+     * camera|microphone, and on Android 14+ startForeground throws without both.
+     */
     private boolean hasRecordingPermissions() {
-        boolean audio = checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED;
-        boolean camera = Settings.onlyAudio(this)
-                || checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED;
-        return audio && camera;
+        return checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+                && checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED;
     }
 
     /** Runs the command from the tile, notification or auto-start setting, once per launch. */
