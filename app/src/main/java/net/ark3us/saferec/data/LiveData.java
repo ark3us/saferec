@@ -4,6 +4,7 @@ import androidx.lifecycle.MutableLiveData;
 
 public class LiveData {
     public static final String ERROR_AUTH = "AUTH";
+    public static final String ERROR_CAMERA = "CAMERA";
     public static final String ERROR_RECORDING = "RECORDING";
 
     private static LiveData instance;

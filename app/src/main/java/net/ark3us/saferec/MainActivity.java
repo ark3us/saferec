@@ -658,6 +658,8 @@ public class MainActivity extends AppCompatActivity {
         if (LiveData.ERROR_AUTH.equals(error)) {
             errorContainer.setVisibility(View.VISIBLE);
             errorMessageText.setText(R.string.google_drive_failed);
+        } else if (LiveData.ERROR_CAMERA.equals(error)) {
+            Toast.makeText(this, R.string.error_camera_lost, Toast.LENGTH_LONG).show();
         } else {
             Toast.makeText(this, R.string.error_recording_failed, Toast.LENGTH_LONG).show();
         }

@@ -15,6 +15,7 @@
     <string name="close">Close</string>
     <string name="permissions_required">Permissions are required to record video and audio.</string>
     <string name="google_drive_failed">Failed to connect to Google Drive. Recordings are kept on this device and uploaded later.</string>
+    <string name="error_camera_lost">Camera unavailable: recording continues with audio only.</string>
     <string name="error_recording_failed">Recording failed: make sure the camera and microphone are not in use by another app.</string>
     <string name="recording_indicator">● REC</string>
     <string name="back">Back</string>

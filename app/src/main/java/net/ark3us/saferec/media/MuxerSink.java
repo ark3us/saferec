@@ -99,6 +99,16 @@ public class MuxerSink {
             start();
     }
 
+    /** Called when the camera is lost mid-session: the next chunks carry audio only. */
+    public synchronized void setExpectedVideo(boolean expectedVideo) {
+        this.expectedVideo = expectedVideo;
+        if (!expectedVideo) {
+            pendingPackets.removeIf(p -> p.isVideo);
+        }
+        if (tracksReady())
+            start();
+    }
+
     /**
      * Updates the video rotation and forces a chunk rotation so the new file
      * gets the correct orientation hint. No-op if rotation hasn't changed.
@@ -153,6 +163,9 @@ public class MuxerSink {
     // --- Write data ---
 
     public synchronized boolean writeVideoData(ByteBuffer buffer, MediaCodec.BufferInfo info) {
+        if (!expectedVideo) {
+            return true; // camera dropped: late packets have no track to go to
+        }
         boolean isKeyFrame = (info.flags & MediaCodec.BUFFER_FLAG_KEY_FRAME) != 0;
         if (isKeyFrame && isChunkFull()) {
             rotate();
@@ -161,7 +174,8 @@ public class MuxerSink {
     }
 
     public synchronized boolean writeAudioData(ByteBuffer buffer, MediaCodec.BufferInfo info) {
-        if (DATA_TYPE_AUDIO.equals(dataType) && isChunkFull()) {
+        // Without video there are no key frames to split on: audio drives the chunks
+        if (!expectedVideo && isChunkFull()) {
             rotate();
         }
         return writeData(buffer, info, false);
@@ -294,7 +308,7 @@ public class MuxerSink {
     }
 
     private void start() {
-        if (isStarted || !tracksReady())
+        if (isStarted || muxer == null || !tracksReady())
             return;
         muxer.start();
         isStarted = true;

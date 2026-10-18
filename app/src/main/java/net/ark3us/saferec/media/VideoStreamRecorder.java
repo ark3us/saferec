@@ -546,6 +546,10 @@ public class VideoStreamRecorder {
             public void onError(@NonNull MediaCodec codec, @NonNull MediaCodec.CodecException e) {
                 encoderRunning = false;
                 Log.e(TAG, "Encoder error", e);
+                // Report it, otherwise video stops silently while the UI still says recording
+                if (callback != null) {
+                    callback.onStarted(false);
+                }
             }
 
             @Override

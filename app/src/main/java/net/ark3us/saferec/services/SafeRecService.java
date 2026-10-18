@@ -5,7 +5,9 @@ import android.app.NotificationManager;
 import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
+import android.os.Handler;
 import android.os.IBinder;
+import android.os.Looper;
 import android.util.Log;
 
 import androidx.annotation.Nullable;
@@ -57,6 +59,7 @@ public class SafeRecService extends Service {
     private GoogleDriveFileUploader sharedUploader;
     private int currentSequenceNumber = 0;
 
+    private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
     private final ExecutorService postProcessExecutor = Executors.newSingleThreadExecutor();
     // Separate from postProcessExecutor so a slow TSA never delays chunk uploads
@@ -200,15 +203,13 @@ public class SafeRecService extends Service {
         if (includeVideo) {
             videoRecorder = VideoStreamRecorder.getInstance();
             boolean useFront = Settings.getUseFrontCamera(this);
-            videoRecorder.start(this, sink, useFront, null, success -> {
-                if (success) {
-                    Log.i(TAG, "Video recorder started successfully");
-                } else {
-                    Log.e(TAG, "Video recorder failed to start, reporting error");
-                    LiveData.getInstance().reportError(LiveData.ERROR_RECORDING);
-                    stopRecording();
-                }
-            });
+            MuxerSink sessionSink = sink;
+            // Camera callbacks arrive on other threads: handle them on the main thread, like commands
+            boolean started = videoRecorder.start(this, sink, useFront, null,
+                    success -> mainHandler.post(() -> onVideoResult(sessionSink, success)));
+            if (!started) {
+                mainHandler.post(() -> onVideoResult(sessionSink, false));
+            }
         }
         if (audioRecorder.start(sink)) {
             Log.i(TAG, "Audio recorder started successfully");
@@ -225,6 +226,28 @@ public class SafeRecService extends Service {
         }
 
         updateNotification();
+    }
+
+    /** Losing the camera must not lose the evidence: keep recording audio when possible. */
+    private void onVideoResult(MuxerSink sessionSink, boolean success) {
+        if (sink != sessionSink || videoRecorder == null) {
+            return; // stale callback from a previous session, or video failure already handled
+        }
+        if (success) {
+            Log.i(TAG, "Video recorder started successfully");
+            return;
+        }
+        if (audioRecorder != null && audioRecorder.isRecording()) {
+            Log.w(TAG, "Video recorder failed, continuing with audio only");
+            videoRecorder.stopRecording();
+            videoRecorder = null;
+            sink.setExpectedVideo(false);
+            LiveData.getInstance().reportError(LiveData.ERROR_CAMERA);
+        } else {
+            Log.e(TAG, "Video recorder failed and no audio is recording, stopping");
+            LiveData.getInstance().reportError(LiveData.ERROR_RECORDING);
+            stopRecording();
+        }
     }
 
     private void timestampChunk(File chunkFile, byte[] hash) {

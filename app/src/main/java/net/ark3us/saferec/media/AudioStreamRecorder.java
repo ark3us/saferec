@@ -34,6 +34,11 @@ public class AudioStreamRecorder {
         this.context = context;
     }
 
+    /** True while the microphone is actually being captured (the loop exits on read errors). */
+    public boolean isRecording() {
+        return isRecording && processingThread != null && processingThread.isAlive();
+    }
+
     public boolean start(MuxerSink muxer) {
         if (ActivityCompat.checkSelfPermission(this.context,
                 Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
