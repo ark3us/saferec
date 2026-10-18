@@ -12,6 +12,7 @@ import java.util.Collections;
 import com.google.api.client.http.FileContent;
 import com.google.api.client.http.HttpRequest;
 import com.google.api.client.http.HttpRequestInitializer;
+import com.google.api.client.http.HttpResponseException;
 import com.google.api.client.http.javanet.NetHttpTransport;
 import com.google.api.client.json.gson.GsonFactory;
 import com.google.api.client.util.DateTime;
@@ -236,14 +237,25 @@ public class GoogleDriveClient {
                 .executeMediaAndDownloadTo(outputStream);
     }
 
-    public boolean checkAuthentication() {
+    public enum AuthStatus {
+        VALID,
+        /** Drive rejected the token (HTTP 401): a new token is needed. */
+        INVALID,
+        /** Network down or Drive failing: says nothing about the token, keep it. */
+        UNKNOWN
+    }
+
+    public AuthStatus checkAuthentication() {
         try {
             // A simple lightweight call to check if the token is valid
             driveService.files().list().setPageSize(1).setFields("files(id)").execute();
-            return true;
+            return AuthStatus.VALID;
+        } catch (HttpResponseException e) {
+            Log.e(TAG, "Authentication check failed with HTTP " + e.getStatusCode(), e);
+            return e.getStatusCode() == 401 ? AuthStatus.INVALID : AuthStatus.UNKNOWN;
         } catch (Exception e) {
-            Log.e(TAG, "Authentication check failed", e);
-            return false;
+            Log.e(TAG, "Authentication check failed: Drive unreachable", e);
+            return AuthStatus.UNKNOWN;
         }
     }
 

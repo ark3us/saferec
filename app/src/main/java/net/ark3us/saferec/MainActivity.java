@@ -488,15 +488,22 @@ public class MainActivity extends AppCompatActivity {
             if (allGranted && accessToken != null) {
                 backgroundExecutor.execute(() -> {
                     GoogleDriveClient client = new GoogleDriveClient(accessToken);
-                    boolean authValid = client.checkAuthentication();
+                    GoogleDriveClient.AuthStatus authStatus = client.checkAuthentication();
 
                     runOnUiThread(() -> {
-                        if (authValid) {
-                            Log.i(TAG, "All permissions granted and access token verified.");
+                        if (authStatus != GoogleDriveClient.AuthStatus.INVALID) {
+                            Log.i(TAG, "All permissions granted, access token status: " + authStatus);
+                            // UNKNOWN means Drive is unreachable right now: keep the token
+                            // anyway, chunks wait on disk until uploads work again.
                             Settings.setAccessToken(this, accessToken);
-                            errorContainer.setVisibility(View.GONE);
+                            if (authStatus == GoogleDriveClient.AuthStatus.VALID) {
+                                errorContainer.setVisibility(View.GONE);
+                                startSafeRecService(SafeRecService.CMD_UPLOAD_PENDING);
+                            } else {
+                                errorContainer.setVisibility(View.VISIBLE);
+                                errorMessageText.setText(R.string.google_drive_failed);
+                            }
                             tryStartPreview();
-                            startSafeRecService(SafeRecService.CMD_UPLOAD_PENDING);
 
                             String command = getCommand();
                             boolean fromTile = getIntent().getBooleanExtra(SafeRecService.EXTRA_FROM_TILE, false);
@@ -524,7 +531,7 @@ public class MainActivity extends AppCompatActivity {
                                 startSafeRecService(command);
                             }
                         } else {
-                            Log.e(TAG, "Access token verification failed");
+                            Log.e(TAG, "Access token rejected by Drive");
                             Settings.setAccessToken(this, null);
                             errorContainer.setVisibility(View.VISIBLE);
                             errorMessageText.setText(R.string.google_drive_failed);

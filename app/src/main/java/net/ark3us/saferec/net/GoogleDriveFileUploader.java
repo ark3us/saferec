@@ -78,47 +78,55 @@ public class GoogleDriveFileUploader extends FileUploader {
             }
         } else {
             Log.e(TAG, "File upload failed: " + file.getAbsolutePath());
-            if (!driveClient.checkAuthentication()) {
-                Log.e(TAG, "Authentication check failed during upload. Attempting silent token refresh...");
-                try {
-                    AuthorizationRequest req = AuthorizationRequest.builder()
-                            .setRequestedScopes(Collections.singletonList(new Scope(DriveScopes.DRIVE_FILE)))
-                            .build();
+            GoogleDriveClient.AuthStatus authStatus = driveClient.checkAuthentication();
+            if (authStatus == GoogleDriveClient.AuthStatus.INVALID) {
+                Log.e(TAG, "Access token rejected during upload. Attempting silent token refresh...");
+                refreshTokenAndRetry(file, destFile, mediaFile, parentFolderId);
+            } else {
+                // Network down or Drive failing: the token is not the problem,
+                // so keep it and leave the file on disk for a later upload.
+                Log.w(TAG, "Upload failed (auth " + authStatus + "), keeping file: " + file.getName());
+            }
+        }
+    }
 
-                    AuthorizationResult authResult = Tasks.await(
-                            Identity.getAuthorizationClient(context).authorize(req),
-                            30, TimeUnit.SECONDS);
+    private void refreshTokenAndRetry(File file, File destFile, MediaFile mediaFile, @Nullable String parentFolderId) {
+        try {
+            AuthorizationRequest req = AuthorizationRequest.builder()
+                    .setRequestedScopes(Collections.singletonList(new Scope(DriveScopes.DRIVE_FILE)))
+                    .build();
 
-                    if (authResult.hasResolution()) {
-                        Log.e(TAG, "Silent refresh requires user interaction (resolution). Failing.");
-                        Settings.setAccessToken(context, null);
-                        LiveData.getInstance().reportError(LiveData.ERROR_AUTH);
+            AuthorizationResult authResult = Tasks.await(
+                    Identity.getAuthorizationClient(context).authorize(req),
+                    30, TimeUnit.SECONDS);
+
+            if (authResult.hasResolution()) {
+                Log.e(TAG, "Silent refresh requires user interaction (resolution). Failing.");
+                Settings.setAccessToken(context, null);
+                LiveData.getInstance().reportError(LiveData.ERROR_AUTH);
+            } else {
+                String newToken = authResult.getAccessToken();
+                if (newToken != null) {
+                    Log.i(TAG, "Silent refresh succeeded! Updating token and retrying upload.");
+                    Settings.setAccessToken(context, newToken);
+                    driveClient.setAccessToken(newToken);
+                    // Retry upload once
+                    com.google.api.services.drive.model.File retryRes = driveClient.uploadFile(file, destFile, mediaFile.getMimeType(), parentFolderId, mediaFile.timestamp);
+                    if (retryRes != null) {
+                        Log.i(TAG, "Retry successful: " + retryRes.getName());
+                        file.delete();
                     } else {
-                        String newToken = authResult.getAccessToken();
-                        if (newToken != null) {
-                            Log.i(TAG, "Silent refresh succeeded! Updating token and retrying upload.");
-                            Settings.setAccessToken(context, newToken);
-                            driveClient.setAccessToken(newToken);
-                            // Retry upload once
-                            com.google.api.services.drive.model.File retryRes = driveClient.uploadFile(file, destFile, mediaFile.getMimeType(), parentFolderId, mediaFile.timestamp);
-                            if (retryRes != null) {
-                                Log.i(TAG, "Retry successful: " + retryRes.getName());
-                                file.delete();
-                            } else {
-                                Log.e(TAG, "Retry upload failed despite fresh token.");
-                            }
-                        } else {
-                            Log.e(TAG, "Silent refresh returned null token. Failing.");
-                            Settings.setAccessToken(context, null);
-                            LiveData.getInstance().reportError(LiveData.ERROR_AUTH);
-                        }
+                        Log.e(TAG, "Retry upload failed despite fresh token.");
                     }
-                } catch (Exception e) {
-                    Log.e(TAG, "Exception during silent token refresh", e);
+                } else {
+                    Log.e(TAG, "Silent refresh returned null token. Failing.");
                     Settings.setAccessToken(context, null);
                     LiveData.getInstance().reportError(LiveData.ERROR_AUTH);
                 }
             }
+        } catch (Exception e) {
+            // Usually a network failure: the stored token may still be valid, so keep it
+            Log.e(TAG, "Exception during silent token refresh", e);
         }
     }
 }
