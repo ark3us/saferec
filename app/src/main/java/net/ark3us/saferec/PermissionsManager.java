@@ -78,7 +78,8 @@ public class PermissionsManager {
                     } catch (ApiException e) {
                         Log.e(TAG, "Authorization failed", e);
                         if (callback != null) {
-                            callback.onFinish(false, null);
+                            // Keep the real permission result: a Drive failure is not a permission failure
+                            callback.onFinish(allGranted, null);
                         }
                     }
                 });
@@ -112,7 +113,7 @@ public class PermissionsManager {
                 .addOnFailureListener(e -> {
                     Log.e(TAG, "Failed to authorize", e);
                     if (callback != null) {
-                        callback.onFinish(false, null);
+                        callback.onFinish(allGranted, null);
                     }
                 });
     }
