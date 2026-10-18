@@ -52,6 +52,7 @@ import java.util.concurrent.Executors;
 public class MainActivity extends AppCompatActivity {
 
     private static final String TAG = MainActivity.class.getSimpleName();
+    private static final String STATE_LAUNCH_COMMAND_HANDLED = "launch_command_handled";
 
     private TextureView videoPreview;
     private VideoStreamRecorder previewRecorder;
@@ -134,6 +135,11 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        // A recreated activity or a relaunch from Recents carries the old intent:
+        // replaying its command could restart a recording the user already stopped.
+        launchCommandHandled = (savedInstanceState != null
+                && savedInstanceState.getBoolean(STATE_LAUNCH_COMMAND_HANDLED))
+                || (getIntent().getFlags() & Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY) != 0;
         EdgeToEdge.enable(this);
         setContentView(R.layout.activity_main);
         ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.main), (v, insets) -> {
@@ -623,6 +629,12 @@ public class MainActivity extends AppCompatActivity {
     protected void onPause() {
         super.onPause();
         stopPreview(false);
+    }
+
+    @Override
+    protected void onSaveInstanceState(@NonNull Bundle outState) {
+        super.onSaveInstanceState(outState);
+        outState.putBoolean(STATE_LAUNCH_COMMAND_HANDLED, launchCommandHandled);
     }
 
     @Override
