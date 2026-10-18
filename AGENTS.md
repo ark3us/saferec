@@ -431,6 +431,7 @@ Chunks are uploaded immediately on completion and **deleted locally** on success
 - `AudioStreamRecorder.isRecording`: `volatile`, checked in processing loop
 - `GoogleDriveFileUploader.sessionFolderIdCache`: `ConcurrentHashMap`
 - `GoogleDriveFileUploader.cachedBaseFolderId`: `volatile` + double-checked locking
+- `FileUploader.queuedFiles`: concurrent set; a file is queued at most once, so a pending-files scan cannot upload a chunk that is already in flight (that used to create duplicates on Drive)
 
 ---
 
@@ -449,5 +450,8 @@ Chunks are uploaded immediately on completion and **deleted locally** on success
 ## Testing on a Device
 
 `scripts/device-tests.sh` drives a connected phone (debug build, `ANDROID_SERIAL` to pick one) and checks logcat, the chunk store and chunk durations with ffprobe. Scenarios: `offline_start`, `audio_only`, `camera_stolen`, `replay`, `errors_dont_stop`, `network_drop`, `tsa`, plus a whole-run crash check. It toggles airplane mode, records camera and mic, rewrites SafeRec settings, and restores everything on exit. It refuses to run if the chunk store is not empty.
+
+- Checks read the host-side logcat capture (`full.log`), not the device buffer: failed uploads log long stack traces and the device buffer silently drops old lines.
+- Drive scenarios (`errors_dont_stop`, `network_drop`, `tsa`) need a Google consent given once in the app. The OAuth client only accepts builds whose signing SHA-1 is registered in the Cloud Console, so a new dev machine's debug key must be added there first.
 
 Lesson learned: video encoders emit SPS/PPS as a `BUFFER_FLAG_CODEC_CONFIG` buffer with PTS 0. Writing it as a sample made 0 the video time base and silently dropped all audio after the first chunk. Codec config buffers must never reach `MuxerSink`.
