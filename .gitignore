@@ -11,6 +11,7 @@ Thumbs.db
 
 # Repository Specific
 old/
+tmp/
 AGENT.md
 .agent/
 Media/
