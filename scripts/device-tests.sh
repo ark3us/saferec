@@ -144,7 +144,7 @@ write_app_file() { # path, content on stdin
 list_store() { app_sh ls -1 "$STORE" 2>/dev/null | tr -d '\r' | grep -E '\.(mp4|tsa)$' || true; }
 list_work() { app_sh ls -1 "$WORK" 2>/dev/null | tr -d '\r' | grep . || true; }
 # adb shell re-joins its arguments, so the inner command needs its own quotes
-clear_store() { adb shell "run-as $PKG sh -c 'rm -f $STORE/* $WORK/*'" 2>/dev/null || true; }
+clear_store() { adb shell "run-as $PKG sh -c 'rm -f $STORE/* $WORK/* $APP_DIR/files/repair/*'" 2>/dev/null || true; }
 
 launch() { # -f must come before --activity-clear-task, which adds to the flags
     adb shell am start -n "$ACTIVITY" "$@" >/dev/null
