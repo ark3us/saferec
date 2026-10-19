@@ -55,9 +55,6 @@ When Drive authorization fails with `UNREGISTERED_ON_API_CONSOLE`, have `scripts
 ### Device health guard in device tests
 Record `MemAvailable` and `SUnreclaim` (kernel unreclaimable memory) before and after each run, and refuse to run on a thrashing device. A custom-ROM kernel leak (5.3 GB of unreclaimable slab) once caused an ANR that looked like an app bug.
 
-### Automatic A/V sync test
-A debug-only broadcast that turns on the torch (`FLASH_MODE_TORCH` in the running capture request) and plays a beep at the same instant. Even face down on a table, the torch lights up the frame. The test then finds the brightness jump in the video and the beep onset in the audio with ffmpeg, and fails if they are more than ~50 ms apart. Today sync is checked through the clocks, not through the content.
-
 ### Fault injection in debug builds
 A debug-only `HttpRequestInitializer` that, on a switch from `adb shell am broadcast`, delays, fails or drops the response of the next Drive request after it was sent. Lost responses, timeouts and 401/403/404 then become repeatable tests instead of waiting for a bad network.
 
