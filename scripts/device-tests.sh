@@ -445,7 +445,9 @@ scenario_retry_after_outage() {
 
 now_ms() { echo $(($(date +%s%N) / 1000000)); }
 wait_until_ms() { while (($(now_ms) < $1)); do sleep 0.02; done; }
-vibrate() { adb shell cmd vibrator_manager synced -f oneshot 250 255 </dev/null >/dev/null; }
+# Short pulses: with a long one, dim light (long exposures) shows motion mostly when the
+# motor starts and stops, and the two make rival correlation peaks ~0.25 s apart
+vibrate() { adb shell cmd vibrator_manager synced -f oneshot "${VIBRATION_MS:-80}" 255 </dev/null >/dev/null; }
 tap_view() { # view id -> taps its center, 1 if not on screen
     adb shell uiautomator dump /sdcard/ui.xml >/dev/null 2>&1
     local b x1 y1 x2 y2
