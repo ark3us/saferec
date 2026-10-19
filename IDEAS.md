@@ -66,3 +66,6 @@ A debug-only `HttpRequestInitializer` that, on a switch from `adb shell am broad
 
 ### Network sanity check in device tests
 Before running, check that the default network is `VALIDATED` and that no global HTTP proxy is set (`settings get global http_proxy`). A leftover proxy pointing to `127.0.0.1:8080` once cut every app off the internet while `adb shell` (which ignores the proxy) still looked fine.
+
+### Shrink the release build
+Release builds have `isMinifyEnabled = false`. R8 would cut the APK size a lot, but google-api-client, Gson and BouncyCastle use reflection and need `keep` rules. Turn it on together with a release-signed run of the whole device suite, ideally on a spare phone: installing a release build over the debug one means uninstalling it, losing its token and local chunks.
