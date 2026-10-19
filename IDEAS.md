@@ -57,3 +57,6 @@ Record `MemAvailable` and `SUnreclaim` (kernel unreclaimable memory) before and 
 
 ### Fault injection in debug builds
 A debug-only `HttpRequestInitializer` that, on a switch from `adb shell am broadcast`, delays, fails or drops the response of the next Drive request after it was sent. Lost responses, timeouts and 401/403/404 then become repeatable tests instead of waiting for a bad network.
+
+### Network sanity check in device tests
+Before running, check that the default network is `VALIDATED` and that no global HTTP proxy is set (`settings get global http_proxy`). A leftover proxy pointing to `127.0.0.1:8080` once cut every app off the internet while `adb shell` (which ignores the proxy) still looked fine.
