@@ -273,6 +273,7 @@ cut 2 ….2.mp4 12345 sha256=…                        ← recovered as it was 
   - The verifier comes from `scripts/` at build time (`copyVerifier` in `app/build.gradle.kts`, a generated assets directory), so the app never ships a copy that drifted.
   - The report reads timestamp times and imprints with BouncyCastle (`TsaClient.read()`). It flags a timestamp that does not match its file, but the full signature and chain check is the verifier's.
   - Videos are stored in the zip, not deflated again.
+  - A package of a long session weighs gigabytes and Android clears the cache only when space runs out. Each export deletes the packages older than a day (`EvidencePackage.deleteOld()`), not the one just shared: the receiving app may still be reading it.
   - Android collapses runs of spaces in string resources: the README and the report's column header are quoted in `strings.xml` to keep their layout.
   - Verified on the S10+. A session recorded with timestamping on was exported from the list. In the zip, following its README, the verifier said COMPLETE (manifest, 3 chunks, real Sectigo tokens). The merged video played 22 s, and the report was aligned.
 - **Lessons from the test.** Drive's search (`files.list` with `trashed=false`) still returned a just-trashed file for a few seconds. And a JSON body passed through `adb shell` lost its double quotes: Drive ignored the body and answered with the file, which looked like a success.

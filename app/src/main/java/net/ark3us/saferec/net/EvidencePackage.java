@@ -69,6 +69,24 @@ public final class EvidencePackage {
         return "SafeRec-" + sessionId;
     }
 
+    /**
+     * Deletes packages older than maxAgeMs in dir. A package of a long session weighs gigabytes,
+     * and Android clears the cache only when space runs out. Not right after sharing: the
+     * receiving app may still be reading it. Returns how many were deleted.
+     */
+    public static int deleteOld(File dir, long maxAgeMs, long nowMs) {
+        File[] packages = dir.listFiles(f -> f.getName().startsWith("SafeRec-") && f.getName().endsWith(".zip"));
+        int deleted = 0;
+        if (packages != null) {
+            for (File old : packages) {
+                if (nowMs - old.lastModified() > maxAgeMs && old.delete()) {
+                    deleted++;
+                }
+            }
+        }
+        return deleted;
+    }
+
     public static void write(File zip, String sessionId, String dataType, String readme, String report,
             File merged, List<Item> evidence, byte[] verifier) throws IOException {
         String root = rootName(sessionId) + "/";

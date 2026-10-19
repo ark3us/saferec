@@ -445,6 +445,7 @@ public class RecordingsActivity extends AppCompatActivity {
                         try (java.io.InputStream in = getAssets().open("verify_session.py")) {
                             verifier = readAllBytes(in);
                         }
+                        EvidencePackage.deleteOld(shareDir, 24 * 60 * 60 * 1000L, System.currentTimeMillis());
                         File zip = new File(shareDir, EvidencePackage.rootName(sessionId) + ".zip");
                         EvidencePackage.write(zip, sessionId, dataType,
                                 getString(R.string.evidence_readme, formatTime(Long.parseLong(sessionId)), sessionId),

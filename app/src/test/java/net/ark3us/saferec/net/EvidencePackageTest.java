@@ -118,4 +118,16 @@ public class EvidencePackageTest {
         assertTrue(report, report.contains("   1  1792429758115.1.mp4        465349  bbe152  no timestamp  (repaired)\n"));
         assertTrue(report, report.endsWith("footer\n"));
     }
+
+    @Test
+    public void packagesOlderThanADayAreDeleted() throws Exception {
+        long now = System.currentTimeMillis();
+        File old = tmp.newFile("SafeRec-1.zip");
+        File recent = tmp.newFile("SafeRec-2.zip");
+        File other = tmp.newFile("merged_3.mp4");
+        assertTrue(old.setLastModified(now - 25 * 3600_000L));
+        assertTrue(other.setLastModified(now - 25 * 3600_000L));
+        assertEquals(1, EvidencePackage.deleteOld(tmp.getRoot(), 24 * 3600_000L, now));
+        assertTrue(!old.exists() && recent.exists() && other.exists()); // only old packages
+    }
 }
