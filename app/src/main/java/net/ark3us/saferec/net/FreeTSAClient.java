@@ -88,36 +88,45 @@ public class FreeTSAClient {
                 return false;
             }
 
-            // 3. Read response and save
-            try (InputStream is = connection.getInputStream();
-                 FileOutputStream fos = new FileOutputStream(outputFile)) {
-
+            // 3. Read response
+            byte[] responseBytes;
+            try (InputStream is = connection.getInputStream()) {
                 ByteArrayOutputStream baos = new ByteArrayOutputStream();
                 byte[] buffer = new byte[8192];
                 int read;
                 while ((read = is.read(buffer)) != -1) {
                     baos.write(buffer, 0, read);
-                    fos.write(buffer, 0, read);
                 }
+                responseBytes = baos.toByteArray();
+            }
+            Log.i(TAG, "TSA responded with " + responseBytes.length + " bytes");
 
-                byte[] responseBytes = baos.toByteArray();
-                Log.i(TAG, "TSA responded with " + responseBytes.length + " bytes");
+            if (responseBytes.length == 0) {
+                Log.e(TAG, "TSA response is empty");
+                showToast(context, context.getString(R.string.tsa_empty_response));
+                return false;
+            }
 
-                if (responseBytes.length == 0) {
-                    Log.e(TAG, "TSA response is empty");
-                    showToast(context, context.getString(R.string.tsa_empty_response));
-                    return false;
-                }
+            // 4. Validate response
+            try {
+                TimeStampResponse tsResponse = new TimeStampResponse(responseBytes);
+                tsResponse.validate(request);
+            } catch (Exception e) {
+                Log.e(TAG, "Failed to parse/validate TSA response: " + e.getMessage(), e);
+                showToast(context, context.getString(R.string.tsa_validation_failed));
+                return false;
+            }
 
-                // Validate response
-                try {
-                    TimeStampResponse tsResponse = new TimeStampResponse(responseBytes);
-                    tsResponse.validate(request);
-                } catch (Exception e) {
-                    Log.e(TAG, "Failed to parse/validate TSA response: " + e.getMessage(), e);
-                    showToast(context, context.getString(R.string.tsa_validation_failed));
-                    return false;
-                }
+            // 5. Save only a valid reply, atomically: outputFile lands in the upload outbox,
+            // which is scanned at any time and must never hold a partial or invalid file
+            File tmp = new File(context.getCacheDir(), outputFile.getName() + ".tmp");
+            try (FileOutputStream fos = new FileOutputStream(tmp)) {
+                fos.write(responseBytes);
+            }
+            if (!tmp.renameTo(outputFile)) {
+                Log.e(TAG, "Failed to move timestamp to " + outputFile.getAbsolutePath());
+                tmp.delete();
+                return false;
             }
 
             Log.i(TAG, "Successfully timestamped: " + outputFile.getName());
