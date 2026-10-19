@@ -71,6 +71,12 @@ public class RecordingsActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         EdgeToEdge.enable(this);
         setContentView(R.layout.activity_recordings);
+        // Day-old shares, and what an export or a merge cut short left behind
+        backgroundExecutor.execute(() -> {
+            for (String dir : new String[]{"merged_sharing", "merging"}) {
+                EvidencePackage.deleteOld(new File(getCacheDir(), dir), 24 * 60 * 60 * 1000L, System.currentTimeMillis());
+            }
+        });
         ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.recordings_root), (v, insets) -> {
             Insets systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars());
             v.setPadding(systemBars.left, systemBars.top, systemBars.right, systemBars.bottom);
@@ -453,7 +459,6 @@ public class RecordingsActivity extends AppCompatActivity {
                         try (java.io.InputStream in = getAssets().open("verify_session.py")) {
                             verifier = readAllBytes(in);
                         }
-                        EvidencePackage.deleteOld(shareDir, 24 * 60 * 60 * 1000L, System.currentTimeMillis());
                         File zip = new File(shareDir, EvidencePackage.rootName(sessionId) + ".zip");
                         EvidencePackage.write(zip, sessionId, dataType,
                                 getString(R.string.evidence_readme, formatTime(Long.parseLong(sessionId)), sessionId),

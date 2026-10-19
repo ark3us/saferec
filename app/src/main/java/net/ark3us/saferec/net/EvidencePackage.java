@@ -70,15 +70,17 @@ public final class EvidencePackage {
     }
 
     /**
-     * Deletes packages older than maxAgeMs in dir. A package of a long session weighs gigabytes,
-     * and Android clears the cache only when space runs out. Not right after sharing: the
-     * receiving app may still be reading it. Returns how many were deleted.
+     * Deletes the files older than maxAgeMs in dir: packages and merged videos already shared,
+     * and the downloads and merges of an export or a merge cut short (a process that dies skips
+     * its clean-up). A package of a long session weighs gigabytes, and Android clears the cache
+     * only when space runs out. Not right after sharing: the receiving app may still be reading
+     * it. Returns how many were deleted.
      */
     public static int deleteOld(File dir, long maxAgeMs, long nowMs) {
-        File[] packages = dir.listFiles(f -> f.getName().startsWith("SafeRec-") && f.getName().endsWith(".zip"));
+        File[] files = dir.listFiles(File::isFile);
         int deleted = 0;
-        if (packages != null) {
-            for (File old : packages) {
+        if (files != null) {
+            for (File old : files) {
                 if (nowMs - old.lastModified() > maxAgeMs && old.delete()) {
                     deleted++;
                 }

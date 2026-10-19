@@ -120,14 +120,16 @@ public class EvidencePackageTest {
     }
 
     @Test
-    public void packagesOlderThanADayAreDeleted() throws Exception {
+    public void filesOlderThanADayAreDeleted() throws Exception {
         long now = System.currentTimeMillis();
-        File old = tmp.newFile("SafeRec-1.zip");
-        File recent = tmp.newFile("SafeRec-2.zip");
-        File other = tmp.newFile("merged_3.mp4");
-        assertTrue(old.setLastModified(now - 25 * 3600_000L));
-        assertTrue(other.setLastModified(now - 25 * 3600_000L));
-        assertEquals(1, EvidencePackage.deleteOld(tmp.getRoot(), 24 * 3600_000L, now));
-        assertTrue(!old.exists() && recent.exists() && other.exists()); // only old packages
+        File oldPackage = tmp.newFile("SafeRec-1.zip");
+        File leftover = tmp.newFile("1774041741690_audio_1774041742038.0.mp4"); // an export cut short
+        File recent = tmp.newFile("SafeRec-2.zip"); // just shared: maybe still being read
+        File folder = tmp.newFolder("sub");
+        assertTrue(oldPackage.setLastModified(now - 25 * 3600_000L));
+        assertTrue(leftover.setLastModified(now - 25 * 3600_000L));
+        assertTrue(folder.setLastModified(now - 25 * 3600_000L));
+        assertEquals(2, EvidencePackage.deleteOld(tmp.getRoot(), 24 * 3600_000L, now));
+        assertTrue(!oldPackage.exists() && !leftover.exists() && recent.exists() && folder.exists());
     }
 }
