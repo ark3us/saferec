@@ -317,6 +317,8 @@ scenario_errors_dont_stop() {
     write_prefs false false
     clear_store
     go_online || { record errors_dont_stop FAIL "could not go online"; return; }
+    local token_before token_after pending
+    token_before=$(token_fingerprint)
     start_recording || { record errors_dont_stop FAIL "recording did not start"; return; }
     sleep 40
     local premature auth_errors uploads saved dups ok=1
@@ -327,9 +329,14 @@ scenario_errors_dont_stop() {
     sleep 8 # the relaunch after STOP scans pending files: duplicates would show up now
     saved=$(saved_chunks)
     dups=$(duplicate_uploads)
+    pending=$(list_store | grep -c '\.mp4$')
+    token_after=$(token_fingerprint)
     logs >"$OUT/errors_dont_stop.log"
     note "auth errors $auth_errors, successful uploads $uploads, saved chunks $saved, premature stops $premature, duplicates $dups"
+    note "chunks kept on the phone $pending, token before/after: $token_before / $token_after"
     ((premature == 0 && saved >= 4 && (auth_errors + uploads) >= 1 && dups == 0)) || ok=0
+    # The background reports auth errors but never clears the token (a refresh may replace it)
+    [[ $token_before == none || $token_after != none ]] || ok=0
     if ((ok)); then
         if ((uploads > 0)); then
             record errors_dont_stop PASS "uploads worked ($uploads), recording ran the full 40 s"
@@ -337,7 +344,7 @@ scenario_errors_dont_stop() {
             record errors_dont_stop PASS "$auth_errors auth errors reported, recording ran the full 40 s"
         fi
     else
-        record errors_dont_stop FAIL "premature=$premature saved=$saved auth_errors=$auth_errors uploads=$uploads dups=$dups"
+        record errors_dont_stop FAIL "premature=$premature saved=$saved auth_errors=$auth_errors uploads=$uploads dups=$dups token $token_before→$token_after"
     fi
 }
 
