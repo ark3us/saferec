@@ -24,8 +24,9 @@ import java.net.URL;
 import java.security.MessageDigest;
 import java.util.Locale;
 
-public class FreeTSAClient {
-    private static final String TAG = FreeTSAClient.class.getSimpleName();
+/** RFC 3161 timestamps from a Time Stamping Authority (Sectigo; the old name said FreeTSA). */
+public class TsaClient {
+    private static final String TAG = TsaClient.class.getSimpleName();
     private static final String TSA_URL = "https://timestamp.sectigo.com";
     // SHA-256 OID: 2.16.840.1.101.3.4.2.1
     private static final String SHA256_OID = "2.16.840.1.101.3.4.2.1";

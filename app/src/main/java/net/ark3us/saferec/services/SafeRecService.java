@@ -24,7 +24,7 @@ import net.ark3us.saferec.media.MuxerSink;
 import net.ark3us.saferec.media.VideoStreamRecorder;
 import net.ark3us.saferec.misc.Settings;
 import net.ark3us.saferec.net.FileDownloader;
-import net.ark3us.saferec.net.FreeTSAClient;
+import net.ark3us.saferec.net.TsaClient;
 import net.ark3us.saferec.net.GoogleDriveFileDownloader;
 import net.ark3us.saferec.net.GoogleDriveFileUploader;
 
@@ -314,7 +314,7 @@ public class SafeRecService extends Service {
             postProcessExecutor.execute(() -> {
                 Log.i(TAG, "Processing saved chunk: " + file.getName());
                 // Hash before uploading: the uploader deletes the local file once it is on Drive
-                byte[] hash = Settings.isTimestampingEnabled(this) ? FreeTSAClient.sha256(file) : null;
+                byte[] hash = Settings.isTimestampingEnabled(this) ? TsaClient.sha256(file) : null;
                 // The chunk is the evidence: it never waits for the TSA, the timestamp can come later
                 uploader.upload(file);
                 if (hash != null) {
@@ -387,7 +387,7 @@ public class SafeRecService extends Service {
             String path = chunkFile.getAbsolutePath();
             int dotIndex = path.lastIndexOf('.');
             File tsaFile = new File((dotIndex > 0 ? path.substring(0, dotIndex) : path) + ".tsa");
-            if (FreeTSAClient.timestampHash(this, hash, tsaFile)) {
+            if (TsaClient.timestampHash(this, hash, tsaFile)) {
                 uploader.upload(tsaFile);
             }
         } finally {
