@@ -399,7 +399,7 @@ scenario_retry_after_outage() {
     local premature unknown network_retry
     premature=$(premature_stops)
     unknown=$(count_log "keeping file")
-    network_retry=$(count_log "Network available, retrying pending uploads")
+    network_retry=$(count_log "retrying pending uploads")
     stop_recording
     sleep 8
     local saved uploaded dups ok=1
@@ -410,11 +410,11 @@ scenario_retry_after_outage() {
     note "outbox while recording: $pending chunk(s) left ${drained}s after the network came back"
     note "failed while offline $unknown, network-triggered retries $network_retry"
     note "saved $saved, uploaded $uploaded, duplicates $dups, premature stops $premature"
-    ((premature == 0 && unknown >= 1 && pending == 0 && uploaded >= saved && dups == 0)) || ok=0
+    ((premature == 0 && unknown >= 1 && network_retry >= 1 && pending == 0 && uploaded >= saved && dups == 0)) || ok=0
     if ((ok)); then
         record retry_after_outage PASS "outbox drained ${drained}s after the network returned, during recording; $uploaded/$saved uploaded"
     else
-        record retry_after_outage FAIL "pending=$pending after ${drained}s, unknown=$unknown uploaded=$uploaded saved=$saved dups=$dups premature=$premature"
+        record retry_after_outage FAIL "pending=$pending after ${drained}s, unknown=$unknown network_retry=$network_retry uploaded=$uploaded saved=$saved dups=$dups premature=$premature"
     fi
 }
 
