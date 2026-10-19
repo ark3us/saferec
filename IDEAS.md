@@ -4,6 +4,9 @@ Ideas not yet planned. Each one says what it is, why it matters for evidence saf
 
 ## Safety and alerts
 
+### A vibration language, to know without looking
+In a pocket, or with eyes on the danger, the screen tells nothing. Short vibration patterns could: two short pulses when the recording starts, one long one when it stops, a tick each time a chunk is safe on Drive, and three when something stops working (camera lost, Drive unreachable). The owner learns four patterns once, in the emergency drill, and knows the evidence is being saved with the phone hidden. A setting turns them off for when even a buzz could be heard.
+
 ### Trusted contacts auto-share
 At session start, share the session folder with 1–3 preset emails (Drive permission `type=user`, `role=reader`). Google emails them a link, so the share doubles as a free alert, and they keep access even if the owner's account is wiped. Safer than the current "anyone with the link" share of the whole root folder.
 
