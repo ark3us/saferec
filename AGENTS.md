@@ -34,7 +34,8 @@ graph TD
 
     subgraph Net["Network Layer"]
         FU["FileUploader (outbox, retry, dedupe)"]
-        GDFU["GoogleDriveFileUploader"]
+        GDFU["GoogleDriveFileUploader (one per process)"]
+        OW["OutboxWorker (WorkManager job)"]
         GDC["GoogleDriveClient"]
         DR["DriveRecordings"]
         MF["MediaFile"]
@@ -58,6 +59,8 @@ graph TD
     SRS -- "hash, timestamp" --> TSA
     SRS -- "upload chunks and .tsa" --> GDFU
     FU -- "Drive specifics" --> GDFU
+    GDFU -- "schedules when a file waits" --> OW
+    OW -- "drain() when the service is gone" --> GDFU
     GDFU --> GDC
     MA -- "observes status and errors" --> SS
     SRS -- "updates status, reports errors" --> SS
@@ -81,6 +84,7 @@ The app exists to save evidence when things go wrong. Keep these invariants:
 5. **Degrade gracefully.** Camera lost → continue audio-only.
 6. **The outbox holds complete chunks only.** A chunk is written in `recording/` and moved to `data_store/` when closed, so the outbox can be uploaded at any time, even mid-recording.
 7. **A failed lookup is not "not found".** Drive folders are created only when Drive answered that they do not exist, and only under the uploader's lock. Treating a timeout as "not found" created duplicate `SafeRec` folders and split sessions between them.
+8. **The outbox outlives the service.** Every file waiting in the outbox has a WorkManager job behind it, so a chunk recorded offline reaches Drive after a kill or a reboot without the user opening the app.
 
 ---
 
@@ -110,8 +114,9 @@ net.ark3us.saferec/
 │   └── Settings.java          # SharedPreferences wrapper
 │
 ├── net/
-│   ├── FileUploader.java         # Outbox queue, retry backoff, dedupe (abstract: tested with a fake)
-│   ├── GoogleDriveFileUploader.java  # Drive upload, folder cache, token refresh
+│   ├── FileUploader.java         # Outbox queue, retry backoff, dedupe, drain (abstract: tested with a fake)
+│   ├── GoogleDriveFileUploader.java  # Drive upload, folder cache, token refresh (one per process)
+│   ├── OutboxWorker.java         # WorkManager job: uploads the outbox when the service is gone
 │   ├── GoogleDriveClient.java    # Low-level Drive API wrapper
 │   ├── DriveRecordings.java      # Recordings on Drive: list, download, share, trash
 │   ├── MediaFile.java            # Chunk filename parser/generator
@@ -220,10 +225,25 @@ Token refreshes are shared: one at a time (`refreshLock`), at most one Play serv
 
 - `MuxerSink.closeFile()` renames a finished chunk into the outbox (same filesystem, atomic) and deletes empty ones.
 - `SafeRecService.onCreate()` moves orphans left in `recording/` by a crash or kill into the outbox. Such a chunk has no MP4 index and may not play, but it is kept as evidence.
-- The service owns one `GoogleDriveFileUploader` (`ensureUploader()`), shared by the recording and `CMD_UPLOAD_PENDING`, so the `queuedFiles` dedupe covers both.
-- When an upload fails, its file stays in the outbox, and `FileUploader` schedules one outbox rescan: 10 s, doubling up to 5 min.
+- There is one `GoogleDriveFileUploader` per process (`getInstance()`), shared by the recording, `CMD_UPLOAD_PENDING` and the outbox job. The `queuedFiles` dedupe, the folder lock and the token refresh therefore cover all of them: two uploaders would each create the same Drive folders, or upload the same chunk twice.
+- Each upload uses the token the app stored last, unless Drive already rejected it. The uploader lives as long as the process, across services, and the user may have reconnected Drive meanwhile.
+
+Who retries depends on whether the service is alive:
+
+| Service | Retries | Survives |
+|---------|---------|----------|
+| Alive (recording, or `dataSync` with files waiting) | `FileUploader` retry loop (`setRetryLoop(true)` in `onCreate`) plus the network callback | Nothing: it ends with the service |
+| Gone (killed, `onTimeout()`, phone rebooted) | The WorkManager job `outbox` (`OutboxWorker`) | Process death and reboot |
+
+- When an upload fails while the service lives, its file stays in the outbox, and `FileUploader` schedules one outbox rescan: 10 s, doubling up to 5 min. `onDestroy()` turns the loop off: rescans in a process without a service are not run reliably.
 - A successful upload rescans the outbox immediately and resets the backoff. So does the network coming back: the default network changing, gaining a transport, or turning `VALIDATED`. A new Wi-Fi network shows up before its DNS works, so the first retry fails and the `VALIDATED` one goes through (outbox drained in 6 s instead of 23 s).
 - A VPN stays the default network and stays `VALIDATED` while the phone has no network under it, so `onAvailable` never fires. Its transports do change, from `WIFI|VPN` to `VPN` and back (measured on a Galaxy S10+), and that change is the trigger.
+
+**The outbox job** (`OutboxWorker`):
+- Scheduled with `ExistingWorkPolicy.KEEP` whenever a file is queued or its upload fails (`onFilePending()`), and when the service starts with files waiting. While a job waits or runs, scheduling again does nothing, so calling it per chunk is cheap.
+- It needs a network (`NetworkType.CONNECTED`) and runs 5 min after it was scheduled: while the service lives, the service does the work. A failed run comes back after 5 min, doubling up to WorkManager's 5 h cap.
+- It calls `drain()`, which uploads the outbox and blocks until it is empty (success), an upload failed or the job is stopped (retry later). Uploads already running for the recording are waited for, not started twice. Chunks recorded meanwhile are uploaded in the same run: success means an empty outbox.
+- Before this job, chunks left offline waited for the user to open the app again whenever the service was gone. That happened after a reboot, after the process was killed (a sticky restart only lasts until Android stops background services), or after the Android 15 `dataSync` cap.
 
 ### 3. Stop Recording
 
@@ -410,7 +430,7 @@ Camera/encoder callbacks are posted to the main thread (`onVideoResult`) and ign
 - Only `CMD_START` is sent with `startForegroundService()`, and the service enters the foreground before anything else. Other commands use `startService()`: with `startForegroundService()` the service would have to enter the foreground even with nothing to do, or crash.
 - Work counters (`activeTimestamping`, `activeDeletions`) go up when the work is submitted, not when its task starts. Otherwise the service could stop in between and drop the work.
 - Sticky restart after the process was killed: Android forbids entering the foreground from the background, so the service never tries. It resumes the outbox as a plain background service for as long as Android lets it run. Verified on a Galaxy S10+: the waiting chunk was uploaded after the kill, with no crash.
-- Android 15+ caps `dataSync` at 6 h a day: `onTimeout()` stops the service, and the outbox waits on disk for the next launch or recording.
+- Android 15+ caps `dataSync` at 6 h a day: `onTimeout()` stops the service, and the outbox job takes over.
 
 ### [Settings](app/src/main/java/net/ark3us/saferec/misc/Settings.java) — [Settings.java](app/src/main/java/net/ark3us/saferec/misc/Settings.java)
 
@@ -470,6 +490,7 @@ Chunks are uploaded immediately on completion and **deleted locally** on success
 | **Audio processing** (Thread) | `AudioStreamRecorder.processAudio()` loop |
 | **Upload pool** (4 threads) | `FileUploader.uploadExecutor` |
 | **Upload scan** (1 thread) | `FileUploader.scanExecutor`: outbox scans and the scheduled retry rescan |
+| **WorkManager** (its own pool) | `OutboxWorker.doWork()`: blocks in `drain()` while the upload pool does the uploads |
 | **Network callback** (system thread) | `SafeRecService.networkCallback`: `retryNow()` when the default network changes, gains a transport or turns `VALIDATED` |
 | **Service executor** (1 thread) | `SafeRecService.executor` for pending uploads |
 
@@ -483,6 +504,8 @@ Chunks are uploaded immediately on completion and **deleted locally** on success
 - `GoogleDriveFileUploader.cachedBaseFolderId`: `volatile` + double-checked locking
 - `GoogleDriveFileUploader.refreshLock`: one token refresh at a time. `GoogleDriveClient.accessToken`/`driveService` are `volatile`, because a refresh replaces them while uploads run
 - `FileUploader.queuedFiles`: concurrent set; a file is queued at most once, so a pending-files scan cannot upload a chunk that is already in flight (that used to create duplicates on Drive)
+- `GoogleDriveFileUploader.getInstance()`: `static synchronized`, one uploader per process, so the dedupe and the folder lock above also hold between the service and the outbox job
+- `FileUploader.listener` and `.retryLoop`: `volatile`, set by the service on the main thread and read by the upload threads
 
 ---
 
@@ -504,6 +527,7 @@ Chunks are uploaded immediately on completion and **deleted locally** on success
 
 8. **drive.file reaches only the app's own files.** If the `SafeRec` folder holds a file the app did not create (an older build with another OAuth client, or a file added by hand), Drive refuses any change to the folder's sharing with `appNotAuthorizedToChild`. That covers sharing it from the app and removing a public link that older builds created. Both must then be done in the Google Drive app.
 9. **Sharing is per person.** The share button grants one Google account read access to the whole `SafeRec` folder, future sessions included, and Google emails that person. The app never creates "anyone with the link" access, and it cannot revoke a share: that is done in Drive.
+10. **Android decides when the outbox job runs.** In Doze it waits for a maintenance window, and an app the user rarely opens gets fewer runs (App Standby buckets). After repeated failed runs it waits up to 5 h. A force stop cancels it until the next launch, and after a reboot nothing runs before the first unlock, because the outbox is in credential-encrypted storage. While the service lives, none of this applies.
 
 ---
 
@@ -514,16 +538,23 @@ Unit tests (JVM, no phone, under a second): `./gradlew testDebugUnitTest`.
 - `ChunkPolicyTest`: 10 s auto chunks whatever the size, manual size only.
 - `MediaFileTest`: chunk and `.tsa` names, Drive names, foreign names rejected.
 - `TsaClientTest`: SHA-256 against the FIPS test vector.
-- `FileUploaderTest`: the outbox logic with a fake uploader and millisecond backoff. It covers queuing once while uploading, retry from the outbox, a success releasing waiting files at once, and `retryNow()`. Breaking the dedupe or the success trigger fails exactly the matching test (checked by mutation).
+- `FileUploaderTest`: the outbox logic with a fake uploader and millisecond backoff. It covers:
+  - queuing once while uploading;
+  - retry from the outbox, and no retry with the loop off;
+  - a success releasing waiting files at once, and `retryNow()`;
+  - `drain()`: empty outbox, a failure, waiting for an upload already running, chunks recorded meanwhile, stopping.
+
+  Breaking the dedupe, the success trigger, the loop switch or any `drain()` rule fails the matching test (checked by mutation).
 
 
-`scripts/device-tests.sh` drives a connected phone (debug build, `ANDROID_SERIAL` to pick one) and checks logcat, the chunk store and chunk durations with ffprobe. Scenarios: `offline_start`, `audio_only`, `camera_stolen`, `replay`, `errors_dont_stop`, `network_drop`, `retry_after_outage`, `tsa`, `av_sync`, plus a whole-run crash check. It toggles airplane mode, records camera and mic, rewrites SafeRec settings, and restores everything on exit. It refuses to run if the outbox or `recording/` is not empty.
+`scripts/device-tests.sh` drives a connected phone (debug build, `ANDROID_SERIAL` to pick one) and checks logcat, the chunk store and chunk durations with ffprobe. Scenarios: `offline_start`, `audio_only`, `camera_stolen`, `replay`, `errors_dont_stop`, `network_drop`, `retry_after_outage`, `outbox_job`, `tsa`, `av_sync`, plus a whole-run crash check. It toggles airplane mode, records camera and mic, rewrites SafeRec settings, and restores everything on exit. It refuses to run if the outbox or `recording/` is not empty.
 
 - `av_sync` checks sync on the content.
   - It switches camera at 3 s (a cold camera start), then vibrates the phone with 80 ms pulses at seeded irregular times. Long pulses (250 ms) failed in dim light: long exposures show motion mostly when the motor starts and stops, and the two make rival correlation peaks ~0.25 s apart. The motor is one physical event seen by both tracks: the buzz reaches the microphone and the shake moves the image.
   - `scripts/av_lag.py` cross-correlates the buzz envelope with the motion on textured pixels, per chunk.
   - It records 50 s and measures every chunk after the switch with a clear correlation peak. It passes when the median lag is within ±250 ms and at most one chunk is more than 40 ms from it. One chunk can lock onto a stray movement or noise, which once failed a run that two reruns passed. It skips when the camera used after the switch sees too dark a scene (the phone must lie so that camera sees a lit room).
   - Its own FAIL on the pre-fix build (+540..570 ms) confirmed it catches the bug.
+- `outbox_job` records offline and then ends the service the way Android does. It shortens the `dataSync` time limit to 20 s (`device_config put activity_manager data_sync_fgs_timeout_duration`, removed afterwards), so `onTimeout()` stops the service. Then `am kill` removes the cached process. Back online, it waits for the job's own run (~5 min, nothing forced) and checks that the job uploaded every chunk from a new process with no service. `run-as kill` cannot do this: SELinux forbids it, and `am force-stop` would cancel the job too.
 - Media scenarios also check that no frame is dropped at a chunk boundary (`Skipping … frame`), and that the first video frame is 0-1000 ms old on the shared clock (proof that both tracks use one clock).
 - Checks read the host-side logcat capture (`full.log`), not the device buffer: failed uploads log long stack traces and the device buffer silently drops old lines.
 - Drive scenarios (`errors_dont_stop`, `network_drop`, `retry_after_outage`, `tsa`) need a Google consent given once in the app. The OAuth client only accepts builds whose signing SHA-1 is registered in the Cloud Console, so a new dev machine's debug key must be added there first.

@@ -29,9 +29,6 @@ A short guide plus script (`openssl ts -verify -data chunk.mp4 -in chunk.tsa -CA
 
 ## Upload reliability
 
-### Outbox drained by WorkManager
-When the app is not recording, chunks still waiting for the network are uploaded only while the service lives: in the foreground (capped at 6 h a day on Android 15+), or after a sticky restart until Android stops the background service. A unique, persisted `WorkManager` job with a network constraint, enqueued when the service stops with a non-empty outbox, would upload them days later and after a reboot, with no notification. The job and the service must share the uploader's in-flight set, or a chunk could be uploaded twice.
-
 ### Say when Drive is full
 Drive answers HTTP 403 `storageQuotaExceeded` when the account is full. Today that is retried forever, silently. Report it as its own error ("Drive is full: recordings stay on the phone") so the user can free space before an emergency, not after.
 
@@ -72,3 +69,6 @@ Release builds have `isMinifyEnabled = false`. R8 would cut the APK size a lot, 
 
 ### Unit tests on every push
 The repository is public and now has JVM unit tests that need no phone. A small GitHub Actions workflow running `./gradlew testDebugUnitTest lintDebug` on each push would catch a broken build or a failing outbox test before it reaches `main`, now that changes are merged without a pull request. Secrets are not needed: the tests never touch Drive.
+
+### Close the chunk before the phone dies
+A phone running out of battery, or switched off by someone else, cuts the open chunk: it has no MP4 index and needs repair tools to play. While recording, the service could listen for `ACTION_BATTERY_LOW` and `ACTION_SHUTDOWN` (registered at runtime, which still works on recent Android). On those it would close the chunk at once and switch to shorter chunks, so the last seconds land in the outbox complete and playable. The outbox job then uploads them after the next boot.
