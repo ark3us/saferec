@@ -148,20 +148,6 @@ public class GoogleDriveFileDownloader extends FileDownloader {
         return allResults;
     }
 
-    @Override
-    public void deleteFiles(List<RecordingItem> items, Callback<Void> callback) {
-        List<String> fileIds = new ArrayList<>();
-        Set<String> folderIds = new HashSet<>();
-        for (RecordingItem item : items) {
-            fileIds.add(item.driveFile.getId());
-            List<String> parents = item.driveFile.getParents();
-            if (parents != null && !parents.isEmpty()) {
-                folderIds.addAll(parents);
-            }
-        }
-        deleteFilesById(fileIds, folderIds, callback);
-    }
-
     /**
      * Never deletes for good: whoever forces the phone open (or a slip of the finger) could
      * otherwise destroy the evidence. Drive keeps trashed files for 30 days.

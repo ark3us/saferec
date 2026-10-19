@@ -81,10 +81,6 @@ public class MainActivity extends AppCompatActivity {
         return SafeRecService.STATUS_STOPPED.equals(status);
     }
 
-    private static boolean isReady(@Nullable String status) {
-        return SafeRecService.STATUS_READY.equals(status);
-    }
-
     private @Nullable String getCommand() {
         return getIntent() != null ? getIntent().getStringExtra(SafeRecService.EXTRA_COMMAND) : null;
     }

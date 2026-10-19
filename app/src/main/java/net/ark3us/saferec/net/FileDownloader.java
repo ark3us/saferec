@@ -17,8 +17,6 @@ public abstract class FileDownloader {
 
     public abstract void listRecordings(Callback<List<RecordingItem>> callback);
 
-    public abstract void deleteFiles(List<RecordingItem> items, Callback<Void> callback);
-
     public abstract void shareFiles(List<RecordingItem> items, Callback<List<Uri>> callback);
 
     public abstract void downloadFiles(List<RecordingItem> items, Callback<List<File>> callback);

@@ -2,7 +2,10 @@
 <lint>
     <issue id="AndroidGradlePluginVersion" severity="ignore" />
     <issue id="GradleDependency" severity="ignore" />
-    <issue id="TrustAllX509TrustManager" severity="ignore" />
+    <!-- Empty TrustManagers inside BouncyCastle and google-http-client: still checked in app code -->
+    <issue id="TrustAllX509TrustManager">
+        <ignore regexp=".*\.jar" />
+    </issue>
     <issue id="ObsoleteSdkInt" severity="ignore" />
     <issue id="NotifyDataSetChanged" severity="ignore" />
     <issue id="MergeRootFrame" severity="ignore" />
