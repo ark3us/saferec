@@ -1,21 +1,13 @@
-# Add project specific ProGuard rules here.
-# You can control the set of applied configuration files using the
-# proguardFiles setting in build.gradle.
-#
-# For more details, see
-#   http://developer.android.com/guide/developing/tools/proguard.html
+# R8 rules for the release build. The libraries bring their own: google-api-client's model
+# classes are filled by reflection on their @Key fields (rules shipped by play-services-auth),
+# WorkManager creates workers by class name, Room and androidx.startup are covered too.
+# Verified on a phone with the r8test build: sign-in, upload, TSA, recordings list, outbox job.
 
-# If your project uses WebView with JS, uncomment the following
-# and specify the fully qualified class name to the JavaScript interface
-# class:
-#-keepclassmembers class fqcn.of.javascript.interface.for.webview {
-#   public *;
-#}
+# Readable crash stack traces: decode them with the build's mapping.txt
+-keepattributes SourceFile,LineNumberTable
+-renamesourcefileattribute SourceFile
 
-# Uncomment this to preserve the line number information for
-# debugging stack traces.
-#-keepattributes SourceFile,LineNumberTable
-
-# If you keep the line number information, uncomment this to
-# hide the original source file name.
-#-renamesourcefileattribute SourceFile
+# The source is public, so renaming the app's own classes hides nothing. It would turn the
+# log tags (Class.getSimpleName()) and our stack frames into single letters. Unused code is
+# still removed and optimized.
+-keepnames class net.ark3us.saferec.** { *; }
