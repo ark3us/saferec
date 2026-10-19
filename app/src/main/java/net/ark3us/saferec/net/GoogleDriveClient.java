@@ -17,7 +17,6 @@ import com.google.api.client.http.HttpRequestInitializer;
 import com.google.api.client.http.HttpResponseException;
 import com.google.api.client.http.javanet.NetHttpTransport;
 import com.google.api.client.json.gson.GsonFactory;
-import com.google.api.client.util.DateTime;
 import com.google.api.services.drive.Drive;
 import com.google.api.services.drive.model.FileList;
 import com.google.api.services.drive.model.Permission;
@@ -194,16 +193,11 @@ public class GoogleDriveClient {
      * the uploader's lock, let concurrent uploads create the same folders twice.
      */
     public com.google.api.services.drive.model.File uploadFile(File localFile, String name, String mimeType,
-            String parentFolderId, long timestampMillis) throws IOException {
+            String parentFolderId) throws IOException {
         com.google.api.services.drive.model.File meta = new com.google.api.services.drive.model.File();
         meta.setName(name);
-
-        if (timestampMillis > 0) {
-            DateTime dt = new DateTime(timestampMillis);
-            meta.setCreatedTime(dt);
-            meta.setModifiedTime(dt);
-        }
-
+        // No createdTime: Drive sets it to the upload time, a witness the phone's clock cannot
+        // fake. The recording time is already in the name.
         meta.setParents(Collections.singletonList(parentFolderId));
 
         FileContent media = new FileContent(mimeType, localFile);

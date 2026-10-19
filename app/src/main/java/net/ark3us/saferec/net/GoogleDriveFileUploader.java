@@ -81,7 +81,7 @@ public class GoogleDriveFileUploader extends FileUploader {
     /** Folders are only ever created by getOrCacheSessionFolderId, under its lock. */
     private com.google.api.services.drive.model.File tryUpload(File file, MediaFile mediaFile) throws IOException {
         String parentFolderId = getOrCacheSessionFolderId(mediaFile.sessionId, mediaFile.dataType);
-        return driveClient.uploadFile(file, driveName(mediaFile), mediaFile.getMimeType(), parentFolderId, mediaFile.timestamp);
+        return driveClient.uploadFile(file, driveName(mediaFile), mediaFile.getMimeType(), parentFolderId);
     }
 
     private static int httpStatus(IOException e) {
