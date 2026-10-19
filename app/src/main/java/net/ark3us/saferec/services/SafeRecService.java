@@ -601,6 +601,11 @@ public class SafeRecService extends Service {
         // Not shut down: uploads still running finish, and the outbox job carries on
         uploader.setListener(null);
         uploader.setRetryLoop(false);
+        if (OutboxWorker.filesWaiting(this)) {
+            // Stopped with files waiting (time limit, or Android stopping the service): the
+            // delayed job could be held back for a long time, the expedited one is not
+            OutboxWorker.scheduleNow(this);
+        }
         executor.shutdown();
         postProcessExecutor.shutdown();
         tsaExecutor.shutdown();

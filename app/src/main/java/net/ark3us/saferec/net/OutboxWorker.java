@@ -1,6 +1,7 @@
 package net.ark3us.saferec.net;
 
 import android.content.Context;
+import android.os.Build;
 import android.util.Log;
 
 import androidx.annotation.NonNull;
@@ -11,6 +12,7 @@ import androidx.work.ExistingWorkPolicy;
 import androidx.work.NetworkType;
 import androidx.work.OneTimeWorkRequest;
 import androidx.work.Operation;
+import androidx.work.OutOfQuotaPolicy;
 import androidx.work.WorkManager;
 import androidx.work.Worker;
 import androidx.work.WorkerParameters;
@@ -29,6 +31,7 @@ import java.util.concurrent.TimeUnit;
 public class OutboxWorker extends Worker {
     private static final String TAG = OutboxWorker.class.getSimpleName();
     private static final String WORK_NAME = "outbox";
+    private static final String NOW_WORK_NAME = "outbox-now";
     // Delay before the job runs: while the service lives, it does the work. Backoff after a
     // failed run: 5 min, doubling up to WorkManager's 5 h cap.
     private static final long START_DELAY_MIN = 5;
@@ -65,6 +68,40 @@ public class OutboxWorker extends Worker {
             Log.e(TAG, "Cannot schedule the outbox job", e);
             return null;
         }
+    }
+
+    /**
+     * For when the service is known to be gone and files wait: it stopped, or the phone booted.
+     * Android may hold a delayed job of an app in the background for over half an hour (seen on
+     * a Galaxy S10+ with Android 16: ready, never started, 35 min). An expedited job is not held
+     * back and gets the network. Out of quota it runs as a regular job. Below Android 12
+     * WorkManager would run it as a foreground service with a notification: regular job there.
+     */
+    @Nullable
+    public static Operation scheduleNow(Context context) {
+        try {
+            Constraints constraints = new Constraints.Builder()
+                    .setRequiredNetworkType(NetworkType.CONNECTED)
+                    .build();
+            OneTimeWorkRequest.Builder builder = new OneTimeWorkRequest.Builder(OutboxWorker.class)
+                    .setConstraints(constraints)
+                    .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, BACKOFF_MIN, TimeUnit.MINUTES);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                builder.setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST);
+            }
+            return WorkManager.getInstance(context)
+                    .enqueueUniqueWork(NOW_WORK_NAME, ExistingWorkPolicy.KEEP, builder.build());
+        } catch (RuntimeException e) {
+            Log.e(TAG, "Cannot schedule the outbox job", e);
+            return null;
+        }
+    }
+
+    /** True when files wait in the outbox or chunks in the work dir. */
+    public static boolean filesWaiting(Context context) {
+        String[] outbox = GoogleDriveFileUploader.outboxDir(context).list();
+        String[] work = WorkDir.dir(context).list();
+        return (outbox != null && outbox.length > 0) || (work != null && work.length > 0);
     }
 
     /**
