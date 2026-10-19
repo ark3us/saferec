@@ -31,7 +31,7 @@ TAGS=(SafeRecService MuxerSink VideoStreamRecorder AudioStreamRecorder GoogleDri
       GoogleDriveClient FreeTSAClient MainActivity AndroidRuntime)
 CHUNK_MIN=8.5   # seconds, expected chunk duration window (target 10 s)
 CHUNK_MAX=12.5
-ALL_SCENARIOS=(offline_start audio_only camera_stolen replay errors_dont_stop network_drop retry_after_outage tsa)
+ALL_SCENARIOS=(offline_start audio_only camera_stolen replay errors_dont_stop network_drop retry_after_outage tsa av_sync)
 
 RESULTS=()
 LOGCAT_PID=""
@@ -440,6 +440,75 @@ scenario_retry_after_outage() {
         record retry_after_outage PASS "outbox drained ${drained}s after the network returned, during recording; $uploaded/$saved uploaded"
     else
         record retry_after_outage FAIL "pending=$pending after ${drained}s, unknown=$unknown network_retry=$network_retry uploaded=$uploaded saved=$saved dups=$dups premature=$premature"
+    fi
+}
+
+now_ms() { echo $(($(date +%s%N) / 1000000)); }
+wait_until_ms() { while (($(now_ms) < $1)); do sleep 0.02; done; }
+vibrate() { adb shell cmd vibrator_manager synced -f oneshot 250 255 </dev/null >/dev/null; }
+tap_view() { # view id -> taps its center, 1 if not on screen
+    adb shell uiautomator dump /sdcard/ui.xml >/dev/null 2>&1
+    local b x1 y1 x2 y2
+    b=$(adb shell cat /sdcard/ui.xml | grep -oE "resource-id=\"$PKG:id/$1\"[^>]*bounds=\"[^\"]*\"" | head -1 |
+        grep -oE 'bounds="[^"]*"' | grep -oE '[0-9]+' | tr '\n' ' ')
+    adb shell rm -f /sdcard/ui.xml
+    [[ -n $b ]] || return 1
+    read -r x1 y1 x2 y2 <<<"$b"
+    adb shell input tap $(((x1 + x2) / 2)) $(((y1 + y2) / 2)) </dev/null
+}
+
+# The vibration motor is one physical event both tracks see: its buzz reaches the microphone
+# and its shake moves the image. scripts/av_lag.py cross-correlates the two.
+scenario_av_sync() {
+    say "av_sync: after a camera switch (cold camera start), sound and image must stay in sync"
+    if ! command -v uv >/dev/null || ! adb shell cmd vibrator_manager list </dev/null >/dev/null 2>&1; then
+        record av_sync SKIP "needs uv on the host and Android 12+ (vibrator_manager)"
+        return
+    fi
+    write_prefs false false
+    clear_store
+    go_offline || { record av_sync FAIL "could not go offline"; return; }
+    start_recording || { record av_sync FAIL "recording did not start"; go_online; return; }
+    local t0 t
+    t0=$(now_ms)
+    wait_until_ms $((t0 + 3000))
+    tap_view btn_switch_camera || note "warning: switch camera button not found"
+    RANDOM=7 # same pulse times on every run
+    for ((t = 6000; t < 38000; t += 800 + RANDOM % 800)); do
+        wait_until_ms $((t0 + t))
+        vibrate
+    done
+    wait_until_ms $((t0 + 40000))
+    stop_recording
+    pull_chunks "$OUT/av_sync"
+    clear_store # before going online, or the outbox retry would upload these test chunks
+    go_online
+    logs >"$OUT/av_sync.log"
+    # Chunks recorded after the switch: the restart logs its first sequence number
+    local first f seq res lag peak lags=() summary=""
+    first=$(logs | sed -n 's/.*Starting recording session id=[0-9]* sequence=\([0-9]*\).*/\1/p' | sed -n 2p)
+    for f in $(ls "$OUT/av_sync" | grep '\.mp4$' | sort -t. -k2,2n); do
+        seq=$(cut -d. -f2 <<<"$f")
+        ((seq >= ${first:-0})) || continue
+        res=$(uv run -q --with numpy python "$ROOT/scripts/av_lag.py" "$OUT/av_sync/$f" 2>/dev/null)
+        lag=$(sed -n 's/.*"lag_ms": \(-*[0-9.]*\).*/\1/p' <<<"$res")
+        peak=$(sed -n 's/.*"peak": \(-*[0-9.]*\).*/\1/p' <<<"$res")
+        [[ -n $lag ]] || continue # shorter than 5 s
+        summary+="#$seq:${lag}ms(peak $peak) "
+        awk -v p="$peak" 'BEGIN { exit !(p >= 0.3) }' && lags+=("$lag")
+    done
+    note "restart at chunk #${first:-?}, lag (audio after video) per chunk: ${summary:-none}"
+    if ((${#lags[@]} < 2)); then
+        record av_sync SKIP "too little signal: the camera used after the switch must see a lit, textured scene"
+        return
+    fi
+    # The rig itself (motor, AAC encoder delay) adds a constant ~0.1 s: only a large or
+    # changing lag is a sync bug. Before the shared clock it was ~0.6 s after a switch.
+    if printf '%s\n' "${lags[@]}" | awk '{ if (NR == 1 || $1 < lo) lo = $1; if (NR == 1 || $1 > hi) hi = $1 }
+            END { exit !(lo >= -250 && hi <= 250 && hi - lo <= 40) }'; then
+        record av_sync PASS "lag $(printf '%s ' "${lags[@]}")ms after a cold camera start, stable across chunks"
+    else
+        record av_sync FAIL "lag $(printf '%s ' "${lags[@]}")ms (allowed: within ±250 ms, spread ≤ 40 ms)"
     fi
 }
 
