@@ -70,5 +70,5 @@ Release builds have `isMinifyEnabled = false`. R8 would cut the APK size a lot, 
 ### Unit tests on every push
 The repository is public and now has JVM unit tests that need no phone. A small GitHub Actions workflow running `./gradlew testDebugUnitTest lintDebug` on each push would catch a broken build or a failing outbox test before it reaches `main`, now that changes are merged without a pull request. Secrets are not needed: the tests never touch Drive.
 
-### The outbox job adopts orphan chunks
-After a sudden power cut, the open chunk stays in `recording/`, and only the next service start (the app opened) moves it to the outbox. The outbox job could move it itself when no recording runs, so even that chunk reaches Drive after the boot without opening the app. Recording start and the move must share one lock: moving a chunk that is being written would upload half a file. The job is usually scheduled during a recording anyway, since every chunk schedules it.
+### Repair cut chunks
+A chunk cut by a power cut is uploaded, but it has no MP4 index (`moov atom not found`) and plays only after repair tools. The session's previous chunk has the same encoder settings, so its codec configuration (SPS/PPS, AAC config) is known. The index can be rebuilt by scanning the cut file's sample data against it, as untrunc does. `RecordingsActivity` could do this when it downloads or merges a session, so even the last seconds before the power went play on the phone. The original stays untouched on Drive, so the evidence is never altered.

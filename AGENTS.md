@@ -84,7 +84,7 @@ The app exists to save evidence when things go wrong. Keep these invariants:
 5. **Degrade gracefully.** Camera lost → continue audio-only.
 6. **The outbox holds ready chunks only.** A chunk is written in `recording/` and moved to `data_store/` once closed and hashed for the TSA, so the outbox can be uploaded at any time, even mid-recording. Hashing after the move let a rescan or the outbox job upload and delete a chunk before its hash was taken, leaving it without a timestamp.
 7. **A failed lookup is not "not found".** Drive folders are created only when Drive answered that they do not exist, and only under the uploader's lock. Treating a timeout as "not found" created duplicate `SafeRec` folders and split sessions between them.
-8. **The outbox outlives the service.** Every file waiting in the outbox has a WorkManager job behind it, so a chunk recorded offline reaches Drive after a kill or a reboot without the user opening the app.
+8. **The outbox outlives the service.** Every file waiting in the outbox has a WorkManager job behind it, and so does the chunk being recorded. A chunk recorded offline, or cut by a power cut, reaches Drive after a kill or a reboot without the user opening the app.
 
 ---
 
@@ -106,6 +106,7 @@ net.ark3us.saferec/
 │   ├── AudioStreamRecorder.java  # AudioRecord + MediaCodec AAC encoder
 │   ├── MuxerSink.java            # MediaMuxer wrapper: chunks, one A/V clock, outbox hand-off
 │   ├── ChunkPolicy.java          # When a chunk is full (10 s, or a manual size)
+│   ├── WorkDir.java              # Where chunks are written; moves leftovers only while no recording uses it
 │   ├── VideoOrientation.java     # Orientation math (snap, hint per camera facing)
 │   ├── MediaMerger.java          # Merges MP4 chunks into a single file
 │   └── TimestampRenderer.java    # OpenGL ES 2.0 pipeline for burned-in timestamp overlay
@@ -117,6 +118,7 @@ net.ark3us.saferec/
 │   ├── FileUploader.java         # Outbox queue, retry backoff, dedupe, drain (abstract: tested with a fake)
 │   ├── GoogleDriveFileUploader.java  # Drive upload, folder cache, token refresh (one per process)
 │   ├── OutboxWorker.java         # WorkManager job: uploads the outbox when the service is gone
+│   ├── OutboxBootReceiver.java   # After a boot with files left: the expedited outbox job
 │   ├── GoogleDriveClient.java    # Low-level Drive API wrapper
 │   ├── DriveRecordings.java      # Recordings on Drive: list, download, share, trash
 │   ├── MediaFile.java            # Chunk filename parser/generator
@@ -225,7 +227,8 @@ Token refreshes are shared: one at a time (`refreshLock`), at most one Play serv
 | `data_store/` | The outbox: complete chunks and `.tsa` replies waiting for upload |
 
 - `MuxerSink.closeFile()` hands a finished chunk over, still in `recording/`, and deletes empty ones. The service hashes it (TSA on), then renames it into the outbox (`moveToOutbox()`, same filesystem, atomic) and uploads it.
-- `SafeRecService.onCreate()` moves orphans left in `recording/` by a crash or kill into the outbox. Such a chunk has no MP4 index and may not play, but it is kept as evidence.
+- `WorkDir.recover()` moves chunks left in `recording/` by a dead process (crash, kill, sudden power cut) into the outbox. Such a chunk has no MP4 index and may not play, but it is kept as evidence. `SafeRecService.onCreate()` and the outbox job call it.
+- It moves nothing while a recording uses `recording/`. The service calls `WorkDir.acquire()` when a recording starts and `release()` once the post-processing of its last chunk is done (queued on the same executor). Moving the chunk being written would upload half a file, and moving a closed one before its post-processing would skip its TSA hash. One lock covers the counter and the moves, so a recording cannot start in the middle of a recovery.
 - There is one `GoogleDriveFileUploader` per process (`getInstance()`), shared by the recording, `CMD_UPLOAD_PENDING` and the outbox job. The `queuedFiles` dedupe, the folder lock and the token refresh therefore cover all of them: two uploaders would each create the same Drive folders, or upload the same chunk twice.
 - Each upload uses the token the app stored last, unless Drive already rejected it. The uploader lives as long as the process, across services, and the user may have reconnected Drive meanwhile.
 
@@ -241,14 +244,18 @@ Who retries depends on whether the service is alive:
 - A VPN stays the default network and stays `VALIDATED` while the phone has no network under it, so `onAvailable` never fires. Its transports do change, from `WIFI|VPN` to `VPN` and back (measured on a Galaxy S10+), and that change is the trigger.
 
 **The outbox job** (`OutboxWorker`):
-- Scheduled with `ExistingWorkPolicy.KEEP` whenever a file is queued or its upload fails (`onFilePending()`), and when the service starts with files waiting. While a job waits or runs, scheduling again does nothing, so calling it per chunk is cheap.
+- Scheduled with `ExistingWorkPolicy.KEEP` whenever a file is queued or its upload fails (`onFilePending()`), when a recording starts, and when the service starts with files waiting. While a job waits or runs, scheduling again does nothing, so calling it per chunk is cheap.
 - It needs a network (`NetworkType.CONNECTED`) and runs 5 min after it was scheduled: while the service lives, the service does the work. A failed run comes back after 5 min, doubling up to WorkManager's 5 h cap.
+- When the service is known to be gone, an **expedited** job (`scheduleNow()`, unique name `outbox-now`) goes as soon as there is a network: from `onDestroy()` when files wait (the `dataSync` time limit, or Android stopping the service), and from `OutboxBootReceiver` after a boot with files left. Android may hold the delayed job of an app in the background for a long time: on a Galaxy S10+ (Android 16) it stayed "ready", every constraint met, for 35 min without starting, with this build and the one before. The expedited job is not held back and gets the network. Out of quota it runs as a regular job; below Android 12 it is a regular job, since WorkManager would need a foreground notification for it.
+- Several runs at once (the delayed and the expedited job) are harmless: they share the uploader, so each file is uploaded once.
+- It first adopts the chunks left in `recording/` (`WorkDir.recover()`), so a chunk cut by a sudden power cut is uploaded after the boot without opening the app.
+- A run that finds a recording in progress queues a successor (`APPEND_OR_REPLACE`: with `KEEP`, scheduling does nothing while the job itself runs). Without it, a run that succeeded mid-recording left no job queued until the next chunk, and a power cut in that gap left the open chunk to the next app launch.
 - It calls `drain()`, which uploads the outbox and blocks until it is empty (success), an upload failed or the job is stopped (retry later). Uploads already running for the recording are waited for, not started twice. Chunks recorded meanwhile are uploaded in the same run: success means an empty outbox.
-- Verified on a Galaxy S10+ (Android 16): after `onTimeout()` stopped the service, the job uploaded the 2 waiting chunks on its own once the network came back. In a 15-minute run with recordings, it also ran while the service was uploading, with no duplicate. A run that failed (network cut) came back 5 min later.
-- Reboot, verified by hand on the same phone. It needs an unlock, so it is not a script scenario. The steps:
-  1. Recorded 15 s offline, leaving 2 chunks in the outbox, and rebooted.
-  2. Unlocked the phone and turned the network back on, without opening the app.
-  3. WorkManager's `RescheduleReceiver` started the process at boot, and the job uploaded both chunks 5 min after it was scheduled. The service never started.
+- Verified on a Galaxy S10+ (Android 16):
+  - After `onTimeout()` stopped the service, the expedited job uploaded the 2 waiting chunks 7 s after the network came back. Before it, the delayed job took 41-254 s, or did not start.
+  - In a 15-minute run with recordings, the job also ran while the service was uploading, with no duplicate. A run that failed (network cut) came back 5 min later.
+  - Sudden power cut, by hand (it needs an unlock): recorded 15 s offline, then `adb reboot` 5 s into the second chunk. It sent no `ACTION_SHUTDOWN`, so the open chunk stayed in `recording/` without its index (`moov atom not found`). After the unlock, with the network back and the app never opened, `OutboxBootReceiver` queued the expedited job. That job adopted the cut chunk and uploaded both 12 s after the network returned. With only the delayed job, nothing ran in 11 min.
+  - A force stop in the middle of a recording left the open chunk too. Android 15+ sends `BOOT_COMPLETED` to an app leaving the stopped state, WorkManager rescheduled, and the job adopted and uploaded it.
 - Before this job, chunks left offline waited for the user to open the app again whenever the service was gone. That happened after a reboot, after the process was killed (a sticky restart only lasts until Android stops background services), or after the Android 15 `dataSync` cap.
 
 ### 3. Stop Recording
@@ -440,9 +447,9 @@ Camera/encoder callbacks are posted to the main thread (`onVideoResult`) and ign
 
 **Phone switching off** (`onShutdown()`): power key, reboot, or an empty battery, which Android shuts down cleanly at ~1%.
 - Android sends `ACTION_SHUTDOWN` only to receivers registered at runtime: the service registers one in `onCreate()`. Android waits up to 10 s in all for them.
-- While recording, it calls `stopRecording()` on the main thread, so the open chunk gets its MP4 index. It then waits up to 3 s for the post-processing (hash, move to the outbox) and up to 2 s for WorkManager to store the outbox job (`OutboxWorker.scheduleAndWait()`). The job uploads the chunk after the next boot.
+- While recording, it calls `stopRecording()` on the main thread, so the open chunk gets its MP4 index. It then waits up to 3 s for the post-processing (hash, move to the outbox) and up to 2 s for WorkManager to store the outbox job (`OutboxWorker.scheduleAndWait()`). After the next boot, `OutboxBootReceiver` sees the waiting files and the expedited job uploads them.
 - Before this, the power cut left the open chunk without its index (it needed repair tools to play), and in `recording/`, where only the next service start moved it to the outbox.
-- Verified on a Galaxy S10+ (Android 16) with `adb shell svc power reboot`, which goes through the framework shutdown like the power menu.
+- Verified on a Galaxy S10+ (Android 16) with `adb shell svc power reboot`, which goes through the framework shutdown like the power menu. `adb reboot` does not: it sends no `ACTION_SHUTDOWN` (checked), so it stands for a sudden power cut.
   - The shutdown came 5 s into the second chunk while offline. The recording was closed, with 2 files in the outbox and the job stored, 0.45 s after the broadcast.
   - After the boot, `recording/` was empty and the last chunk played (6.2 s, audio and video).
   - Once the network was back, the job uploaded both chunks without the app being opened.
@@ -519,6 +526,7 @@ Chunks are uploaded immediately on completion and **deleted locally** on success
 - `GoogleDriveFileUploader.cachedBaseFolderId`: `volatile` + double-checked locking
 - `GoogleDriveFileUploader.refreshLock`: one token refresh at a time. `GoogleDriveClient.accessToken`/`driveService` are `volatile`, because a refresh replaces them while uploads run
 - `FileUploader.queuedFiles`: concurrent set; a file is queued at most once, so a pending-files scan cannot upload a chunk that is already in flight (that used to create duplicates on Drive)
+- `WorkDir`: one per process; its lock covers the recording counter and the recovery moves
 - `GoogleDriveFileUploader.getInstance()`: `static synchronized`, one uploader per process, so the dedupe and the folder lock above also hold between the service and the outbox job
 - `FileUploader.listener` and `.retryLoop`: `volatile`, set by the service on the main thread and read by the upload threads
 
@@ -542,8 +550,8 @@ Chunks are uploaded immediately on completion and **deleted locally** on success
 
 8. **drive.file reaches only the app's own files.** If the `SafeRec` folder holds a file the app did not create (an older build with another OAuth client, or a file added by hand), Drive refuses any change to the folder's sharing with `appNotAuthorizedToChild`. That covers sharing it from the app and removing a public link that older builds created. Both must then be done in the Google Drive app.
 9. **Sharing is per person.** The share button grants one Google account read access to the whole `SafeRec` folder, future sessions included, and Google emails that person. The app never creates "anyone with the link" access, and it cannot revoke a share: that is done in Drive.
-10. **Android decides when the outbox job runs.** In Doze it waits for a maintenance window, and an app the user rarely opens gets fewer runs (App Standby buckets). After repeated failed runs it waits up to 5 h. A force stop cancels it until the next launch, and after a reboot nothing runs before the first unlock, because the outbox is in credential-encrypted storage. While the service lives, none of this applies.
-11. **A sudden power cut still cuts the open chunk.** Without a clean shutdown (a battery that fails before Android's ~1% shutdown, a kernel crash), the open chunk has no MP4 index and stays in `recording/`. It reaches the outbox the next time the service starts, i.e. when the app is opened.
+10. **Android decides when the outbox job runs.** The delayed job of an app in the background can be held for over half an hour. The expedited one covers the cases the app sees coming (service stopped, boot), so this matters after a kill without notice: those chunks wait for that delayed job or the next app launch. In Doze jobs wait for a maintenance window, an app the user rarely opens gets fewer runs (App Standby buckets) and less expedited quota, and after repeated failed runs the job waits up to 5 h. A force stop cancels the jobs until the app leaves the stopped state. After a reboot nothing runs before the first unlock, because the outbox is in credential-encrypted storage. While the service lives, none of this applies.
+11. **A sudden power cut still cuts the open chunk.** Without a clean shutdown (a battery that fails before Android's ~1% shutdown, a kernel crash), the open chunk has no MP4 index: it needs repair tools to play. It is still uploaded after the boot, without opening the app: the expedited job adopts it from `recording/`.
 
 ---
 
@@ -554,6 +562,7 @@ Unit tests (JVM, no phone, under a second): `./gradlew testDebugUnitTest`.
 - `ChunkPolicyTest`: 10 s auto chunks whatever the size, manual size only.
 - `MediaFileTest`: chunk and `.tsa` names, Drive names, foreign names rejected.
 - `TsaClientTest`: SHA-256 against the FIPS test vector.
+- `WorkDirTest`: leftovers moved and empty ones dropped, nothing moved while a recording uses the directory, a camera switch (two recordings overlapping), an extra release. Each rule is checked by mutation.
 - `FileUploaderTest`: the outbox logic with a fake uploader and millisecond backoff. It covers:
   - queuing once while uploading;
   - retry from the outbox, and no retry with the loop off;
@@ -563,16 +572,18 @@ Unit tests (JVM, no phone, under a second): `./gradlew testDebugUnitTest`.
   Breaking the dedupe, the success trigger, the loop switch or any `drain()` rule fails the matching test (checked by mutation).
 
 
-`scripts/device-tests.sh` drives a connected phone (debug build, `ANDROID_SERIAL` to pick one) and checks logcat, the chunk store and chunk durations with ffprobe. Scenarios: `offline_start`, `audio_only`, `camera_stolen`, `replay`, `errors_dont_stop`, `network_drop`, `retry_after_outage`, `outbox_job`, `tsa`, `av_sync`, plus a whole-run crash check. It toggles airplane mode, records camera and mic, rewrites SafeRec settings, and restores everything on exit. It refuses to run if the outbox or `recording/` is not empty.
+`scripts/device-tests.sh` drives a connected phone (debug build) and checks logcat, the chunk store and chunk durations with ffprobe. Scenarios: `offline_start`, `audio_only`, `camera_stolen`, `replay`, `errors_dont_stop`, `network_drop`, `retry_after_outage`, `outbox_job`, `tsa`, `av_sync`, plus a whole-run crash check. It toggles airplane mode, records camera and mic, rewrites SafeRec settings, and restores everything on exit. It refuses to run if the outbox or `recording/` is not empty.
+- `ANDROID_SERIAL` must name the test phone, or the script refuses to run. A manual test script, which did not pin the device, once ran on the owner's everyday phone plugged into the same cable. It installed SafeRec there (in the Private space too: `adb install` installs for every user), cleared the log buffer and toggled airplane mode.
 
 - `av_sync` checks sync on the content.
   - It switches camera at 3 s (a cold camera start), then vibrates the phone with 80 ms pulses at seeded irregular times. Long pulses (250 ms) failed in dim light: long exposures show motion mostly when the motor starts and stops, and the two make rival correlation peaks ~0.25 s apart. The motor is one physical event seen by both tracks: the buzz reaches the microphone and the shake moves the image.
   - `scripts/av_lag.py` cross-correlates the buzz envelope with the motion on textured pixels, per chunk.
   - It records 50 s and measures every chunk after the switch with a clear correlation peak. It passes when the median lag is within ±250 ms and at most one chunk is more than 40 ms from it. One chunk can lock onto a stray movement or noise, which once failed a run that two reruns passed. It skips when the camera used after the switch sees too dark a scene (the phone must lie so that camera sees a lit room).
   - Its own FAIL on the pre-fix build (+540..570 ms) confirmed it catches the bug.
-- `outbox_job` records offline and then ends the service the way Android does. It shortens the `dataSync` time limit to 20 s (`device_config put activity_manager data_sync_fgs_timeout_duration`, removed afterwards), so `onTimeout()` stops the service. The limit must be set before the stop: Android fixes it when `dataSync` starts. Back online, it waits for the job's own run (~5 min, nothing forced) and checks that the job uploaded every chunk with no service alive.
+- `outbox_job` records offline and then ends the service the way Android does. It shortens the `dataSync` time limit to 20 s (`device_config put activity_manager data_sync_fgs_timeout_duration`, removed afterwards), so `onTimeout()` stops the service. The limit must be set before the stop: Android fixes it when `dataSync` starts. Back online, it waits for the job's own run (nothing forced; the expedited job from `onDestroy()` goes within seconds) and checks that the job uploaded every chunk with no service alive.
   - The process is not killed. `run-as kill` is forbidden by SELinux, and `am force-stop` cancels the job.
   - `am kill` is logged as a user request (`REASON_USER_REQUESTED`), and WorkManager takes that for a force stop. Its rescheduling finished the system job while the worker still ran. Android 16 then cut the network of the job-less background process after 5 s ("Software caused connection abort"). A real low-memory kill is logged differently.
+- Reading JobScheduler: WorkManager jobs live in a namespace, so `dumpsys jobscheduler` lists them as `JOB androidx.work.systemjobscheduler:u0aNNN/ID` (no `#`). `cmd jobscheduler get-job-state -n androidx.work.systemjobscheduler net.ark3us.saferec ID` prints `waiting`, `ready` or `running`. The dump also shows the app's network, e.g. `blocked=REASON_APP_BACKGROUND`, which Android 16 applies to a background app without a running job. `am force-stop` cancels every job, so inspect before any cleanup that force-stops.
 - Media scenarios also check that no frame is dropped at a chunk boundary (`Skipping … frame`), and that the first video frame is 0-1000 ms old on the shared clock (proof that both tracks use one clock).
 - Checks read the host-side logcat capture (`full.log`), not the device buffer: failed uploads log long stack traces and the device buffer silently drops old lines.
 - Drive scenarios (`errors_dont_stop`, `network_drop`, `retry_after_outage`, `tsa`) need a Google consent given once in the app. The OAuth client only accepts builds whose signing SHA-1 is registered in the Cloud Console, so a new dev machine's debug key must be added there first.
