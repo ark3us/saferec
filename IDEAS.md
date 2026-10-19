@@ -70,5 +70,5 @@ Release builds have `isMinifyEnabled = false`. R8 would cut the APK size a lot, 
 ### Unit tests on every push
 The repository is public and now has JVM unit tests that need no phone. A small GitHub Actions workflow running `./gradlew testDebugUnitTest lintDebug` on each push would catch a broken build or a failing outbox test before it reaches `main`, now that changes are merged without a pull request. Secrets are not needed: the tests never touch Drive.
 
-### Close the chunk before the phone dies
-A phone running out of battery, or switched off by someone else, cuts the open chunk: it has no MP4 index and needs repair tools to play. While recording, the service could listen for `ACTION_BATTERY_LOW` and `ACTION_SHUTDOWN` (registered at runtime, which still works on recent Android). On those it would close the chunk at once and switch to shorter chunks, so the last seconds land in the outbox complete and playable. The outbox job then uploads them after the next boot.
+### The outbox job adopts orphan chunks
+After a sudden power cut, the open chunk stays in `recording/`, and only the next service start (the app opened) moves it to the outbox. The outbox job could move it itself when no recording runs, so even that chunk reaches Drive after the boot without opening the app. Recording start and the move must share one lock: moving a chunk that is being written would upload half a file. The job is usually scheduled during a recording anyway, since every chunk schedules it.

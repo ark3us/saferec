@@ -438,6 +438,15 @@ Camera/encoder callbacks are posted to the main thread (`onVideoResult`) and ign
 - Sticky restart after the process was killed: Android forbids entering the foreground from the background, so the service never tries. It resumes the outbox as a plain background service for as long as Android lets it run. Verified on a Galaxy S10+: the waiting chunk was uploaded after the kill, with no crash.
 - Android 15+ caps `dataSync` at 6 h a day: `onTimeout()` stops the service, and the outbox job takes over.
 
+**Phone switching off** (`onShutdown()`): power key, reboot, or an empty battery, which Android shuts down cleanly at ~1%.
+- Android sends `ACTION_SHUTDOWN` only to receivers registered at runtime: the service registers one in `onCreate()`. Android waits up to 10 s in all for them.
+- While recording, it calls `stopRecording()` on the main thread, so the open chunk gets its MP4 index. It then waits up to 3 s for the post-processing (hash, move to the outbox) and up to 2 s for WorkManager to store the outbox job (`OutboxWorker.scheduleAndWait()`). The job uploads the chunk after the next boot.
+- Before this, the power cut left the open chunk without its index (it needed repair tools to play), and in `recording/`, where only the next service start moved it to the outbox.
+- Verified on a Galaxy S10+ (Android 16) with `adb shell svc power reboot`, which goes through the framework shutdown like the power menu.
+  - The shutdown came 5 s into the second chunk while offline. The recording was closed, with 2 files in the outbox and the job stored, 0.45 s after the broadcast.
+  - After the boot, `recording/` was empty and the last chunk played (6.2 s, audio and video).
+  - Once the network was back, the job uploaded both chunks without the app being opened.
+
 ### [Settings](app/src/main/java/net/ark3us/saferec/misc/Settings.java) — [Settings.java](app/src/main/java/net/ark3us/saferec/misc/Settings.java)
 
 SharedPreferences wrapper. Keys:
@@ -534,6 +543,7 @@ Chunks are uploaded immediately on completion and **deleted locally** on success
 8. **drive.file reaches only the app's own files.** If the `SafeRec` folder holds a file the app did not create (an older build with another OAuth client, or a file added by hand), Drive refuses any change to the folder's sharing with `appNotAuthorizedToChild`. That covers sharing it from the app and removing a public link that older builds created. Both must then be done in the Google Drive app.
 9. **Sharing is per person.** The share button grants one Google account read access to the whole `SafeRec` folder, future sessions included, and Google emails that person. The app never creates "anyone with the link" access, and it cannot revoke a share: that is done in Drive.
 10. **Android decides when the outbox job runs.** In Doze it waits for a maintenance window, and an app the user rarely opens gets fewer runs (App Standby buckets). After repeated failed runs it waits up to 5 h. A force stop cancels it until the next launch, and after a reboot nothing runs before the first unlock, because the outbox is in credential-encrypted storage. While the service lives, none of this applies.
+11. **A sudden power cut still cuts the open chunk.** Without a clean shutdown (a battery that fails before Android's ~1% shutdown, a kernel crash), the open chunk has no MP4 index and stays in `recording/`. It reaches the outbox the next time the service starts, i.e. when the app is opened.
 
 ---
 
