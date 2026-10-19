@@ -1,6 +1,9 @@
 package net.ark3us.saferec.net;
 
+import android.os.SystemClock;
 import android.util.Log;
+
+import androidx.annotation.Nullable;
 
 import com.google.api.client.http.HttpResponseException;
 
@@ -19,6 +22,7 @@ import com.google.android.gms.common.api.Scope;
 import com.google.api.services.drive.DriveScopes;
 import com.google.android.gms.tasks.Tasks;
 import java.util.Collections;
+import java.util.Objects;
 import java.util.concurrent.TimeUnit;
 
 public class GoogleDriveFileUploader extends FileUploader {
@@ -29,6 +33,13 @@ public class GoogleDriveFileUploader extends FileUploader {
     /** Cache parent folder ID per session+dataType to avoid repeated Drive API folder lookups. */
     private final ConcurrentHashMap<String, String> sessionFolderIdCache = new ConcurrentHashMap<>();
     private volatile String cachedBaseFolderId;
+    // Token refreshes are shared: one at a time, at most one Play services request per
+    // minute. Each failing chunk used to ask on its own (8 requests in 30 s), which can get
+    // the app throttled right when it needs a token.
+    private static final long REFRESH_MIN_INTERVAL_MS = 60_000;
+    private final Object refreshLock = new Object();
+    private long lastRefreshMs; // guarded by refreshLock, elapsedRealtime
+    private volatile String rejectedToken; // last token Drive answered 401 to
 
     public GoogleDriveFileUploader(Context context, String accessToken) {
         this.context = context.getApplicationContext();
@@ -98,6 +109,11 @@ public class GoogleDriveFileUploader extends FileUploader {
             return false;
         }
         Log.i(TAG, "Uploading file (seq=" + mediaFile.sequenceNumber + ") to Google Drive: " + driveName(mediaFile));
+        String token = driveClient.getAccessToken();
+        if (token == null || token.equals(rejectedToken)) {
+            // Drive would only answer 401 again: get a token before sending the chunk
+            return refreshToken(token) && retryUpload(file, mediaFile);
+        }
         try {
             com.google.api.services.drive.model.File res = tryUpload(file, mediaFile);
             Log.i(TAG, "File (seq=" + mediaFile.sequenceNumber + ") uploaded successfully: " + res.getName());
@@ -109,7 +125,7 @@ public class GoogleDriveFileUploader extends FileUploader {
             int status = httpStatus(e);
             if (status == 401) {
                 Log.e(TAG, "Access token rejected during upload. Attempting silent token refresh...");
-                return refreshToken() && retryUpload(file, mediaFile);
+                return refreshToken(token) && retryUpload(file, mediaFile);
             }
             if (status == 404) {
                 forgetFolders();
@@ -133,8 +149,33 @@ public class GoogleDriveFileUploader extends FileUploader {
         }
     }
 
+    /** Returns true when a token other than the rejected one is ready to use. */
+    private boolean refreshToken(@Nullable String rejected) {
+        synchronized (refreshLock) {
+            rejectedToken = rejected;
+            if (!Objects.equals(rejected, driveClient.getAccessToken())) {
+                return true; // another upload refreshed it while this one waited
+            }
+            // The app stores a new token when the user opens it: use it without asking
+            String stored = Settings.getAccessToken(context);
+            if (stored != null && !stored.equals(rejected)) {
+                Log.i(TAG, "Using the token stored by the app");
+                driveClient.setAccessToken(stored);
+                return true;
+            }
+            long now = SystemClock.elapsedRealtime();
+            if (lastRefreshMs != 0 && now - lastRefreshMs < REFRESH_MIN_INTERVAL_MS) {
+                Log.w(TAG, "Token refresh tried " + (now - lastRefreshMs) / 1000 + " s ago, keeping file for a later retry");
+                return false;
+            }
+            lastRefreshMs = now;
+            return requestNewToken();
+        }
+    }
+
     /** Returns true when a new token was obtained without user interaction. */
-    private boolean refreshToken() {
+    private boolean requestNewToken() {
+        Log.i(TAG, "Requesting a new token from Play services");
         try {
             AuthorizationRequest req = AuthorizationRequest.builder()
                     .setRequestedScopes(Collections.singletonList(new Scope(DriveScopes.DRIVE_FILE)))

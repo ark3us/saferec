@@ -27,27 +27,29 @@ public class GoogleDriveClient {
     private static final String TAG = GoogleDriveClient.class.getSimpleName();
     private static final String BASE_FOLDER = "SafeRec";
 
-    private Drive driveService;
+    // Upload threads read these while a token refresh replaces them
+    private volatile String accessToken;
+    private volatile Drive driveService;
 
     public GoogleDriveClient(String accessToken) {
-        HttpRequestInitializer initializer = (HttpRequest request) -> {
-            request.getHeaders().setAuthorization("Bearer " + accessToken);
-        };
-
-        driveService = new Drive.Builder(
-                new NetHttpTransport(),
-                new GsonFactory(),
-                initializer).setApplicationName("SafeRec").build();
+        setAccessToken(accessToken);
     }
 
     public void setAccessToken(String newAccessToken) {
         // To change the token, we just recreate the driveService with a new initializer
+        HttpRequestInitializer initializer = (HttpRequest request) -> {
+            request.getHeaders().setAuthorization("Bearer " + newAccessToken);
+        };
         driveService = new Drive.Builder(
                 new NetHttpTransport(),
                 new GsonFactory(),
-                (HttpRequest request) -> {
-                    request.getHeaders().setAuthorization("Bearer " + newAccessToken);
-                }).setApplicationName("SafeRec").build();
+                initializer).setApplicationName("SafeRec").build();
+        accessToken = newAccessToken;
+    }
+
+    @Nullable
+    public String getAccessToken() {
+        return accessToken;
     }
 
     /**
