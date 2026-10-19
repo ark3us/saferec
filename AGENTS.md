@@ -244,7 +244,11 @@ Who retries depends on whether the service is alive:
 - Scheduled with `ExistingWorkPolicy.KEEP` whenever a file is queued or its upload fails (`onFilePending()`), and when the service starts with files waiting. While a job waits or runs, scheduling again does nothing, so calling it per chunk is cheap.
 - It needs a network (`NetworkType.CONNECTED`) and runs 5 min after it was scheduled: while the service lives, the service does the work. A failed run comes back after 5 min, doubling up to WorkManager's 5 h cap.
 - It calls `drain()`, which uploads the outbox and blocks until it is empty (success), an upload failed or the job is stopped (retry later). Uploads already running for the recording are waited for, not started twice. Chunks recorded meanwhile are uploaded in the same run: success means an empty outbox.
-- Verified on a Galaxy S10+ (Android 16): after `onTimeout()` stopped the service, the job uploaded the 2 waiting chunks on its own once the network came back. In a 15-minute run with recordings, it also ran while the service was uploading, with no duplicate. A run that failed (network cut) came back 5 min later. The reboot case has not been tested on a device yet.
+- Verified on a Galaxy S10+ (Android 16): after `onTimeout()` stopped the service, the job uploaded the 2 waiting chunks on its own once the network came back. In a 15-minute run with recordings, it also ran while the service was uploading, with no duplicate. A run that failed (network cut) came back 5 min later.
+- Reboot, verified by hand on the same phone. It needs an unlock, so it is not a script scenario. The steps:
+  1. Recorded 15 s offline, leaving 2 chunks in the outbox, and rebooted.
+  2. Unlocked the phone and turned the network back on, without opening the app.
+  3. WorkManager's `RescheduleReceiver` started the process at boot, and the job uploaded both chunks 5 min after it was scheduled. The service never started.
 - Before this job, chunks left offline waited for the user to open the app again whenever the service was gone. That happened after a reboot, after the process was killed (a sticky restart only lasts until Android stops background services), or after the Android 15 `dataSync` cap.
 
 ### 3. Stop Recording
