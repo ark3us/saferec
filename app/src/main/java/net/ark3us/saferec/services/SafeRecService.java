@@ -20,6 +20,7 @@ import androidx.annotation.Nullable;
 
 import net.ark3us.saferec.data.ServiceState;
 import net.ark3us.saferec.media.AudioStreamRecorder;
+import net.ark3us.saferec.media.ChunkPolicy;
 import net.ark3us.saferec.media.MuxerSink;
 import net.ark3us.saferec.media.VideoStreamRecorder;
 import net.ark3us.saferec.misc.Settings;
@@ -296,18 +297,8 @@ public class SafeRecService extends Service {
 
         boolean includeVideo = !Settings.onlyAudio(this);
         String dataType = includeVideo ? MuxerSink.DATA_TYPE_VIDEO : MuxerSink.DATA_TYPE_AUDIO;
-        long chunkSize = 0;
-        long chunkDurationMs = 0;
-
-        int prefChunkSizeMB = Settings.getChunkSizeMB(this);
-        if (prefChunkSizeMB > 0) {
-            chunkSize = prefChunkSizeMB * 1024L * 1024L;
-            Log.i(TAG, "Using manual chunk size: " + prefChunkSizeMB + " MB (" + chunkSize + " bytes)");
-        } else {
-            // Split by time, not bytes: a silent or static scene must not stretch a chunk
-            chunkDurationMs = MuxerSink.DEFAULT_CHUNK_DURATION_MS;
-            Log.i(TAG, "Using chunk duration: " + chunkDurationMs + " ms");
-        }
+        ChunkPolicy chunkPolicy = ChunkPolicy.fromSetting(Settings.getChunkSizeMB(this));
+        Log.i(TAG, "Chunk policy: " + chunkPolicy);
 
         MuxerSink.FileSavedCallback callback = file -> {
             postProcessExecutor.execute(() -> {
@@ -327,7 +318,7 @@ public class SafeRecService extends Service {
             });
         };
 
-        sink = new MuxerSink(workDir(), outboxDir(), callback, dataType, sessionId, chunkSize, chunkDurationMs);
+        sink = new MuxerSink(workDir(), outboxDir(), callback, dataType, sessionId, chunkPolicy);
         sink.setSequenceNumber(currentSequenceNumber);
         audioRecorder = new AudioStreamRecorder(this);
         if (includeVideo) {

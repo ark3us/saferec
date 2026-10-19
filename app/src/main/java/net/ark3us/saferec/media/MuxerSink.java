@@ -18,9 +18,6 @@ public class MuxerSink {
     private static final String TAG = MuxerSink.class.getSimpleName();
     public static final String DATA_TYPE_VIDEO = "video";
     public static final String DATA_TYPE_AUDIO = "audio";
-    // A chunk is only safe once closed and uploaded: its duration is the most
-    // media that can be lost if the phone is taken or destroyed.
-    public static final long DEFAULT_CHUNK_DURATION_MS = 10_000;
     // A chunk's time base starts this long before its first packet, so packets of the other
     // track captured just before it (audio comes out of its encoder late) are kept, not
     // dropped. The MP4 writer moves the earliest sample to 0, so this adds no silence.
@@ -46,8 +43,7 @@ public class MuxerSink {
     private final File storeDir;
     private final String dataType;
     private final String sessionId;
-    private final long partSize; // bytes, 0 = no size limit
-    private final long maxChunkDurationMs; // 0 = no duration limit
+    private final ChunkPolicy chunkPolicy;
     private long chunkStartMs = 0;
     private File currentFile;
     private int sequenceNumber = 0;
@@ -90,14 +86,13 @@ public class MuxerSink {
     private final List<PendingPacket> pendingPackets = new ArrayList<>();
 
     public MuxerSink(File workDir, File storeDir, FileSavedCallback fileSavedCallback, String dataType,
-            String sessionId, long partSize, long maxChunkDurationMs) {
+            String sessionId, ChunkPolicy chunkPolicy) {
         this.workDir = workDir;
         this.storeDir = storeDir;
         this.fileSavedCallback = fileSavedCallback;
         this.dataType = dataType;
         this.sessionId = sessionId;
-        this.partSize = partSize;
-        this.maxChunkDurationMs = maxChunkDurationMs;
+        this.chunkPolicy = chunkPolicy;
         this.expectedAudio = true;
         this.expectedVideo = DATA_TYPE_VIDEO.equals(dataType);
 
@@ -226,14 +221,7 @@ public class MuxerSink {
 
     /** True once the open chunk hits the size limit or the duration limit, whichever comes first. */
     private boolean isChunkFull() {
-        if (!isStarted) {
-            return false;
-        }
-        if (partSize > 0 && bytesWritten >= partSize) {
-            return true;
-        }
-        return maxChunkDurationMs > 0
-                && SystemClock.elapsedRealtime() - chunkStartMs >= maxChunkDurationMs;
+        return isStarted && chunkPolicy.isFull(bytesWritten, SystemClock.elapsedRealtime() - chunkStartMs);
     }
 
     private boolean writeData(ByteBuffer buffer, MediaCodec.BufferInfo info, boolean isVideo) {

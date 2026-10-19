@@ -16,8 +16,8 @@ public abstract class FileUploader {
     private static final String TAG = FileUploader.class.getSimpleName();
     private static final int MAX_CONCURRENT_UPLOADS = 4;
     // Backoff between outbox rescans after a failure: 10 s, 20 s, 40 s ... up to 5 min
-    private static final long RETRY_MIN_MS = 10_000;
-    private static final long RETRY_MAX_MS = 5 * 60_000;
+    private final long retryMinMs;
+    private final long retryMaxMs;
     protected final ExecutorService uploadExecutor = Executors.newFixedThreadPool(MAX_CONCURRENT_UPLOADS);
     protected final ScheduledExecutorService scanExecutor = Executors.newSingleThreadScheduledExecutor();
     private final AtomicInteger activeUploads = new AtomicInteger(0);
@@ -25,8 +25,19 @@ public abstract class FileUploader {
     private volatile File outbox;
     // Own lock: subclasses may hold "this" during network calls (Drive folder lookups)
     private final Object retryLock = new Object();
-    private long retryDelayMs = RETRY_MIN_MS; // guarded by retryLock
+    private long retryDelayMs; // guarded by retryLock
     private ScheduledFuture<?> pendingRetry; // guarded by retryLock
+
+    protected FileUploader() {
+        this(10_000, 5 * 60_000);
+    }
+
+    /** Short delays let the unit tests run the retry logic in milliseconds. */
+    FileUploader(long retryMinMs, long retryMaxMs) {
+        this.retryMinMs = retryMinMs;
+        this.retryMaxMs = retryMaxMs;
+        this.retryDelayMs = retryMinMs;
+    }
 
     public interface UploadListener {
         void onUploadStatusChanged(int activeUploads);
@@ -110,7 +121,7 @@ public abstract class FileUploader {
                 pendingRetry.cancel(false);
                 pendingRetry = null;
             }
-            retryDelayMs = RETRY_MIN_MS;
+            retryDelayMs = retryMinMs;
         }
         scanExecutor.execute(() -> uploadInternal(dir));
     }
@@ -131,7 +142,7 @@ public abstract class FileUploader {
                 }
                 uploadInternal(dir);
             }, retryDelayMs, TimeUnit.MILLISECONDS);
-            retryDelayMs = Math.min(retryDelayMs * 2, RETRY_MAX_MS);
+            retryDelayMs = Math.min(retryDelayMs * 2, retryMaxMs);
         }
     }
 
@@ -140,7 +151,7 @@ public abstract class FileUploader {
         boolean retryWaiting;
         synchronized (retryLock) {
             retryWaiting = pendingRetry != null;
-            retryDelayMs = RETRY_MIN_MS;
+            retryDelayMs = retryMinMs;
         }
         if (retryWaiting) {
             retryNow();
