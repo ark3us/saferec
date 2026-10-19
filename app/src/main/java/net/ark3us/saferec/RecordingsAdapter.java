@@ -182,7 +182,9 @@ public class RecordingsAdapter extends RecyclerView.Adapter<RecyclerView.ViewHol
             displayItem.cutTimestamp = cutTsaItemsByChunk.get(chunkKey);
             items.add(displayItem);
         }
-        // A session with a manifest but no chunk on Drive: its header still shows the gap
+        // A session with a manifest but no chunk on Drive: its header still shows the gap, in its
+        // place among the others (newest first, as DriveRecordings sorts), not at the bottom of
+        // the list: a session still recording, or one whose chunks were all lost
         for (Map.Entry<String, List<DriveRecordings.RecordingItem>> entry : sessionFilesByGroup.entrySet()) {
             boolean shown = false;
             for (DisplayItem shownItem : items) {
@@ -190,7 +192,15 @@ public class RecordingsAdapter extends RecyclerView.Adapter<RecyclerView.ViewHol
             }
             if (!shown) {
                 MediaFile manifest = entry.getValue().get(0).mediaFile;
-                items.add(header(manifest.sessionId, manifest.dataType, entry.getKey(), sessionFilesByGroup, gapsByGroup));
+                int at = items.size();
+                for (int i = 0; i < items.size(); i++) {
+                    DisplayItem other = items.get(i);
+                    if (other.type == TYPE_HEADER && other.sessionId.compareTo(manifest.sessionId) < 0) {
+                        at = i;
+                        break;
+                    }
+                }
+                items.add(at, header(manifest.sessionId, manifest.dataType, entry.getKey(), sessionFilesByGroup, gapsByGroup));
             }
         }
         return items;
