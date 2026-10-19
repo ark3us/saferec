@@ -47,8 +47,7 @@ public class MediaFile {
             }
             long timestamp = Long.parseLong(tsSeqExt[0]);
             int sequenceNumber = Integer.parseInt(tsSeqExt[1]);
-            String extension = tsSeqExt.length > 2 ? tsSeqExt[2] : "mp4";
-            return new MediaFile(sessionId, dataType, timestamp, sequenceNumber, extension);
+            return new MediaFile(sessionId, dataType, timestamp, sequenceNumber, extensionOf(tsSeqExt));
         } catch (Exception e) {
             Log.e(TAG, "Invalid file name: " + name, e);
             return null;
@@ -62,12 +61,29 @@ public class MediaFile {
             if (parts.length < 2) return null;
             long timestamp = Long.parseLong(parts[0]);
             int sequenceNumber = Integer.parseInt(parts[1]);
-            String extension = parts.length > 2 ? parts[2] : "mp4";
-            return new MediaFile(sessionId, dataType, timestamp, sequenceNumber, extension);
+            return new MediaFile(sessionId, dataType, timestamp, sequenceNumber, extensionOf(parts));
         } catch (Exception e) {
             Log.e(TAG, "Failed to reconstruct MediaFile from Drive data: " + fileName, e);
             return null;
         }
+    }
+
+    /**
+     * Everything after "timestamp.sequence": "mp4", "tsa", "cut" or "cut.tsa" (the timestamp of
+     * a cut original). Taking only the first part made "cut.tsa" a "cut", uploaded under the
+     * very name of the original it certifies.
+     */
+    private static String extensionOf(String[] tsSeqExt) {
+        if (tsSeqExt.length <= 2) {
+            return "mp4";
+        }
+        return String.join(".", java.util.Arrays.copyOfRange(tsSeqExt, 2, tsSeqExt.length));
+    }
+
+    /** RFC 3161 timestamp replies: a chunk's (".tsa") or a cut original's (".cut.tsa"). */
+    public boolean isTimestamp() {
+        String extension = getExtension().toLowerCase(Locale.ROOT);
+        return extension.equals("tsa") || extension.endsWith(".tsa");
     }
 
     public String getExtension() {
@@ -75,7 +91,7 @@ public class MediaFile {
     }
 
     public String getMimeType() {
-        if ("tsa".equalsIgnoreCase(getExtension())) {
+        if (isTimestamp()) {
             return "application/timestamp-reply";
         }
         if ("cut".equalsIgnoreCase(getExtension())) {

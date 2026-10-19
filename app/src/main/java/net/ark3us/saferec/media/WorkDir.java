@@ -4,6 +4,9 @@ import android.content.Context;
 import android.util.Log;
 
 import java.io.File;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 
 /**
  * The directory chunks are written in, before the service hashes them and moves them to the
@@ -68,6 +71,15 @@ public final class WorkDir {
     public interface Repairer {
         /** Writes the repaired chunk to out; false when it cannot (out is then deleted). */
         boolean repair(File cut, File journal, File out);
+
+        /**
+         * Called for every recovered chunk while it is still in "repair/", before anything can
+         * upload and delete it: repaired is the playable copy, or null when the original goes
+         * as it is. Returns files created next to them (timestamps) to send along.
+         */
+        default List<File> beforeOutbox(File repaired, File original) {
+            return Collections.emptyList();
+        }
     }
 
     public int recover(File workDir, File outbox) {
@@ -132,19 +144,28 @@ public final class WorkDir {
     }
 
     private static int finishRecovery(File repairDir, File outbox, Repairer repairer) {
-        File[] chunks = repairDir.listFiles(f -> f.isFile() && !SampleJournal.isJournal(f) && !f.getName().endsWith(REPAIRING));
         File[] leftovers = repairDir.listFiles(f -> f.getName().endsWith(REPAIRING));
         if (leftovers != null) {
             for (File leftover : leftovers) {
                 leftover.delete(); // a repair cut short: it starts over
             }
         }
-        if (chunks == null || chunks.length == 0) {
+        File[] all = repairDir.listFiles(File::isFile);
+        if (all == null || all.length == 0) {
             return 0;
         }
         if (!outbox.isDirectory() && !outbox.mkdirs()) {
             Log.e(TAG, "Cannot create outbox: " + outbox.getAbsolutePath());
             return 0;
+        }
+        List<File> chunks = new ArrayList<>();
+        for (File file : all) {
+            if (file.getName().endsWith(".mp4")) {
+                chunks.add(file);
+            } else if (!SampleJournal.isJournal(file) && !file.renameTo(new File(outbox, file.getName()))) {
+                // A timestamp a recovery cut short left behind: valid, it goes as it is
+                Log.e(TAG, "Failed to move " + file.getName() + " to the outbox");
+            }
         }
         int moved = 0;
         for (File chunk : chunks) {
@@ -153,18 +174,28 @@ public final class WorkDir {
             // The playable copy first: if the process dies before the original follows, the
             // next recovery repairs again. Once the copy is there, the original goes as .cut
             // only, so it can never replace the copy.
-            boolean copyInOutbox = repairer != null && journal.exists()
-                    && repairer.repair(chunk, journal, repaired)
-                    && repaired.renameTo(new File(outbox, chunk.getName()));
+            boolean repairedOk = repairer != null && journal.exists() && repairer.repair(chunk, journal, repaired);
+            List<File> extras = repairer != null
+                    ? repairer.beforeOutbox(repairedOk ? repaired : null, chunk) : Collections.emptyList();
+            boolean copyInOutbox = repairedOk && repaired.renameTo(new File(outbox, chunk.getName()));
             repaired.delete();
             String target = copyInOutbox ? cutName(chunk.getName()) : chunk.getName();
-            if (chunk.renameTo(new File(outbox, target))) {
+            if (repairedOk == copyInOutbox && chunk.renameTo(new File(outbox, target))) {
                 Log.w(TAG, copyInOutbox
                         ? "Repaired interrupted chunk: " + chunk.getName() + " (original kept as " + target + ")"
                         : "Recovered interrupted chunk: " + chunk.getName());
+                for (File extra : extras) {
+                    if (!extra.renameTo(new File(outbox, extra.getName()))) {
+                        Log.e(TAG, "Failed to move " + extra.getName() + " to the outbox");
+                    }
+                }
                 journal.delete();
                 moved++;
             } else {
+                // The extras describe files that did not go as planned: made again next time
+                for (File extra : extras) {
+                    extra.delete();
+                }
                 Log.e(TAG, "Failed to recover interrupted chunk: " + chunk.getName() + ", retrying at the next recovery");
             }
         }

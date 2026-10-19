@@ -33,6 +33,18 @@ public class MediaFileTest {
     }
 
     @Test
+    public void aCutOriginalsTimestampKeepsBothExtensions() {
+        MediaFile token = MediaFile.fromFile(new File("1792394615054_video_1792394620112.3.cut.tsa"));
+        assertNotNull(token);
+        assertEquals("cut.tsa", token.getExtension()); // not "cut": it would take the original's name on Drive
+        assertEquals("1792394615054_video_1792394620112.3.cut.tsa", token.getFileName());
+        assertEquals("application/timestamp-reply", token.getMimeType());
+        MediaFile drive = MediaFile.fromDriveData("1792394615054", "video", "1792394620112.3.cut.tsa");
+        assertEquals("cut.tsa", drive.getExtension());
+        assertEquals(3, drive.sequenceNumber);
+    }
+
+    @Test
     public void theOriginalOfARepairedChunkIsNotVideo() {
         MediaFile cut = MediaFile.fromFile(new File("1792394615054_video_1792394620112.3.cut"));
         assertNotNull(cut);

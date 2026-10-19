@@ -136,7 +136,7 @@ public class OutboxWorker extends Worker {
     @Override
     public Result doWork() {
         Context context = getApplicationContext();
-        int adopted = WorkDir.get().recover(WorkDir.dir(context), GoogleDriveFileUploader.outboxDir(context), new ChunkRepair());
+        int adopted = WorkDir.get().recover(WorkDir.dir(context), GoogleDriveFileUploader.outboxDir(context), new ChunkRepair(context));
         if (adopted > 0) {
             Log.w(TAG, "Adopted " + adopted + " chunks a dead process left in the work dir");
         }

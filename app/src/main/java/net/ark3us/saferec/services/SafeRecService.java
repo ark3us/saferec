@@ -120,7 +120,7 @@ public class SafeRecService extends Service {
         // thread: a repair can take seconds. A recording that starts first makes it skip
         // (WorkDir), and the outbox job recovers them later.
         postProcessExecutor.execute(() -> {
-            if (WorkDir.get().recover(workDir(), outboxDir(), new ChunkRepair()) > 0) {
+            if (WorkDir.get().recover(workDir(), outboxDir(), new ChunkRepair(this)) > 0) {
                 uploader.upload(outboxDir());
             }
         });

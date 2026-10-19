@@ -7,6 +7,9 @@ import static org.junit.Assert.assertTrue;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.nio.file.Files;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 
 import org.junit.Before;
 import org.junit.Rule;
@@ -163,5 +166,74 @@ public class WorkDirTest {
     @Test
     public void theOriginalIsNamedAfterItsChunk() {
         assertEquals("x_video_1792394620112.3.cut", WorkDir.cutName("x_video_1792394620112.3.mp4"));
+    }
+
+    /** A repairer whose hook writes a timestamp per file, and records what it was given. */
+    private static final class TimestampingRepairer implements WorkDir.Repairer {
+        final boolean repairs;
+        final List<String> given = new ArrayList<>();
+
+        TimestampingRepairer(boolean repairs) {
+            this.repairs = repairs;
+        }
+
+        @Override
+        public boolean repair(File cut, File journal, File out) {
+            return repairer(repairs).repair(cut, journal, out);
+        }
+
+        @Override
+        public List<File> beforeOutbox(File repaired, File original) {
+            given.add((repaired == null ? "null" : "copy") + "+" + original.getName());
+            String base = original.getName().replace(".mp4", "");
+            List<File> tokens = new ArrayList<>();
+            try {
+                File chunkToken = new File(original.getParentFile(), base + ".tsa");
+                Files.write(chunkToken.toPath(), "token".getBytes());
+                tokens.add(chunkToken);
+                if (repaired != null) {
+                    File cutToken = new File(original.getParentFile(), base + ".cut.tsa");
+                    Files.write(cutToken.toPath(), "token".getBytes());
+                    tokens.add(cutToken);
+                }
+            } catch (Exception e) {
+                throw new AssertionError(e);
+            }
+            return tokens;
+        }
+    }
+
+    @Test
+    public void timestampsMadeBeforeTheOutboxGoAlongWithTheirChunk() throws Exception {
+        chunk("x_video_1.0.mp4", 100);
+        chunk("x_video_1.0.mp4.idx", 40);
+        TimestampingRepairer repairer = new TimestampingRepairer(true);
+        assertEquals(1, workDir.recover(work, outbox, repairer));
+        assertEquals(Collections.singletonList("copy+x_video_1.0.mp4"), repairer.given);
+        for (String name : new String[]{"x_video_1.0.mp4", "x_video_1.0.cut", "x_video_1.0.tsa", "x_video_1.0.cut.tsa"}) {
+            assertTrue(name, new File(outbox, name).exists());
+        }
+        assertEquals(0, new File(tmp.getRoot(), "repair").list().length);
+    }
+
+    @Test
+    public void anUnrepairedChunkIsTimestampedAsItIs() throws Exception {
+        chunk("x_video_1.0.mp4", 100); // no log: it goes as it is
+        TimestampingRepairer repairer = new TimestampingRepairer(true);
+        assertEquals(1, workDir.recover(work, outbox, repairer));
+        assertEquals(Collections.singletonList("null+x_video_1.0.mp4"), repairer.given);
+        assertTrue(new File(outbox, "x_video_1.0.tsa").exists());
+        assertFalse(new File(outbox, "x_video_1.0.cut.tsa").exists());
+    }
+
+    @Test
+    public void aTimestampLeftInTheRepairDirGoesAsItIs() throws Exception {
+        File repairDir = new File(tmp.getRoot(), "repair");
+        assertTrue(repairDir.mkdirs());
+        // Its chunk reached the outbox before the process died
+        Files.write(new File(repairDir, "x_video_1.0.cut.tsa").toPath(), "token".getBytes());
+        assertEquals(0, workDir.recover(work, outbox, repairer(true)));
+        assertTrue(new File(outbox, "x_video_1.0.cut.tsa").exists());
+        assertEquals(0, repairDir.list().length);
     }
 }

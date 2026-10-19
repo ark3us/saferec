@@ -1,13 +1,19 @@
 package net.ark3us.saferec.media;
 
+import android.content.Context;
 import android.media.MediaCodec;
 import android.media.MediaFormat;
 import android.media.MediaMuxer;
 import android.util.Log;
 
+import net.ark3us.saferec.misc.Settings;
+import net.ark3us.saferec.net.TsaClient;
+
 import java.io.File;
 import java.io.RandomAccessFile;
 import java.nio.ByteBuffer;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 
@@ -18,6 +24,44 @@ import java.util.Map;
  */
 public final class ChunkRepair implements WorkDir.Repairer {
     private static final String TAG = ChunkRepair.class.getSimpleName();
+    private final Context context;
+
+    public ChunkRepair(Context context) {
+        this.context = context.getApplicationContext();
+    }
+
+    /**
+     * A cut chunk never got its timestamp: the hash is taken when a chunk closes, which never
+     * happened. With timestamping on, the file that goes as the chunk (the repaired copy, or the
+     * original when it could not be repaired) gets "<base>.tsa", paired with the chunk as usual,
+     * and a repaired chunk's original gets "<base>.cut.tsa". They prove the bytes existed,
+     * unchanged, no later than the recovery. Hashed here, before the outbox, where an upload
+     * may delete the files. A failed timestamp is not retried, as for every chunk.
+     */
+    @Override
+    public List<File> beforeOutbox(File repaired, File original) {
+        if (!Settings.isTimestampingEnabled(context)) {
+            return Collections.emptyList();
+        }
+        List<File> tokens = new ArrayList<>();
+        String name = original.getName();
+        String base = name.substring(0, name.lastIndexOf('.'));
+        File dir = original.getParentFile();
+        timestamp(repaired != null ? repaired : original, new File(dir, base + ".tsa"), tokens);
+        if (repaired != null) {
+            timestamp(original, new File(dir, base + "." + WorkDir.CUT_EXTENSION + ".tsa"), tokens);
+        }
+        return tokens;
+    }
+
+    private void timestamp(File file, File token, List<File> tokens) {
+        byte[] hash = TsaClient.sha256(file);
+        if (hash != null && TsaClient.timestampHash(context, hash, token, false)) {
+            tokens.add(token);
+        } else {
+            Log.w(TAG, "No timestamp for " + token.getName());
+        }
+    }
 
     @Override
     public boolean repair(File cut, File journalFile, File out) {

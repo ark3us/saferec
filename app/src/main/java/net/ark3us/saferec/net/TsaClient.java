@@ -54,6 +54,12 @@ public class TsaClient {
      * Only the hash is needed, so this can run after the data file is gone.
      */
     public static boolean timestampHash(Context context, byte[] hash, File outputFile) {
+        return timestampHash(context, hash, outputFile, true);
+    }
+
+    /** toasts: false from background work (the outbox job at boot), where a toast makes no sense. */
+    public static boolean timestampHash(Context context, byte[] hash, File outputFile, boolean toasts) {
+        Context toastContext = toasts ? context : null;
         try {
             // 1. Generate TSQ
             TimeStampRequestGenerator tsqGenerator = new TimeStampRequestGenerator();
@@ -78,14 +84,14 @@ public class TsaClient {
             int responseCode = connection.getResponseCode();
             if (responseCode != HttpURLConnection.HTTP_OK) {
                 Log.e(TAG, "TSA responded with code " + responseCode);
-                showToast(context, context.getString(R.string.tsa_failed_code, responseCode));
+                showToast(toastContext, context.getString(R.string.tsa_failed_code, responseCode));
                 return false;
             }
 
             String contentType = connection.getContentType();
             if (contentType == null || !contentType.toLowerCase(Locale.ROOT).startsWith("application/timestamp-reply")) {
                 Log.e(TAG, "Invalid content type from TSA: " + contentType);
-                showToast(context, context.getString(R.string.tsa_invalid_response));
+                showToast(toastContext, context.getString(R.string.tsa_invalid_response));
                 return false;
             }
 
@@ -104,7 +110,7 @@ public class TsaClient {
 
             if (responseBytes.length == 0) {
                 Log.e(TAG, "TSA response is empty");
-                showToast(context, context.getString(R.string.tsa_empty_response));
+                showToast(toastContext, context.getString(R.string.tsa_empty_response));
                 return false;
             }
 
@@ -114,7 +120,7 @@ public class TsaClient {
                 tsResponse.validate(request);
             } catch (Exception e) {
                 Log.e(TAG, "Failed to parse/validate TSA response: " + e.getMessage(), e);
-                showToast(context, context.getString(R.string.tsa_validation_failed));
+                showToast(toastContext, context.getString(R.string.tsa_validation_failed));
                 return false;
             }
 
@@ -134,7 +140,7 @@ public class TsaClient {
             return true;
         } catch (Exception e) {
             Log.e(TAG, "Failed to timestamp file", e);
-            showToast(context, context.getString(R.string.tsa_unreachable));
+            showToast(toastContext, context.getString(R.string.tsa_unreachable));
             return false;
         }
     }
