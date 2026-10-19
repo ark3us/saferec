@@ -163,6 +163,10 @@ stop_recording() {
 premature_stops() { count_log "AudioRecorder stopped"; } # call before stop_recording
 saved_chunks() { count_log "Processing saved chunk: .*\.mp4"; }
 duplicate_uploads() { count_log "Failed to delete file after upload"; } # 2nd copy of an uploaded file
+dropped_frames() { count_log "Skipping (audio|video) frame"; } # lost at a chunk boundary
+# Age of the first video frame on the clock MuxerSink picked: 0-1000 ms means camera and
+# microphone timestamps were brought to one clock (prints -1 when there was no video)
+video_clock_age() { logs | sed -n 's/.*Video clock: [A-Z]*, first frame \(-*[0-9]*\) ms old.*/\1/p' | head -1 | grep . || echo -1; }
 
 # --- Chunk analysis -------------------------------------------------------------
 
@@ -219,6 +223,9 @@ scenario_offline_start() {
     refresh=$(count_log "Silent refresh|Access token rejected")
     stop_recording
     saved=$(saved_chunks)
+    local dropped clock_age
+    dropped=$(dropped_frames)
+    clock_age=$(video_clock_age)
     logs >"$OUT/offline_start.log"
     pull_chunks "$OUT/offline_start"
     durations=$(check_chunks "$OUT/offline_start" "audio\+video") || ok=0
@@ -227,11 +234,13 @@ scenario_offline_start() {
     note "start latency ${latency}s, saved chunks $saved, premature stops $premature"
     note "failed uploads kept for later: $unknown, token refresh attempts: $refresh"
     note "$durations"
+    note "frames dropped at chunk boundaries $dropped, first video frame ${clock_age} ms old on the shared clock"
     ((latency <= 10 && premature == 0 && saved >= 3 && unknown >= 1 && refresh == 0)) || ok=0
+    ((dropped == 0 && clock_age >= 0 && clock_age < 1000)) || ok=0
     if ((ok)); then
         record offline_start PASS "started in ${latency}s offline, $saved chunks of ~10 s, token untouched"
     else
-        record offline_start FAIL "latency=${latency}s saved=$saved premature=$premature unknown=$unknown refresh=$refresh"
+        record offline_start FAIL "latency=${latency}s saved=$saved premature=$premature unknown=$unknown refresh=$refresh dropped=$dropped clock_age=${clock_age}ms"
     fi
 }
 
@@ -242,20 +251,21 @@ scenario_audio_only() {
     go_offline || { record audio_only FAIL "could not go offline"; return; }
     start_recording || { record audio_only FAIL "recording did not start"; go_online; return; }
     sleep 35
-    local premature durations ok=1
+    local premature durations dropped ok=1
     premature=$(premature_stops)
     stop_recording
+    dropped=$(dropped_frames)
     logs >"$OUT/audio_only.log"
     pull_chunks "$OUT/audio_only"
     durations=$(check_chunks "$OUT/audio_only" "audio") || ok=0
     clear_store # before going online, or the outbox retry would upload these test chunks
     go_online
-    note "$durations"
-    ((premature == 0)) || ok=0
+    note "$durations, frames dropped at chunk boundaries $dropped"
+    ((premature == 0 && dropped == 0)) || ok=0
     if ((ok)); then
         record audio_only PASS "${durations%%:*}, all ~10 s, audio only"
     else
-        record audio_only FAIL "premature=$premature; $durations"
+        record audio_only FAIL "premature=$premature dropped=$dropped; $durations"
     fi
 }
 
