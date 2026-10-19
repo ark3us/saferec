@@ -32,9 +32,6 @@ A short guide plus script (`openssl ts -verify -data chunk.mp4 -in chunk.tsa -CA
 ### Say when Drive is full
 Drive answers HTTP 403 `storageQuotaExceeded` when the account is full. Today that is retried forever, silently. Report it as its own error ("Drive is full: recordings stay on the phone") so the user can free space before an emergency, not after.
 
-### VPN-aware network trigger
-With an always-on VPN the default network never changes, so `onAvailable` does not fire when the real network comes back. Also listen to `onCapabilitiesChanged` and retry when the network turns `VALIDATED` again, or when its underlying transports change.
-
 ### Idempotent folder creation
 A folder `create` whose response is lost (timeout) can still succeed on Drive. Pre-generate folder IDs with `files.generateIds`, persist them, and create with that ID: a retry then fails with 409 instead of making a duplicate, whatever Drive's search index says.
 

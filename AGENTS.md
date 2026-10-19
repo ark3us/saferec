@@ -216,7 +216,8 @@ Failures are classified from the error itself. An extra request to check the tok
 - `SafeRecService.onCreate()` moves orphans left in `recording/` by a crash or kill into the outbox. Such a chunk has no MP4 index and may not play, but it is kept as evidence.
 - The service owns one `GoogleDriveFileUploader` (`ensureUploader()`), shared by the recording and `CMD_UPLOAD_PENDING`, so the `queuedFiles` dedupe covers both.
 - When an upload fails, its file stays in the outbox, and `FileUploader` schedules one outbox rescan: 10 s, doubling up to 5 min.
-- A successful upload, or a new default network (`onAvailable`), rescans the outbox immediately and resets the backoff.
+- A successful upload rescans the outbox immediately and resets the backoff. So does the network coming back: the default network changing, or gaining a transport.
+- A VPN stays the default network and stays `VALIDATED` while the phone has no network under it, so `onAvailable` never fires. Its transports do change, from `WIFI|VPN` to `VPN` and back (measured on a Galaxy S10+), and that change is the trigger.
 
 ### 3. Stop Recording
 
@@ -437,7 +438,7 @@ Chunks are uploaded immediately on completion and **deleted locally** on success
 | **Audio processing** (Thread) | `AudioStreamRecorder.processAudio()` loop |
 | **Upload pool** (4 threads) | `FileUploader.uploadExecutor` |
 | **Upload scan** (1 thread) | `FileUploader.scanExecutor`: outbox scans and the scheduled retry rescan |
-| **Network callback** (system thread) | `SafeRecService.networkCallback` → `retryNow()` |
+| **Network callback** (system thread) | `SafeRecService.networkCallback`: `retryNow()` when the default network changes or gains a transport |
 | **Service executor** (1 thread) | `SafeRecService.executor` for pending uploads |
 
 ### Thread Safety Notes
@@ -458,7 +459,7 @@ Chunks are uploaded immediately on completion and **deleted locally** on success
 2. **Mixed-rotation merge.** A single MP4 can only have one `setOrientationHint`. When chunks from different cameras (with different sensor orientations) or different device rotations are merged, some segments will display with wrong rotation.
 3. **No video mirroring.** Front camera video is recorded un-mirrored (you see yourself as others see you, not as a mirror reflection). This is standard for video recording.
 4. **Background Auth Failure.** If Drive rejects the access token (HTTP 401) during background upload, the app attempts a silent token refresh via Google Identity Services. If successful, the upload seamlessly resumes. If the refresh requires user interaction (e.g., token revoked or password changed), it clears the token and reports `ERROR_AUTH`, prompting the user to re-authenticate. The recording keeps going. Network errors never clear the token.
-5. **Slow failure behind a VPN.** With a VPN app keeping its tunnel up while the phone has no network, packets vanish and each Drive call fails only after its 20 s timeout. `onAvailable` may never fire, because the VPN stays the default network. Recovery then relies on the backoff and on the next successful upload.
+5. **Slow failure behind a VPN.** With a VPN app keeping its tunnel up while the phone has no network, packets vanish and each Drive call fails only after its 20 s timeout instead of at once. Uploads that were already running when the network dropped fail when it returns, and are retried.
 6. **Preview rebuild failure drops video.** `onConfigureFailed` during `attachPreview`/`detachPreview` is handled like a camera loss: the rest of the session is audio-only.
 7. **Audio ~1 s behind video.** Audio and video are normalized to their own first packet, but audio starts before the camera delivers its first frame. Measured on a Galaxy S10+: chunk #0 holds ~10.1 s of audio vs ~9.0 s of video, and the offset persists for the session. A few audio frames (~70 ms) are also dropped at each chunk boundary. Fix needs one shared clock for both tracks.
 
