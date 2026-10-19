@@ -75,7 +75,7 @@ The app exists to save evidence when things go wrong. Keep these invariants:
 
 1. **Record first, sync later.** Starting a recording never waits for the network, Drive or a valid token. Chunks wait on disk until an upload succeeds.
 2. **Errors never stop a recording.** Upload, auth and TSA failures are reported as error events; only a total loss of camera *and* microphone ends a session.
-3. **Network errors are not auth errors.** The access token is cleared only when Drive answers HTTP 401 and a silent refresh needs user interaction.
+3. **Network errors are not auth errors.** Only HTTP 401 triggers a token refresh. The background never clears the stored token: when a silent refresh needs user interaction, it reports `ERROR_AUTH` and keeps the files. Play services also ask for interaction when they cannot reach Google, and a cleared token stopped every later upload until the user reopened the app.
 4. **Chunks never wait for the TSA.** Hash first, upload, then timestamp the hash.
 5. **Degrade gracefully.** Camera lost → continue audio-only.
 6. **The outbox holds complete chunks only.** A chunk is written in `recording/` and moved to `data_store/` when closed, so the outbox can be uploaded at any time, even mid-recording.
@@ -192,7 +192,6 @@ sequenceDiagram
                 GDFU->>GDC: setAccessToken(newToken)
                 GDFU->>GDFU: retry upload once
             else Resolution required
-                GDFU->>S: setAccessToken(null)
                 GDFU->>LD: reportError(ERROR_AUTH)
             end
         else Any other failure (network down, timeout, Drive error)
@@ -458,7 +457,7 @@ Chunks are uploaded immediately on completion and **deleted locally** on success
 1. **Camera switch = recording gap.** Switching cameras mid-session does a full stop+restart, creating a new muxer/session segment.
 2. **Mixed-rotation merge.** A single MP4 can only have one `setOrientationHint`. When chunks from different cameras (with different sensor orientations) or different device rotations are merged, some segments will display with wrong rotation.
 3. **No video mirroring.** Front camera video is recorded un-mirrored (you see yourself as others see you, not as a mirror reflection). This is standard for video recording.
-4. **Background Auth Failure.** If Drive rejects the access token (HTTP 401) during background upload, the app attempts a silent token refresh via Google Identity Services. If successful, the upload seamlessly resumes. If the refresh requires user interaction (e.g., token revoked or password changed), it clears the token and reports `ERROR_AUTH`, prompting the user to re-authenticate. The recording keeps going. Network errors never clear the token.
+4. **Background Auth Failure.** If Drive rejects the access token (HTTP 401) during background upload, the app attempts a silent token refresh via Google Identity Services. If successful, the upload seamlessly resumes. If the refresh requires user interaction (e.g., token revoked or password changed), it reports `ERROR_AUTH`, prompting the user to re-authenticate, and keeps the token and the files. Each later retry tries the silent refresh again, so uploads resume once Play services can issue a token. The recording keeps going.
 5. **Slow failure behind a VPN.** With a VPN app keeping its tunnel up while the phone has no network, packets vanish and each Drive call fails only after its 20 s timeout instead of at once. Uploads that were already running when the network dropped fail when it returns, and are retried.
 6. **Preview rebuild failure drops video.** `onConfigureFailed` during `attachPreview`/`detachPreview` is handled like a camera loss: the rest of the session is audio-only.
 7. **Audio ~1 s behind video.** Audio and video are normalized to their own first packet, but audio starts before the camera delivers its first frame. Measured on a Galaxy S10+: chunk #0 holds ~10.1 s of audio vs ~9.0 s of video, and the offset persists for the session. A few audio frames (~70 ms) are also dropped at each chunk boundary. Fix needs one shared clock for both tracks.
