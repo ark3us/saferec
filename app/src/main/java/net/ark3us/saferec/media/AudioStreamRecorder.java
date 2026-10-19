@@ -5,10 +5,12 @@ import android.content.Context;
 import android.content.pm.PackageManager;
 import android.media.AudioFormat;
 import android.media.AudioRecord;
+import android.media.AudioTimestamp;
 import android.media.MediaCodec;
 import android.media.MediaCodecInfo;
 import android.media.MediaFormat;
 import android.media.MediaRecorder;
+import android.os.SystemClock;
 import android.util.Log;
 
 import androidx.core.app.ActivityCompat;
@@ -22,6 +24,7 @@ public class AudioStreamRecorder {
     private static final int SAMPLE_RATE = 44100;
     private static final int BIT_RATE = 64000;
     private static final int BUFFER_SIZE_IN_BYTES = 1024 * 10; // Adjust as needed
+    private static final int BYTES_PER_FRAME = 2; // mono, 16-bit
 
     private final Context context;
     private MediaCodec encoder;
@@ -156,31 +159,56 @@ public class AudioStreamRecorder {
         }
     }
 
+    /**
+     * CLOCK_BOOTTIME time of the first captured frame. Timestamps then follow the sample count,
+     * so they never jitter or go backwards, and share a clock with the video track: MuxerSink
+     * brings camera timestamps to CLOCK_BOOTTIME too.
+     */
+    private long captureStartNs(AudioTimestamp timestamp, long framesRead) {
+        if (audioRecord.getTimestamp(timestamp, AudioTimestamp.TIMEBASE_BOOTTIME) == AudioRecord.SUCCESS) {
+            Log.i(TAG, "Audio clock from the capture timestamp");
+            return timestamp.nanoTime - timestamp.framePosition * 1_000_000_000L / SAMPLE_RATE;
+        }
+        // No timestamp yet: the frames just read were captured right before now
+        Log.i(TAG, "Audio clock from the read time");
+        return SystemClock.elapsedRealtimeNanos() - framesRead * 1_000_000_000L / SAMPLE_RATE;
+    }
+
+    private long presentationTimeUs(long startNs, long frames) {
+        return (startNs + frames * 1_000_000_000L / SAMPLE_RATE) / 1000;
+    }
+
     private void processAudio() {
         MediaCodec.BufferInfo bufferInfo = new MediaCodec.BufferInfo();
         byte[] pcmBuffer = new byte[BUFFER_SIZE_IN_BYTES];
-
-        long totalBytesRead = 0;
+        AudioTimestamp timestamp = new AudioTimestamp();
+        long framesRead = 0;
+        long startNs = -1;
 
         try {
             while (isRecording) {
                 // 1. Read PCM data
                 int readSize = audioRecord.read(pcmBuffer, 0, pcmBuffer.length);
                 if (readSize > 0) {
-                    int inputBufferIndex = encoder.dequeueInputBuffer(10000);
+                    if (startNs < 0) {
+                        startNs = captureStartNs(timestamp, readSize / BYTES_PER_FRAME);
+                    }
+                    // Wait for an input buffer instead of dropping the PCM: a dropped buffer
+                    // shortened the audio timeline and shifted all later audio against the video
+                    int inputBufferIndex;
+                    while ((inputBufferIndex = encoder.dequeueInputBuffer(10000)) < 0 && isRecording) {
+                        drainEncoder(bufferInfo);
+                    }
                     if (inputBufferIndex >= 0) {
                         ByteBuffer inputBuffer = encoder.getInputBuffer(inputBufferIndex);
                         if (inputBuffer != null) {
                             inputBuffer.clear();
                             inputBuffer.put(pcmBuffer, 0, readSize);
-                            
-                            // Audio presentation time in microseconds
-                            long presentationTimeUs = (totalBytesRead * 1000000L) / (SAMPLE_RATE * 2L);
-                            totalBytesRead += readSize;
-                            
-                            encoder.queueInputBuffer(inputBufferIndex, 0, readSize, presentationTimeUs, 0);
+                            encoder.queueInputBuffer(inputBufferIndex, 0, readSize,
+                                    presentationTimeUs(startNs, framesRead), 0);
                         }
                     }
+                    framesRead += readSize / BYTES_PER_FRAME;
                 } else if (readSize < 0) {
                     Log.w(TAG, "AudioRecord read error code: " + readSize);
                     break;
@@ -194,9 +222,8 @@ public class AudioStreamRecorder {
             Log.i(TAG, "Signaling EOS to encoder");
             int eosIndex = encoder.dequeueInputBuffer(10000);
             if (eosIndex >= 0) {
-                long presentationTimeUs = (totalBytesRead * 1000000L) / (SAMPLE_RATE * 2L);
-                encoder.queueInputBuffer(eosIndex, 0, 0, presentationTimeUs,
-                        MediaCodec.BUFFER_FLAG_END_OF_STREAM);
+                long eosUs = startNs < 0 ? 0 : presentationTimeUs(startNs, framesRead);
+                encoder.queueInputBuffer(eosIndex, 0, 0, eosUs, MediaCodec.BUFFER_FLAG_END_OF_STREAM);
             }
             drainEncoder(bufferInfo);
         } catch (Exception e) {

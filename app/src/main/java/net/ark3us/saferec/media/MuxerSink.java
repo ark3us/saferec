@@ -21,6 +21,11 @@ public class MuxerSink {
     // A chunk is only safe once closed and uploaded: its duration is the most
     // media that can be lost if the phone is taken or destroyed.
     public static final long DEFAULT_CHUNK_DURATION_MS = 10_000;
+    // A chunk's time base starts this long before its first packet, so packets of the other
+    // track captured just before it (audio comes out of its encoder late) are kept, not
+    // dropped. The MP4 writer moves the earliest sample to 0, so this adds no silence.
+    private static final long CHUNK_LEAD_US = 1_000_000;
+    private static final long CLOCK_UNKNOWN = Long.MIN_VALUE;
 
     private MediaMuxer muxer;
     private MediaFormat videoFormat;
@@ -59,9 +64,12 @@ public class MuxerSink {
     private boolean expectedAudio;
     private boolean expectedVideo;
     private long bytesWritten = 0;
-    private long sessionVideoBaseUs = -1;
-    private long sessionAudioBaseUs = -1;
+    // Both tracks are normalized against one base on one clock (CLOCK_BOOTTIME): normalizing
+    // each track to its own first packet put audio ~0.2-1 s behind the video (the camera
+    // starts later than the microphone).
+    private long sessionBaseUs = -1;
     private long chunkNormalizedBaseUs = -1;
+    private long videoToBootUs = CLOCK_UNKNOWN;
 
     private static class PendingPacket {
         boolean isVideo;
@@ -176,6 +184,10 @@ public class MuxerSink {
         if (!expectedVideo) {
             return true; // camera dropped: late packets have no track to go to
         }
+        if (videoToBootUs == CLOCK_UNKNOWN) {
+            videoToBootUs = videoToBootOffsetUs(info.presentationTimeUs);
+        }
+        info.presentationTimeUs += videoToBootUs;
         boolean isKeyFrame = (info.flags & MediaCodec.BUFFER_FLAG_KEY_FRAME) != 0;
         if (isKeyFrame && isChunkFull()) {
             rotate();
@@ -189,6 +201,20 @@ public class MuxerSink {
             rotate();
         }
         return writeData(buffer, info, false);
+    }
+
+    /**
+     * Camera timestamps use CLOCK_BOOTTIME on some devices and CLOCK_MONOTONIC on others, while
+     * audio uses CLOCK_BOOTTIME. A frame reaches the muxer well under a second after capture,
+     * so the clock its timestamp is closest to is the camera's clock.
+     */
+    private static long videoToBootOffsetUs(long ptsUs) {
+        long bootUs = SystemClock.elapsedRealtimeNanos() / 1000;
+        long monotonicUs = System.nanoTime() / 1000;
+        boolean boot = Math.abs(bootUs - ptsUs) <= Math.abs(monotonicUs - ptsUs);
+        Log.i(TAG, "Video clock: " + (boot ? "BOOTTIME" : "MONOTONIC") + ", first frame "
+                + ((boot ? bootUs : monotonicUs) - ptsUs) / 1000 + " ms old");
+        return boot ? 0 : bootUs - monotonicUs;
     }
 
     /** True once the open chunk hits the size limit or the duration limit, whichever comes first. */
@@ -223,30 +249,20 @@ public class MuxerSink {
             return true;
         }
     
-        long baseUs;
-        if (isVideo) {
-            if (sessionVideoBaseUs == -1) {
-                sessionVideoBaseUs = info.presentationTimeUs;
-                Log.i(TAG, "Video session base set: " + sessionVideoBaseUs + " us");
-            }
-            baseUs = sessionVideoBaseUs;
-        } else {
-            if (sessionAudioBaseUs == -1) {
-                sessionAudioBaseUs = info.presentationTimeUs;
-                Log.i(TAG, "Audio session base set: " + sessionAudioBaseUs + " us");
-            }
-            baseUs = sessionAudioBaseUs;
+        if (sessionBaseUs == -1) {
+            sessionBaseUs = info.presentationTimeUs;
+            Log.i(TAG, "Session base set: " + sessionBaseUs + " us (" + (isVideo ? "video" : "audio") + ")");
         }
-    
-        long normalizedUs = info.presentationTimeUs - baseUs;
+        long normalizedUs = info.presentationTimeUs - sessionBaseUs;
         if (chunkNormalizedBaseUs == -1) {
-            chunkNormalizedBaseUs = normalizedUs;
-            Log.i(TAG, "Chunk " + sequenceNumber + " normalized base set: " + chunkNormalizedBaseUs + " us (" + (isVideo ? "video" : "audio") + ")");
+            chunkNormalizedBaseUs = normalizedUs - CHUNK_LEAD_US;
+            Log.i(TAG, "Chunk " + (sequenceNumber - 1) + " starts at " + normalizedUs + " us (" + (isVideo ? "video" : "audio") + ")");
         }
         long finalUs = normalizedUs - chunkNormalizedBaseUs;
     
         if (finalUs < 0) {
-            Log.w(TAG, "Skipping " + (isVideo ? "video" : "audio") + " frame with negative PTS: " + finalUs);
+            Log.w(TAG, "Skipping " + (isVideo ? "video" : "audio") + " frame captured "
+                    + -finalUs / 1000 + " ms before the chunk lead");
             return true;
         }
         info.presentationTimeUs = finalUs;
@@ -264,8 +280,8 @@ public class MuxerSink {
 
     public synchronized void stop() {
         closeFile();
-        sessionVideoBaseUs = -1;
-        sessionAudioBaseUs = -1;
+        sessionBaseUs = -1;
+        videoToBootUs = CLOCK_UNKNOWN;
         pendingPackets.clear();
     }
 
