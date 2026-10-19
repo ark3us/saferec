@@ -38,6 +38,8 @@ public class RecordingsAdapter extends RecyclerView.Adapter<RecyclerView.ViewHol
 
         void onMergeSession(String sessionId);
 
+        void onExportSession(String sessionId, String dataType);
+
         void onShareTsa(DriveRecordings.RecordingItem item);
     }
 
@@ -263,6 +265,37 @@ public class RecordingsAdapter extends RecyclerView.Adapter<RecyclerView.ViewHol
         return selected;
     }
 
+    /** Every file of a session on Drive: chunks, timestamps, cut originals, manifest. */
+    public List<DriveRecordings.RecordingItem> getSessionFiles(String sessionId, String dataType) {
+        List<DriveRecordings.RecordingItem> files = new ArrayList<>();
+        for (DisplayItem item : displayItems) {
+            if (!item.sessionId.equals(sessionId) || !item.dataType.equals(dataType)) {
+                continue;
+            }
+            if (item.type == TYPE_HEADER) {
+                files.addAll(item.sessionFiles);
+                continue;
+            }
+            for (DriveRecordings.RecordingItem file : new DriveRecordings.RecordingItem[]{
+                    item.recording, item.tsaRecording, item.cutOriginal, item.cutTimestamp}) {
+                if (file != null) {
+                    files.add(file);
+                }
+            }
+        }
+        return files;
+    }
+
+    /** The manifest's gaps for a session, or null when it has no manifest. */
+    public SessionManifest.Gaps getGaps(String sessionId, String dataType) {
+        for (DisplayItem item : displayItems) {
+            if (item.type == TYPE_HEADER && item.sessionId.equals(sessionId) && item.dataType.equals(dataType)) {
+                return item.gaps;
+            }
+        }
+        return null;
+    }
+
     public List<DriveRecordings.RecordingItem> getItemsBySession(String sessionId) {
         List<DriveRecordings.RecordingItem> items = new ArrayList<>();
         for (DisplayItem item : displayItems) {
@@ -322,6 +355,8 @@ public class RecordingsAdapter extends RecyclerView.Adapter<RecyclerView.ViewHol
             }
             ((HeaderViewHolder) holder).btnMerge
                     .setOnClickListener(v -> listener.onMergeSession(displayItem.sessionId));
+            ((HeaderViewHolder) holder).btnExport
+                    .setOnClickListener(v -> listener.onExportSession(displayItem.sessionId, displayItem.dataType));
         } else if (holder instanceof RecordingViewHolder) {
             RecordingViewHolder recordingHolder = (RecordingViewHolder) holder;
             DriveRecordings.RecordingItem recording = displayItem.recording;
@@ -398,12 +433,14 @@ public class RecordingsAdapter extends RecyclerView.Adapter<RecyclerView.ViewHol
         TextView sessionIdText;
         TextView warningText;
         ImageButton btnMerge;
+        ImageButton btnExport;
 
         HeaderViewHolder(View itemView) {
             super(itemView);
             sessionIdText = itemView.findViewById(R.id.session_id);
             warningText = itemView.findViewById(R.id.session_warning);
             btnMerge = itemView.findViewById(R.id.btn_merge);
+            btnExport = itemView.findViewById(R.id.btn_export);
         }
     }
 

@@ -12,6 +12,8 @@ import org.bouncycastle.asn1.ASN1ObjectIdentifier;
 import org.bouncycastle.tsp.TimeStampRequest;
 import org.bouncycastle.tsp.TimeStampRequestGenerator;
 import org.bouncycastle.tsp.TimeStampResponse;
+import org.bouncycastle.tsp.TimeStampToken;
+import org.bouncycastle.tsp.TimeStampTokenInfo;
 
 import java.io.ByteArrayOutputStream;
 import java.io.File;
@@ -22,6 +24,7 @@ import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.security.MessageDigest;
+import java.util.Date;
 import java.util.Locale;
 
 /** RFC 3161 timestamps from a Time Stamping Authority (Sectigo; the old name said FreeTSA). */
@@ -30,6 +33,35 @@ public class TsaClient {
     private static final String TSA_URL = "https://timestamp.sectigo.com";
     // SHA-256 OID: 2.16.840.1.101.3.4.2.1
     private static final String SHA256_OID = "2.16.840.1.101.3.4.2.1";
+
+    /** What a stored timestamp says: when, and the hash it certifies. */
+    public static final class Info {
+        public final Date time;
+        public final byte[] imprint;
+
+        Info(Date time, byte[] imprint) {
+            this.time = time;
+            this.imprint = imprint;
+        }
+    }
+
+    /**
+     * Reads a stored timestamp reply, or null when it is not one. Only reads: the signature and
+     * the certificate chain are checked by scripts/verify_session.py.
+     */
+    public static Info read(File token) {
+        try {
+            TimeStampToken stamp = new TimeStampResponse(java.nio.file.Files.readAllBytes(token.toPath())).getTimeStampToken();
+            if (stamp == null) {
+                return null;
+            }
+            TimeStampTokenInfo info = stamp.getTimeStampInfo();
+            return new Info(info.getGenTime(), info.getMessageImprintDigest());
+        } catch (Exception e) {
+            Log.w(TAG, "Not a timestamp reply: " + token.getName(), e);
+            return null;
+        }
+    }
 
     /** Returns the SHA-256 of the file, or null if it cannot be read. */
     public static byte[] sha256(File dataFile) {

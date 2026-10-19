@@ -119,7 +119,7 @@ public final class SessionManifest {
         return file.timestamp + "." + file.sequenceNumber + "." + file.getExtension();
     }
 
-    static String hex(byte[] bytes) {
+    public static String hex(byte[] bytes) {
         if (bytes == null) {
             return "unknown";
         }

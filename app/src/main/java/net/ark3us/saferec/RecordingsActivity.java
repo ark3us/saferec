@@ -28,6 +28,11 @@ import androidx.recyclerview.widget.RecyclerView;
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout;
 
 import net.ark3us.saferec.media.MediaMerger;
+import java.util.Map;
+import java.util.HashMap;
+import net.ark3us.saferec.net.TsaClient;
+import net.ark3us.saferec.net.SessionManifest;
+import net.ark3us.saferec.net.EvidencePackage;
 import net.ark3us.saferec.misc.Settings;
 import net.ark3us.saferec.net.DriveRecordings;
 import net.ark3us.saferec.services.SafeRecService;
@@ -103,6 +108,11 @@ public class RecordingsActivity extends AppCompatActivity {
             @Override
             public void onMergeSession(String sessionId) {
                 mergeSession(sessionId);
+            }
+
+            @Override
+            public void onExportSession(String sessionId, String dataType) {
+                exportSession(sessionId, dataType);
             }
 
             @Override
@@ -374,6 +384,209 @@ public class RecordingsActivity extends AppCompatActivity {
                 });
             }
         });
+    }
+
+    /**
+     * Builds the evidence package of a session (see EvidencePackage) and shares it: every file
+     * of the session as it is on Drive, a merged video, a README, a report and the verifier.
+     */
+    private void exportSession(String sessionId, String dataType) {
+        List<DriveRecordings.RecordingItem> files = adapter.getSessionFiles(sessionId, dataType);
+        SessionManifest.Gaps gaps = adapter.getGaps(sessionId, dataType);
+        if (files.isEmpty()) {
+            return;
+        }
+        Log.i(TAG, "Exporting the evidence of session " + sessionId + " (" + files.size() + " files)");
+        progressBar.setVisibility(View.VISIBLE);
+        Toast.makeText(this, R.string.exporting_evidence, Toast.LENGTH_SHORT).show();
+        drive.downloadFiles(files, new DriveRecordings.Callback<List<File>>() {
+            @Override
+            public void onSuccess(List<File> localFiles) {
+                backgroundExecutor.execute(() -> {
+                    File merged = null;
+                    try {
+                        File shareDir = new File(getCacheDir(), "merged_sharing");
+                        if (!shareDir.isDirectory() && !shareDir.mkdirs()) {
+                            throw new IllegalStateException("Failed to create share dir: " + shareDir.getAbsolutePath());
+                        }
+                        Map<String, File> byName = new HashMap<>();
+                        List<EvidencePackage.Item> evidence = new ArrayList<>();
+                        List<DriveRecordings.RecordingItem> chunks = new ArrayList<>();
+                        for (int i = 0; i < files.size(); i++) {
+                            DriveRecordings.RecordingItem item = files.get(i);
+                            byName.put(item.driveFile.getName(), localFiles.get(i));
+                            evidence.add(new EvidencePackage.Item(localFiles.get(i), item.driveFile.getName()));
+                            if ("mp4".equalsIgnoreCase(item.mediaFile.getExtension())) {
+                                chunks.add(item);
+                            }
+                        }
+                        chunks.sort(MERGE_ORDER);
+                        List<File> chunkFiles = new ArrayList<>();
+                        for (DriveRecordings.RecordingItem chunk : chunks) {
+                            chunkFiles.add(byName.get(chunk.driveFile.getName()));
+                        }
+                        String duration = "-";
+                        if (!chunkFiles.isEmpty()) {
+                            try {
+                                merged = new File(shareDir, "evidence_merged_" + sessionId + ".mp4");
+                                MediaMerger.merge(chunkFiles, merged);
+                                duration = durationOf(merged);
+                            } catch (Exception e) {
+                                // The chunks are the evidence: the package goes without the merged video
+                                Log.e(TAG, "Merge for the evidence package failed", e);
+                                if (merged != null) {
+                                    merged.delete();
+                                }
+                                merged = null;
+                            }
+                        }
+                        String report = evidenceReport(sessionId, dataType, chunks, byName, gaps, duration);
+                        byte[] verifier;
+                        try (java.io.InputStream in = getAssets().open("verify_session.py")) {
+                            verifier = readAllBytes(in);
+                        }
+                        File zip = new File(shareDir, EvidencePackage.rootName(sessionId) + ".zip");
+                        EvidencePackage.write(zip, sessionId, dataType,
+                                getString(R.string.evidence_readme, formatTime(Long.parseLong(sessionId)), sessionId),
+                                report, merged, evidence, verifier);
+                        Log.i(TAG, "Evidence package ready: " + zip.getName() + ", " + zip.length() + " bytes");
+                        Uri contentUri = FileProvider.getUriForFile(RecordingsActivity.this,
+                                getPackageName() + ".fileprovider", zip);
+                        mainHandler.post(() -> {
+                            progressBar.setVisibility(View.GONE);
+                            Intent intent = new Intent(Intent.ACTION_SEND);
+                            intent.setType("application/zip");
+                            intent.putExtra(Intent.EXTRA_STREAM, contentUri);
+                            intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                            startActivity(Intent.createChooser(intent, getString(R.string.share_evidence)));
+                        });
+                    } catch (Exception e) {
+                        Log.e(TAG, "Evidence package failed", e);
+                        mainHandler.post(() -> {
+                            progressBar.setVisibility(View.GONE);
+                            Toast.makeText(RecordingsActivity.this, getString(R.string.export_failed, e.getMessage()),
+                                    Toast.LENGTH_LONG).show();
+                        });
+                    } finally {
+                        for (File f : localFiles) {
+                            f.delete();
+                        }
+                        if (merged != null) {
+                            merged.delete();
+                        }
+                    }
+                });
+            }
+
+            @Override
+            public void onError(Exception e) {
+                Log.e(TAG, "Download for the evidence package failed", e);
+                mainHandler.post(() -> {
+                    progressBar.setVisibility(View.GONE);
+                    Toast.makeText(RecordingsActivity.this, getString(R.string.download_failed, e.getMessage()),
+                            Toast.LENGTH_LONG).show();
+                });
+            }
+        });
+    }
+
+    private String evidenceReport(String sessionId, String dataType, List<DriveRecordings.RecordingItem> chunks,
+            Map<String, File> byName, SessionManifest.Gaps gaps, String duration) {
+        List<EvidencePackage.Row> rows = new ArrayList<>();
+        for (DriveRecordings.RecordingItem chunk : chunks) {
+            String name = chunk.driveFile.getName();
+            File file = byName.get(name);
+            byte[] hash = TsaClient.sha256(file);
+            String base = name.substring(0, name.lastIndexOf('.'));
+            File token = byName.get(base + ".tsa");
+            TsaClient.Info stamp = token != null ? TsaClient.read(token) : null;
+            String note = null;
+            if (stamp != null && hash != null && !java.util.Arrays.equals(stamp.imprint, hash)) {
+                note = getString(R.string.report_note_mismatch);
+            } else if (byName.containsKey(base + ".cut")) {
+                note = getString(R.string.report_note_repaired, base + ".cut");
+            }
+            rows.add(new EvidencePackage.Row(chunk.mediaFile.sequenceNumber, name, file.length(),
+                    SessionManifest.hex(hash), stamp != null ? formatUtc(stamp.time.getTime()) : null, note));
+        }
+        String manifestName = sessionId + ".0." + SessionManifest.EXTENSION;
+        File manifest = byName.get(manifestName);
+        String manifestState;
+        if (manifest == null) {
+            manifestState = getString(R.string.report_manifest_missing);
+        } else {
+            File token = byName.get(manifestName + ".tsa");
+            TsaClient.Info stamp = token != null ? TsaClient.read(token) : null;
+            if (stamp == null) {
+                manifestState = getString(R.string.report_manifest_untimestamped);
+            } else if (java.util.Arrays.equals(stamp.imprint, TsaClient.sha256(manifest))) {
+                manifestState = getString(R.string.report_manifest_timestamped, formatUtc(stamp.time.getTime()));
+            } else {
+                manifestState = getString(R.string.report_manifest_later, formatUtc(stamp.time.getTime()));
+            }
+        }
+        List<String> gapLines = new ArrayList<>();
+        if (gaps != null) {
+            for (Integer seq : gaps.lost) {
+                gapLines.add(getString(R.string.report_gaps_lost, String.valueOf(seq)));
+            }
+            for (Integer seq : gaps.onPhone) {
+                gapLines.add(getString(R.string.report_gaps_on_phone, String.valueOf(seq)));
+            }
+        }
+        EvidencePackage.Labels labels = new EvidencePackage.Labels();
+        labels.title = getString(R.string.report_title);
+        labels.started = getString(R.string.report_started);
+        labels.type = getString(R.string.report_type);
+        labels.chunks = getString(R.string.report_chunks);
+        labels.duration = getString(R.string.report_duration);
+        labels.manifest = getString(R.string.report_manifest);
+        labels.gaps = getString(R.string.report_gaps);
+        labels.none = getString(R.string.report_none);
+        labels.columns = getString(R.string.report_columns);
+        labels.noTimestamp = getString(R.string.report_no_timestamp);
+        labels.footer = getString(R.string.report_footer);
+        return EvidencePackage.report(labels, sessionId, dataType, formatTime(Long.parseLong(sessionId)),
+                duration, manifestState, String.join("; ", gapLines), rows);
+    }
+
+    /** Local time with its zone, and UTC: "2026-10-19 19:09:06 CEST (17:09:06 UTC)". */
+    private static String formatTime(long millis) {
+        java.text.SimpleDateFormat local = new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss zzz", java.util.Locale.ROOT);
+        return local.format(new java.util.Date(millis)) + " (" + formatUtc(millis) + ")";
+    }
+
+    private static String formatUtc(long millis) {
+        java.text.SimpleDateFormat utc = new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss 'UTC'", java.util.Locale.ROOT);
+        utc.setTimeZone(java.util.TimeZone.getTimeZone("UTC"));
+        return utc.format(new java.util.Date(millis));
+    }
+
+    private static String durationOf(File video) {
+        android.media.MediaMetadataRetriever retriever = new android.media.MediaMetadataRetriever();
+        try {
+            retriever.setDataSource(video.getAbsolutePath());
+            String ms = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DURATION);
+            long seconds = ms != null ? Long.parseLong(ms) / 1000 : 0;
+            return String.format(java.util.Locale.ROOT, "%d:%02d", seconds / 60, seconds % 60);
+        } catch (Exception e) {
+            return "-";
+        } finally {
+            try {
+                retriever.release();
+            } catch (Exception ignored) {
+            }
+        }
+    }
+
+    private static byte[] readAllBytes(java.io.InputStream in) throws java.io.IOException {
+        java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+        byte[] buffer = new byte[8192];
+        int read;
+        while ((read = in.read(buffer)) != -1) {
+            out.write(buffer, 0, read);
+        }
+        return out.toByteArray();
     }
 
     @Override

@@ -73,6 +73,33 @@ android {
     }
 }
 
+// The evidence package ships the session verifier: copied from scripts/ at build time, so the
+// app never carries a copy that drifted from the one in the repository
+abstract class CopyVerifier : DefaultTask() {
+    @get:InputFile
+    abstract val script: RegularFileProperty
+
+    @get:OutputDirectory
+    abstract val outputDir: DirectoryProperty
+
+    @TaskAction
+    fun copy() {
+        val dir = outputDir.get().asFile
+        dir.mkdirs()
+        script.get().asFile.copyTo(File(dir, "verify_session.py"), overwrite = true)
+    }
+}
+
+val copyVerifier = tasks.register<CopyVerifier>("copyVerifier") {
+    script.set(rootProject.file("scripts/verify_session.py"))
+}
+
+androidComponents {
+    onVariants { variant ->
+        variant.sources.assets?.addGeneratedSourceDirectory(copyVerifier, CopyVerifier::outputDir)
+    }
+}
+
 dependencies {
     testImplementation(libs.junit)
     implementation(libs.appcompat)
