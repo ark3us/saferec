@@ -80,6 +80,7 @@ public class MediaMerger {
             ByteBuffer buffer = ByteBuffer.allocate(1024 * 1024 * 2); // 2MB buffer
             MediaCodec.BufferInfo bufferInfo = new MediaCodec.BufferInfo();
 
+            boolean firstFile = true;
             for (File file : inputFiles) {
                 MediaExtractor extractor = new MediaExtractor();
                 extractor.setDataSource(file.getAbsolutePath());
@@ -106,6 +107,12 @@ public class MediaMerger {
 
                 long fileVideoMaxTsUs = 0;
                 long fileAudioMaxTsUs = 0;
+                // Each track continues where it ended in the previous file. Inside a chunk the
+                // audio may start a little before the video (late audio packets are kept), so
+                // the gap between the tracks only counts in the first file, where it is the
+                // real offset between microphone and camera start.
+                long fileVideoFirstTsUs = firstFile ? 0 : -1;
+                long fileAudioFirstTsUs = firstFile ? 0 : -1;
                 long previousVideoPtsUs = -1;
                 long previousAudioPtsUs = -1;
                 long videoFrameDurationUs = 0;
@@ -143,20 +150,28 @@ public class MediaMerger {
 
                     try {
                         if (trackIndex == fileVideoTrack && videoTrackIndex != -1) {
-                            bufferInfo.presentationTimeUs = startVideoOffsetUs + pts;
+                            if (fileVideoFirstTsUs < 0) {
+                                fileVideoFirstTsUs = pts;
+                            }
+                            long relativeUs = pts - fileVideoFirstTsUs;
+                            bufferInfo.presentationTimeUs = startVideoOffsetUs + relativeUs;
                             muxer.writeSampleData(videoTrackIndex, buffer, bufferInfo);
-                            if (pts > fileVideoMaxTsUs) {
-                                fileVideoMaxTsUs = pts;
+                            if (relativeUs > fileVideoMaxTsUs) {
+                                fileVideoMaxTsUs = relativeUs;
                             }
                             if (previousVideoPtsUs >= 0 && pts > previousVideoPtsUs) {
                                 videoFrameDurationUs = pts - previousVideoPtsUs;
                             }
                             previousVideoPtsUs = pts;
                         } else if (trackIndex == fileAudioTrack && audioTrackIndex != -1) {
-                            bufferInfo.presentationTimeUs = startAudioOffsetUs + pts;
+                            if (fileAudioFirstTsUs < 0) {
+                                fileAudioFirstTsUs = pts;
+                            }
+                            long relativeUs = pts - fileAudioFirstTsUs;
+                            bufferInfo.presentationTimeUs = startAudioOffsetUs + relativeUs;
                             muxer.writeSampleData(audioTrackIndex, buffer, bufferInfo);
-                            if (pts > fileAudioMaxTsUs) {
-                                fileAudioMaxTsUs = pts;
+                            if (relativeUs > fileAudioMaxTsUs) {
+                                fileAudioMaxTsUs = relativeUs;
                             }
                             if (previousAudioPtsUs >= 0 && pts > previousAudioPtsUs) {
                                 audioFrameDurationUs = pts - previousAudioPtsUs;
@@ -171,6 +186,7 @@ public class MediaMerger {
                 }
 
                 extractor.release();
+                firstFile = false;
 
                 // Update offsets for the next file
                 if (fileVideoTrack != -1 && videoTrackIndex != -1) {
