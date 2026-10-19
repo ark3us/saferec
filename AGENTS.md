@@ -220,7 +220,7 @@ Token refreshes are shared: one at a time (`refreshLock`), at most one Play serv
 - `SafeRecService.onCreate()` moves orphans left in `recording/` by a crash or kill into the outbox. Such a chunk has no MP4 index and may not play, but it is kept as evidence.
 - The service owns one `GoogleDriveFileUploader` (`ensureUploader()`), shared by the recording and `CMD_UPLOAD_PENDING`, so the `queuedFiles` dedupe covers both.
 - When an upload fails, its file stays in the outbox, and `FileUploader` schedules one outbox rescan: 10 s, doubling up to 5 min.
-- A successful upload rescans the outbox immediately and resets the backoff. So does the network coming back: the default network changing, or gaining a transport.
+- A successful upload rescans the outbox immediately and resets the backoff. So does the network coming back: the default network changing, gaining a transport, or turning `VALIDATED`. A new Wi-Fi network shows up before its DNS works, so the first retry fails and the `VALIDATED` one goes through (outbox drained in 6 s instead of 23 s).
 - A VPN stays the default network and stays `VALIDATED` while the phone has no network under it, so `onAvailable` never fires. Its transports do change, from `WIFI|VPN` to `VPN` and back (measured on a Galaxy S10+), and that change is the trigger.
 
 ### 3. Stop Recording
@@ -442,7 +442,7 @@ Chunks are uploaded immediately on completion and **deleted locally** on success
 | **Audio processing** (Thread) | `AudioStreamRecorder.processAudio()` loop |
 | **Upload pool** (4 threads) | `FileUploader.uploadExecutor` |
 | **Upload scan** (1 thread) | `FileUploader.scanExecutor`: outbox scans and the scheduled retry rescan |
-| **Network callback** (system thread) | `SafeRecService.networkCallback`: `retryNow()` when the default network changes or gains a transport |
+| **Network callback** (system thread) | `SafeRecService.networkCallback`: `retryNow()` when the default network changes, gains a transport or turns `VALIDATED` |
 | **Service executor** (1 thread) | `SafeRecService.executor` for pending uploads |
 
 ### Thread Safety Notes
