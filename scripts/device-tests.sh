@@ -3,10 +3,10 @@
 #
 # Drives a connected phone with adb and checks logcat, the local chunk store
 # and chunk durations (ffprobe). Needs a debug build (run-as) and adb + ffprobe.
-# Pick a device with ANDROID_SERIAL. Usage:
+# ANDROID_SERIAL must name the test phone (adb devices -l). Usage:
 #
-#   scripts/device-tests.sh                 # all scenarios
-#   scripts/device-tests.sh offline_start replay
+#   ANDROID_SERIAL=<serial> scripts/device-tests.sh                 # all scenarios
+#   ANDROID_SERIAL=<serial> scripts/device-tests.sh offline_start replay
 #
 # Side effects (all restored or cleaned on exit):
 #   - records camera and microphone (lay the phone face down)
@@ -629,7 +629,17 @@ cleanup() {
     note "network, settings and chunk store restored"
 }
 
+# The tests install SafeRec, toggle the network, record and rewrite app data. A run once
+# landed on the owner's everyday phone, plugged into the same cable: name the test phone.
+require_serial() {
+    if [[ -z ${ANDROID_SERIAL:-} ]]; then
+        echo "Set ANDROID_SERIAL to the test phone (adb devices -l): the tests must never run on whatever phone is plugged in."
+        exit 1
+    fi
+}
+
 setup() {
+    require_serial
     say "setup → results in $OUT"
     mkdir -p "$OUT"
     adb get-state >/dev/null 2>&1 || { echo "No device connected"; exit 1; }
