@@ -28,6 +28,7 @@ SafeRec solves this fundamental flaw by continuously uploading video and audio c
 - **Survives Crashes, Kills and Reboots**: Chunks recorded offline wait on the phone and upload on their own once there is a network, even after the app was killed or the phone restarted, without opening the app again.
 - **Cut Chunk Repair**: A chunk cut by a crash or a sudden power cut is rebuilt into a playable video from a log kept while recording. Its untouched original goes to Drive too, and both are timestamped.
 - **Session Manifest**: Each session keeps, next to its chunks, the list of everything it recorded (sizes and SHA-256). The recordings screen flags a chunk missing on Drive, and anyone can check that nothing was removed or altered (see [Verifying a session](#verifying-a-session)).
+- **Evidence Package**: One tap on a session in the recordings screen builds a single zip to hand over: the whole recording merged into one video to watch, every original file as it is on Drive, a report (chunks, SHA-256, timestamp times, gaps), a plain-language README in the app's language and the verifier.
 - **Chunk Management**: Automatically chunks video files (with adjustable chunk sizes) to ensure frequent and manageable uploads, minimizing the risk of losing long segments.
 - **Video Quality Controls**: Adjust video quality (High 720p, Medium 480p, Low 360p) to balance file size against upload speeds.
 
@@ -40,7 +41,10 @@ SafeRec solves this fundamental flaw by continuously uploading video and audio c
 
 ## Verifying a session
 
-Anyone who receives a SafeRec session (a lawyer, an expert, a court) can check it without trusting the app or Google Drive:
+Anyone who receives a SafeRec session (a lawyer, an expert, a court) can check it without trusting the app or Google Drive.
+
+The simplest way is the **evidence package**: in the recordings screen, tap the package icon of the session and share the zip. It holds the verifier and a README with the three steps below; run `uv run verify_session.py evidence` inside it. Otherwise, from the Drive folder:
+
 
 1. In Google Drive, right-click the session folder (it is named after the session's start, e.g. `1792429746374`) and choose **Download**. Unzip it.
 2. Install [uv](https://docs.astral.sh/uv/) and make sure the `openssl` command is available (it is on Linux and macOS).

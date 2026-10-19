@@ -126,6 +126,7 @@ net.ark3us.saferec/
 │   ├── DriveRecordings.java      # Recordings on Drive: list, download, share, trash
 │   ├── MediaFile.java            # Chunk filename parser/generator
 │   ├── SessionManifest.java      # What a session recorded (chunks, sizes, SHA-256); gaps against Drive
+│   ├── EvidencePackage.java      # The zip handed over: merged video, Drive files, README, report, verifier
 │   └── TsaClient.java            # RFC 3161 Time Stamping Authority client (Sectigo)
 │
 │
@@ -261,6 +262,19 @@ cut 2 ….2.mp4 12345 sha256=…                        ← recovered as it was 
   - The manifest only grows. When it no longer matches its timestamp, the verifier looks for a prefix that does: lines added later (a recovery after the stop) are reported as not covered, while an edited line matches no prefix and fails.
   - Its tests (`scripts/test_verify_session.py`) run offline, with a test TSA made with openssl. They cover a complete session, a missing, altered, never-closed or repaired chunk, lines added after the timestamp, an edited manifest, a token for another file and an untrusted authority. Four rules are checked by mutation.
   - Verified on a real session from the S10+ (a chunk and a repaired one, real Sectigo tokens): COMPLETE. Flipping one bit of a chunk, or deleting the cut original, made it fail.
+- **Evidence package.** The package icon on a session header (`RecordingsActivity.exportSession()`) builds `SafeRec-<session>.zip` in `cache/merged_sharing/` and shares it:
+  ```
+  SafeRec-<session>/README.txt         plain language, in the app's language: what is inside, how to check it
+  SafeRec-<session>/report.txt         start, duration, chunks with SHA-256 and timestamp times, manifest state, gaps
+  SafeRec-<session>/merged.mp4         to watch (left out if the merge fails: the chunks are the evidence)
+  SafeRec-<session>/evidence/<session>/<type>/   every file of the session, byte for byte as on Drive
+  SafeRec-<session>/verify_session.py  so `uv run verify_session.py evidence` works inside the package
+  ```
+  - The verifier comes from `scripts/` at build time (`copyVerifier` in `app/build.gradle.kts`, a generated assets directory), so the app never ships a copy that drifted.
+  - The report reads timestamp times and imprints with BouncyCastle (`TsaClient.read()`). It flags a timestamp that does not match its file, but the full signature and chain check is the verifier's.
+  - Videos are stored in the zip, not deflated again.
+  - Android collapses runs of spaces in string resources: the README and the report's column header are quoted in `strings.xml` to keep their layout.
+  - Verified on the S10+. A session recorded with timestamping on was exported from the list. In the zip, following its README, the verifier said COMPLETE (manifest, 3 chunks, real Sectigo tokens). The merged video played 22 s, and the report was aligned.
 - **Lessons from the test.** Drive's search (`files.list` with `trashed=false`) still returned a just-trashed file for a few seconds. And a JSON body passed through `adb shell` lost its double quotes: Drive ignored the body and answered with the file, which looked like a success.
 
 ### Cut Chunk Repair
@@ -658,6 +672,7 @@ Unit tests (JVM, no phone, under a second): `./gradlew testDebugUnitTest`. The s
   - a repair cut short starting over, leftovers and stray logs dropped;
   - timestamps made before the outbox going along with their chunk, an unrepaired chunk timestamped as it is, a timestamp left in `repair/` sent as it is.
 - `SampleJournalTest`: round trip, a record cut short, a foreign file.
+- `EvidencePackageTest`: the zip's layout (Drive's, under `evidence/`), videos stored and the rest deflated, files byte for byte, a package without merged video, the report's lines.
 - `SessionManifestTest`: line format, the last state of each chunk (a late `started` never undoing it), gaps split into on this phone and lost, no gap in a complete session, the manifest and its timestamp updated in place.
 - `ChunkIndexTest`, on synthetic chunks laid out like MPEG4Writer's:
   - every sample of a cut chunk found in place;

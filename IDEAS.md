@@ -70,11 +70,5 @@ The repository is public and now has JVM unit tests that need no phone. A small 
 ### Smoke test the release build in CI
 The `r8test` build can be checked automatically. A GitHub Actions job would build it and start it on an emulator (`reactivecircus/android-emulator-runner`). It would then launch the main screen, the recordings screen and the outbox job, and fail on any `ClassNotFoundException`, `NoSuchFieldException` or crash in logcat. No Google account is needed to catch R8 breaking reflection at startup. It would have caught a missing rule before a release, not on a user's phone.
 
-### Export an evidence package
-Handing a session to a lawyer today means downloading a Drive folder and explaining the verifier. The recordings screen could build one zip per session instead:
-- the merged video, to watch;
-- every chunk, timestamp, cut original and the manifest, to prove;
-- the verifier script and a short README in plain language;
-- a one-page report: session start, duration, chunk list with SHA-256 and timestamp times, gaps.
-
-It would be shared from the phone like a merged video. The receiver gets everything needed to watch and to check, in one file.
+### Verify on the phone, before handing over
+The verifier runs on a computer. The app could run the same checks on a session before exporting it: every listed chunk present with its SHA-256, and every timestamp's imprint matching. BouncyCastle can also check the signature against a bundled copy of Sectigo's root. The export would then say "verified on this phone" or flag the problem while the phone may still hold the missing chunk. That is the one moment it can still be fixed, by waiting for the upload or keeping the phone's copy.
