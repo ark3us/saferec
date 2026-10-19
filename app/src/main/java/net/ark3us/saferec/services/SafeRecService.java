@@ -7,6 +7,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.net.ConnectivityManager;
 import android.net.Network;
+import android.net.NetworkCapabilities;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
@@ -355,20 +356,49 @@ public class SafeRecService extends Service {
         });
     }
 
-    /** Network back → empty the outbox now instead of waiting for the retry backoff. */
+    private static int transportMask(NetworkCapabilities caps) {
+        int mask = 0;
+        for (int transport = 0; transport < Integer.SIZE; transport++) {
+            if (caps.hasTransport(transport)) {
+                mask |= 1 << transport;
+            }
+        }
+        return mask;
+    }
+
+    /**
+     * Network back → empty the outbox now instead of waiting for the retry backoff.
+     * A VPN stays the default network, and stays VALIDATED, while the phone has no network
+     * under it, so onAvailable never fires when the network returns. Its transports do
+     * change (VPN → WIFI|VPN): a transport appearing counts as the network coming back.
+     */
     private void registerNetworkCallback() {
         ConnectivityManager cm = getSystemService(ConnectivityManager.class);
         if (cm == null) {
             return;
         }
         networkCallback = new ConnectivityManager.NetworkCallback() {
+            // Callbacks arrive one at a time, and onCapabilitiesChanged always follows onAvailable
+            private Network current;
+            private int transports;
+
             @Override
-            public void onAvailable(@NonNull Network network) {
+            public void onCapabilitiesChanged(@NonNull Network network, @NonNull NetworkCapabilities caps) {
+                int now = transportMask(caps);
+                boolean back = !network.equals(current) || (now & ~transports) != 0;
+                current = network;
+                transports = now;
                 GoogleDriveFileUploader uploader = sharedUploader;
-                if (uploader != null) {
-                    Log.i(TAG, "Network available, retrying pending uploads");
+                if (back && uploader != null) {
+                    Log.i(TAG, "Network changed (transports " + Integer.toBinaryString(now) + "), retrying pending uploads");
                     uploader.retryNow();
                 }
+            }
+
+            @Override
+            public void onLost(@NonNull Network network) {
+                current = null;
+                transports = 0;
             }
         };
         try {
