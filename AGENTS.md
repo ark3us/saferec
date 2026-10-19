@@ -204,6 +204,11 @@ sequenceDiagram
 
 Failures are classified from the error itself. An extra request to check the token would run later, could find the network back, and would say nothing about the failure. A 404 (a cached Drive folder was deleted) also clears the folder cache.
 
+Token refreshes are shared: one at a time (`refreshLock`), at most one Play services request per minute.
+- A token Drive already rejected, or a missing token, goes straight to the refresh instead of sending the chunk only to get another 401.
+- A token the app stored meanwhile (the user opened it) is used without asking Play services.
+- Before this, each failing chunk asked on its own (8 requests in 30 s), which can get the app throttled.
+
 ### Outbox & Retry
 
 | Directory (under `files/`) | Holds |
@@ -448,6 +453,7 @@ Chunks are uploaded immediately on completion and **deleted locally** on success
 - `AudioStreamRecorder.isRecording`: `volatile`, checked in processing loop
 - `GoogleDriveFileUploader.sessionFolderIdCache`: `ConcurrentHashMap`
 - `GoogleDriveFileUploader.cachedBaseFolderId`: `volatile` + double-checked locking
+- `GoogleDriveFileUploader.refreshLock`: one token refresh at a time. `GoogleDriveClient.accessToken`/`driveService` are `volatile`, because a refresh replaces them while uploads run
 - `FileUploader.queuedFiles`: concurrent set; a file is queued at most once, so a pending-files scan cannot upload a chunk that is already in flight (that used to create duplicates on Drive)
 
 ---
@@ -457,7 +463,7 @@ Chunks are uploaded immediately on completion and **deleted locally** on success
 1. **Camera switch = recording gap.** Switching cameras mid-session does a full stop+restart, creating a new muxer/session segment.
 2. **Mixed-rotation merge.** A single MP4 can only have one `setOrientationHint`. When chunks from different cameras (with different sensor orientations) or different device rotations are merged, some segments will display with wrong rotation.
 3. **No video mirroring.** Front camera video is recorded un-mirrored (you see yourself as others see you, not as a mirror reflection). This is standard for video recording.
-4. **Background Auth Failure.** If Drive rejects the access token (HTTP 401) during background upload, the app attempts a silent token refresh via Google Identity Services. If successful, the upload seamlessly resumes. If the refresh requires user interaction (e.g., token revoked or password changed), it reports `ERROR_AUTH`, prompting the user to re-authenticate, and keeps the token and the files. Each later retry tries the silent refresh again, so uploads resume once Play services can issue a token. The recording keeps going.
+4. **Background Auth Failure.** If Drive rejects the access token (HTTP 401) during background upload, the app attempts a silent token refresh via Google Identity Services. If successful, the upload seamlessly resumes. If the refresh requires user interaction (e.g., token revoked or password changed), it reports `ERROR_AUTH`, prompting the user to re-authenticate, and keeps the token and the files. Later retries try the silent refresh again (at most once a minute), so uploads resume once Play services can issue a token. The recording keeps going.
 5. **Slow failure behind a VPN.** With a VPN app keeping its tunnel up while the phone has no network, packets vanish and each Drive call fails only after its 20 s timeout instead of at once. Uploads that were already running when the network dropped fail when it returns, and are retried.
 6. **Preview rebuild failure drops video.** `onConfigureFailed` during `attachPreview`/`detachPreview` is handled like a camera loss: the rest of the session is audio-only.
 7. **Audio ~1 s behind video.** Audio and video are normalized to their own first packet, but audio starts before the camera delivers its first frame. Measured on a Galaxy S10+: chunk #0 holds ~10.1 s of audio vs ~9.0 s of video, and the offset persists for the session. A few audio frames (~70 ms) are also dropped at each chunk boundary. Fix needs one shared clock for both tracks.
