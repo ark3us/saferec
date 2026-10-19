@@ -62,6 +62,7 @@ android {
 }
 
 dependencies {
+    testImplementation(libs.junit)
     implementation(libs.appcompat)
     implementation(libs.material)
     implementation(libs.activity)
