@@ -7,6 +7,8 @@ import android.media.MediaMuxer;
 import android.util.Log;
 
 import net.ark3us.saferec.misc.Settings;
+import net.ark3us.saferec.net.MediaFile;
+import net.ark3us.saferec.net.SessionManifest;
 import net.ark3us.saferec.net.TsaClient;
 
 import java.io.File;
@@ -40,6 +42,10 @@ public final class ChunkRepair implements WorkDir.Repairer {
      */
     @Override
     public List<File> beforeOutbox(File repaired, File original) {
+        // The session manifest records how the chunk ended, with the hashes of what goes to Drive
+        byte[] originalHash = TsaClient.sha256(original);
+        byte[] repairedHash = repaired != null ? TsaClient.sha256(repaired) : null;
+        SessionManifest.recovered(context, repaired, repairedHash, original, originalHash);
         if (!Settings.isTimestampingEnabled(context)) {
             return Collections.emptyList();
         }
@@ -47,15 +53,18 @@ public final class ChunkRepair implements WorkDir.Repairer {
         String name = original.getName();
         String base = name.substring(0, name.lastIndexOf('.'));
         File dir = original.getParentFile();
-        timestamp(repaired != null ? repaired : original, new File(dir, base + ".tsa"), tokens);
+        timestamp(repaired != null ? repairedHash : originalHash, new File(dir, base + ".tsa"), tokens);
         if (repaired != null) {
-            timestamp(original, new File(dir, base + "." + WorkDir.CUT_EXTENSION + ".tsa"), tokens);
+            timestamp(originalHash, new File(dir, base + "." + WorkDir.CUT_EXTENSION + ".tsa"), tokens);
+        }
+        MediaFile chunk = MediaFile.fromFile(original);
+        if (chunk != null) {
+            SessionManifest.timestamp(context, chunk.sessionId, chunk.dataType); // it changed
         }
         return tokens;
     }
 
-    private void timestamp(File file, File token, List<File> tokens) {
-        byte[] hash = TsaClient.sha256(file);
+    private void timestamp(byte[] hash, File token, List<File> tokens) {
         if (hash != null && TsaClient.timestampHash(context, hash, token, false)) {
             tokens.add(token);
         } else {

@@ -25,6 +25,16 @@
             android:letterSpacing="0.1"
             android:textAllCaps="true" />
 
+        <!-- Chunks the session manifest lists but Drive lacks -->
+        <TextView
+            android:id="@+id/session_warning"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:textColor="@color/record_red"
+            android:textSize="12sp"
+            android:visibility="gone" />
+
         <View
             android:layout_width="40dp"
             android:layout_height="2dp"

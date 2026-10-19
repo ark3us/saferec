@@ -33,6 +33,7 @@ import net.ark3us.saferec.net.DriveRecordings;
 import net.ark3us.saferec.net.TsaClient;
 import net.ark3us.saferec.net.GoogleDriveFileUploader;
 import net.ark3us.saferec.net.OutboxWorker;
+import net.ark3us.saferec.net.SessionManifest;
 
 import java.io.File;
 import java.util.Arrays;
@@ -75,6 +76,7 @@ public class SafeRecService extends Service {
     private int activeDeletions = 0;
     private int activeTimestamping = 0;
     private String currentSessionId;
+    private String currentDataType;
     private String errorMessage;
     private GoogleDriveFileUploader uploader; // set in onCreate, before any other thread uses it
     private ConnectivityManager.NetworkCallback networkCallback;
@@ -335,25 +337,18 @@ public class SafeRecService extends Service {
         ChunkPolicy chunkPolicy = ChunkPolicy.fromSetting(Settings.getChunkSizeMB(this));
         Log.i(TAG, "Chunk policy: " + chunkPolicy);
 
-        MuxerSink.FileSavedCallback callback = closed -> {
-            postProcessExecutor.execute(() -> {
-                Log.i(TAG, "Processing saved chunk: " + closed.getName());
-                // Hash before the chunk enters the outbox: from there a rescan or the outbox
-                // job may upload and delete it at any time
-                byte[] hash = Settings.isTimestampingEnabled(this) ? TsaClient.sha256(closed) : null;
-                File file = moveToOutbox(closed);
-                // The chunk is the evidence: it never waits for the TSA, the timestamp can come later
-                uploader.uploadNew(file);
-                if (hash != null) {
-                    // Counted now, not when the task starts: the service must not stop meanwhile
-                    synchronized (this) {
-                        activeTimestamping++;
-                    }
-                    updateNotification();
-                    tsaExecutor.execute(() -> timestampChunk(file, hash));
-                }
-            });
+        MuxerSink.FileSavedCallback callback = new MuxerSink.FileSavedCallback() {
+            @Override
+            public void onFileStarted(File started) {
+                postProcessExecutor.execute(() -> SessionManifest.started(SafeRecService.this, started));
+            }
+
+            @Override
+            public void onFileSaved(File closed) {
+                postProcessSavedChunk(closed);
+            }
         };
+        currentDataType = dataType;
 
         sink = new MuxerSink(workDir(), callback, dataType, sessionId, chunkPolicy);
         sink.setSequenceNumber(currentSequenceNumber);
@@ -409,6 +404,40 @@ public class SafeRecService extends Service {
         }
     }
 
+    private void postProcessSavedChunk(File closed) {
+        postProcessExecutor.execute(() -> {
+            Log.i(TAG, "Processing saved chunk: " + closed.getName());
+            // Hash before the chunk enters the outbox: from there a rescan or the outbox job
+            // may upload and delete it at any time. The manifest lists it with its hash.
+            byte[] hash = TsaClient.sha256(closed);
+            SessionManifest.closed(this, closed, closed.length(), hash);
+            File file = moveToOutbox(closed);
+            // The chunk is the evidence: it never waits for the TSA, the timestamp can come later
+            uploader.uploadNew(file);
+            if (hash != null && Settings.isTimestampingEnabled(this)) {
+                countTimestamping(() -> timestampChunk(file, hash));
+            }
+        });
+    }
+
+    /** Counted now, not when the task starts: the service must not stop meanwhile. */
+    private void countTimestamping(Runnable task) {
+        synchronized (this) {
+            activeTimestamping++;
+        }
+        updateNotification();
+        tsaExecutor.execute(() -> {
+            try {
+                task.run();
+            } finally {
+                synchronized (this) {
+                    activeTimestamping--;
+                }
+                updateNotification();
+            }
+        });
+    }
+
     /** Atomic rename (same filesystem). On failure the chunk is uploaded from the work dir. */
     private File moveToOutbox(File chunk) {
         File outbox = outboxDir();
@@ -420,19 +449,13 @@ public class SafeRecService extends Service {
         return chunk;
     }
 
+    /** Runs on tsaExecutor, counted by countTimestamping(). */
     private void timestampChunk(File chunkFile, byte[] hash) {
-        try {
-            String path = chunkFile.getAbsolutePath();
-            int dotIndex = path.lastIndexOf('.');
-            File tsaFile = new File((dotIndex > 0 ? path.substring(0, dotIndex) : path) + ".tsa");
-            if (TsaClient.timestampHash(this, hash, tsaFile)) {
-                uploader.uploadNew(tsaFile);
-            }
-        } finally {
-            synchronized (this) {
-                activeTimestamping--;
-            }
-            updateNotification();
+        String path = chunkFile.getAbsolutePath();
+        int dotIndex = path.lastIndexOf('.');
+        File tsaFile = new File((dotIndex > 0 ? path.substring(0, dotIndex) : path) + ".tsa");
+        if (TsaClient.timestampHash(this, hash, tsaFile)) {
+            uploader.uploadNew(tsaFile);
         }
     }
 
@@ -457,9 +480,17 @@ public class SafeRecService extends Service {
             currentSequenceNumber = sink.getSequenceNumber();
             sink = null;
         }
-        // After the last chunk's post-processing, queued by sink.stop(), has moved it
+        // After the last chunk's post-processing, queued by sink.stop(), has moved it and added
+        // its manifest line: the timestamp then covers the whole recording
+        String sessionId = currentSessionId;
+        String dataType = currentDataType;
         try {
-            postProcessExecutor.execute(WorkDir.get()::release);
+            postProcessExecutor.execute(() -> {
+                if (sessionId != null && Settings.isTimestampingEnabled(this)) {
+                    countTimestamping(() -> SessionManifest.timestamp(this, sessionId, dataType));
+                }
+                WorkDir.get().release();
+            });
         } catch (RejectedExecutionException e) {
             WorkDir.get().release();
         }

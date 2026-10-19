@@ -26,6 +26,8 @@
     <string name="audio">audio</string>
     <string name="chunk_name">Frammento %s</string>
     <string name="chunk_repaired">(riparato dopo un\'interruzione, originale conservato)</string>
+    <string name="manifest_on_phone">Non ancora su Drive, ancora su questo telefono: frammento %s</string>
+    <string name="manifest_lost">Registrato ma mancante su Drive: frammento %s</string>
     <string name="share">Condividi</string>
     <string name="delete">Elimina</string>
     <string name="no_recordings_found">Nessuna registrazione trovata</string>

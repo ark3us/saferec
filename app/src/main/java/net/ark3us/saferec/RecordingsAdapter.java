@@ -17,6 +17,8 @@ import androidx.recyclerview.widget.RecyclerView;
 import com.google.api.services.drive.model.File;
 
 import net.ark3us.saferec.net.DriveRecordings;
+import net.ark3us.saferec.net.MediaFile;
+import net.ark3us.saferec.net.SessionManifest;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -47,6 +49,10 @@ public class RecordingsAdapter extends RecyclerView.Adapter<RecyclerView.ViewHol
         DriveRecordings.RecordingItem tsaRecording;
         DriveRecordings.RecordingItem cutOriginal; // the untouched original of a repaired chunk
         DriveRecordings.RecordingItem cutTimestamp; // its timestamp, taken at recovery
+        // On a header: what the session manifest says is missing, and the files that go to the
+        // trash with the whole session (the manifest and its timestamp)
+        SessionManifest.Gaps gaps;
+        final List<DriveRecordings.RecordingItem> sessionFiles = new ArrayList<>();
         boolean selected = false;
 
         DisplayItem(String sessionId, String dataType) {
@@ -134,6 +140,8 @@ public class RecordingsAdapter extends RecyclerView.Adapter<RecyclerView.ViewHol
         Map<String, DriveRecordings.RecordingItem> tsaItemsByChunk = new HashMap<>();
         Map<String, DriveRecordings.RecordingItem> cutItemsByChunk = new HashMap<>();
         Map<String, DriveRecordings.RecordingItem> cutTsaItemsByChunk = new HashMap<>();
+        Map<String, List<DriveRecordings.RecordingItem>> sessionFilesByGroup = new HashMap<>();
+        Map<String, SessionManifest.Gaps> gapsByGroup = new HashMap<>();
         for (DriveRecordings.RecordingItem item : newItems) {
             String chunkKey = buildChunkKey(item.mediaFile.sessionId, item.mediaFile.dataType,
                     item.mediaFile.sequenceNumber);
@@ -146,6 +154,12 @@ public class RecordingsAdapter extends RecyclerView.Adapter<RecyclerView.ViewHol
                 cutTsaItemsByChunk.put(chunkKey, item);
             } else if ("mp4".equalsIgnoreCase(extension)) {
                 mediaItems.add(item);
+            } else if (SessionManifest.isUpdatedInPlace(item.mediaFile)) {
+                String groupKey = item.mediaFile.sessionId + "|" + item.mediaFile.dataType;
+                sessionFilesByGroup.computeIfAbsent(groupKey, k -> new ArrayList<>()).add(item);
+                if (item.gaps != null) {
+                    gapsByGroup.put(groupKey, item.gaps);
+                }
             }
             // anything else is not a recording: not listed
         }
@@ -155,7 +169,8 @@ public class RecordingsAdapter extends RecyclerView.Adapter<RecyclerView.ViewHol
             String nextGroupKey = item.mediaFile.sessionId + "|" + item.mediaFile.dataType;
             if (currentGroupKey == null || !currentGroupKey.equals(nextGroupKey)) {
                 currentGroupKey = nextGroupKey;
-                items.add(new DisplayItem(item.mediaFile.sessionId, item.mediaFile.dataType));
+                items.add(header(item.mediaFile.sessionId, item.mediaFile.dataType, nextGroupKey,
+                        sessionFilesByGroup, gapsByGroup));
             }
             DisplayItem displayItem = new DisplayItem(item);
             String chunkKey = buildChunkKey(item.mediaFile.sessionId, item.mediaFile.dataType,
@@ -165,7 +180,38 @@ public class RecordingsAdapter extends RecyclerView.Adapter<RecyclerView.ViewHol
             displayItem.cutTimestamp = cutTsaItemsByChunk.get(chunkKey);
             items.add(displayItem);
         }
+        // A session with a manifest but no chunk on Drive: its header still shows the gap
+        for (Map.Entry<String, List<DriveRecordings.RecordingItem>> entry : sessionFilesByGroup.entrySet()) {
+            boolean shown = false;
+            for (DisplayItem shownItem : items) {
+                shown |= shownItem.type == TYPE_HEADER && entry.getKey().equals(shownItem.sessionId + "|" + shownItem.dataType);
+            }
+            if (!shown) {
+                MediaFile manifest = entry.getValue().get(0).mediaFile;
+                items.add(header(manifest.sessionId, manifest.dataType, entry.getKey(), sessionFilesByGroup, gapsByGroup));
+            }
+        }
         return items;
+    }
+
+    private static DisplayItem header(String sessionId, String dataType, String groupKey,
+            Map<String, List<DriveRecordings.RecordingItem>> sessionFilesByGroup,
+            Map<String, SessionManifest.Gaps> gapsByGroup) {
+        DisplayItem header = new DisplayItem(sessionId, dataType);
+        header.gaps = gapsByGroup.get(groupKey);
+        List<DriveRecordings.RecordingItem> files = sessionFilesByGroup.get(groupKey);
+        if (files != null) {
+            header.sessionFiles.addAll(files);
+        }
+        return header;
+    }
+
+    private static String joined(List<Integer> sequences) {
+        StringBuilder text = new StringBuilder();
+        for (Integer seq : sequences) {
+            text.append(text.length() == 0 ? "" : ", ").append(seq);
+        }
+        return text.toString();
     }
 
     public int getSelectedCount() {
@@ -179,6 +225,27 @@ public class RecordingsAdapter extends RecyclerView.Adapter<RecyclerView.ViewHol
 
     public List<DriveRecordings.RecordingItem> getSelectedItems() {
         List<DriveRecordings.RecordingItem> selected = new ArrayList<>();
+        // The whole session selected: its manifest and timestamp go too, or the session
+        // folder never gets empty enough to be trashed
+        DisplayItem header = null;
+        int chunks = 0;
+        int chosen = 0;
+        for (DisplayItem item : displayItems) {
+            if (item.type == TYPE_HEADER) {
+                if (header != null && chunks > 0 && chosen == chunks) {
+                    selected.addAll(header.sessionFiles);
+                }
+                header = item;
+                chunks = 0;
+                chosen = 0;
+                continue;
+            }
+            chunks++;
+            chosen += item.selected ? 1 : 0;
+        }
+        if (header != null && chunks > 0 && chosen == chunks) {
+            selected.addAll(header.sessionFiles);
+        }
         for (DisplayItem item : displayItems) {
             if (item.type == TYPE_ITEM && item.selected) {
                 selected.add(item.recording);
@@ -239,6 +306,20 @@ public class RecordingsAdapter extends RecyclerView.Adapter<RecyclerView.ViewHol
                 Log.e(TAG, "Invalid session ID: " + displayItem.sessionId);
             }
             ((HeaderViewHolder) holder).sessionIdText.setText(headerText);
+            TextView warning = ((HeaderViewHolder) holder).warningText;
+            if (displayItem.gaps != null && !displayItem.gaps.isEmpty()) {
+                List<String> lines = new ArrayList<>();
+                if (!displayItem.gaps.onPhone.isEmpty()) {
+                    lines.add(holder.itemView.getContext().getString(R.string.manifest_on_phone, joined(displayItem.gaps.onPhone)));
+                }
+                if (!displayItem.gaps.lost.isEmpty()) {
+                    lines.add(holder.itemView.getContext().getString(R.string.manifest_lost, joined(displayItem.gaps.lost)));
+                }
+                warning.setText(String.join("\n", lines));
+                warning.setVisibility(View.VISIBLE);
+            } else {
+                warning.setVisibility(View.GONE);
+            }
             ((HeaderViewHolder) holder).btnMerge
                     .setOnClickListener(v -> listener.onMergeSession(displayItem.sessionId));
         } else if (holder instanceof RecordingViewHolder) {
@@ -315,11 +396,13 @@ public class RecordingsAdapter extends RecyclerView.Adapter<RecyclerView.ViewHol
 
     static class HeaderViewHolder extends RecyclerView.ViewHolder {
         TextView sessionIdText;
+        TextView warningText;
         ImageButton btnMerge;
 
         HeaderViewHolder(View itemView) {
             super(itemView);
             sessionIdText = itemView.findViewById(R.id.session_id);
+            warningText = itemView.findViewById(R.id.session_warning);
             btnMerge = itemView.findViewById(R.id.btn_merge);
         }
     }

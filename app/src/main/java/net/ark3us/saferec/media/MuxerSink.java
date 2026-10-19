@@ -43,6 +43,10 @@ public class MuxerSink {
     private int pendingRotation = -1; // applied at the next key frame
 
     public interface FileSavedCallback {
+        /** The first sample went into this chunk: empty chunks, deleted at close, never get here. */
+        default void onFileStarted(File file) {
+        }
+
         /**
          * The chunk is complete and still in workDir. The receiver moves it to the upload
          * outbox once ready (hashed for the TSA): from there it may be uploaded and deleted
@@ -284,8 +288,12 @@ public class MuxerSink {
     
         try {
             int sizeInFile = isVideo ? videoSizeInFile(buffer, info) : info.size;
+            boolean first = bytesWritten == 0;
             muxer.writeSampleData(trackIndex, buffer, info);
             bytesWritten += info.size;
+            if (first && fileSavedCallback != null) {
+                fileSavedCallback.onFileStarted(currentFile);
+            }
             if (journal != null) {
                 journal.sample(isVideo ? SampleJournal.VIDEO : SampleJournal.AUDIO, sizeInFile,
                         info.presentationTimeUs, info.flags);

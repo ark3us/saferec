@@ -94,6 +94,9 @@ public class MediaFile {
         if (isTimestamp()) {
             return "application/timestamp-reply";
         }
+        if (SessionManifest.EXTENSION.equalsIgnoreCase(getExtension())) {
+            return "text/plain"; // readable by anyone opening it on Drive
+        }
         if ("cut".equalsIgnoreCase(getExtension())) {
             // The untouched original of a repaired chunk: an MP4 without its index, so no player
             // (nor Drive's preview) can open it. Not application/octet-stream: Drive takes that

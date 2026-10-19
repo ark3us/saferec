@@ -26,6 +26,8 @@
     <string name="audio">audio</string>
     <string name="chunk_name">Chunk %s</string>
     <string name="chunk_repaired">(repaired after a cut, original kept)</string>
+    <string name="manifest_on_phone">Not on Drive yet, still on this phone: chunk %s</string>
+    <string name="manifest_lost">Recorded but missing on Drive: chunk %s</string>
     <string name="share">Share</string>
     <string name="delete">Delete</string>
     <string name="no_recordings_found">No recordings found</string>

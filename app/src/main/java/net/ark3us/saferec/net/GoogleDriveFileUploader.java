@@ -10,6 +10,7 @@ import com.google.api.client.http.HttpResponseException;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
+import java.nio.file.Files;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.Locale;
@@ -25,6 +26,7 @@ import com.google.android.gms.auth.api.identity.Identity;
 import com.google.android.gms.common.api.Scope;
 import com.google.api.services.drive.DriveScopes;
 import com.google.android.gms.tasks.Tasks;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.Objects;
 import java.util.concurrent.TimeUnit;
@@ -130,6 +132,9 @@ public class GoogleDriveFileUploader extends FileUploader {
             throws IOException {
         String parentFolderId = getOrCacheSessionFolderId(mediaFile.sessionId, mediaFile.dataType);
         String name = driveName(mediaFile);
+        if (SessionManifest.isUpdatedInPlace(mediaFile)) {
+            return replaceInPlace(file, mediaFile, name, parentFolderId);
+        }
         if (maybeSentBefore) {
             com.google.api.services.drive.model.File existing = driveClient.findFile(name, parentFolderId);
             if (existing != null) {
@@ -141,6 +146,28 @@ public class GoogleDriveFileUploader extends FileUploader {
             }
         }
         return driveClient.uploadFile(file, name, mediaFile.getMimeType(), parentFolderId);
+    }
+
+    /**
+     * The manifest has one copy on Drive, replaced each time. Its local copy is replaced too,
+     * by the next line, maybe while it uploads: it is deleted only once Drive has the latest.
+     */
+    private com.google.api.services.drive.model.File replaceInPlace(File file, MediaFile mediaFile, String name,
+            String parentFolderId) throws IOException {
+        byte[] content = Files.readAllBytes(file.toPath());
+        com.google.api.services.drive.model.File result = null;
+        for (int round = 0; round < 3; round++) {
+            result = driveClient.upsertFile(name, mediaFile.getMimeType(), parentFolderId, content);
+            byte[] now = file.exists() ? Files.readAllBytes(file.toPath()) : null;
+            if (now == null || Arrays.equals(now, content)) {
+                if (now != null) {
+                    deleteUploaded(file);
+                }
+                break;
+            }
+            content = now; // a newer copy came meanwhile: send it too
+        }
+        return result;
     }
 
     private static String md5(File file) throws IOException {
@@ -194,7 +221,9 @@ public class GoogleDriveFileUploader extends FileUploader {
         try {
             com.google.api.services.drive.model.File res = tryUpload(file, mediaFile, maybeSentBefore);
             Log.i(TAG, "File (seq=" + mediaFile.sequenceNumber + ") uploaded successfully: " + res.getName());
-            deleteUploaded(file);
+            if (!SessionManifest.isUpdatedInPlace(mediaFile)) {
+                deleteUploaded(file); // in place: deleted by replaceInPlace once Drive has the latest
+            }
             return true;
         } catch (IOException e) {
             // Classify from the error itself: a second request to check the token runs
@@ -218,7 +247,9 @@ public class GoogleDriveFileUploader extends FileUploader {
         try {
             com.google.api.services.drive.model.File res = tryUpload(file, mediaFile, maybeSentBefore);
             Log.i(TAG, "Retry successful: " + res.getName());
-            deleteUploaded(file);
+            if (!SessionManifest.isUpdatedInPlace(mediaFile)) {
+                deleteUploaded(file);
+            }
             return true;
         } catch (IOException e) {
             Log.w(TAG, "Retry with a fresh token failed, keeping file: " + file.getName() + " (" + describe(e) + ")");

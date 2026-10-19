@@ -10,7 +10,10 @@ import java.io.OutputStream;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
+import com.google.api.client.http.ByteArrayContent;
 import com.google.api.client.http.FileContent;
 import com.google.api.client.http.HttpRequest;
 import com.google.api.client.http.HttpRequestInitializer;
@@ -193,6 +196,49 @@ public class GoogleDriveClient {
                 .execute();
         List<com.google.api.services.drive.model.File> files = result.getFiles();
         return files == null || files.isEmpty() ? null : files.get(0);
+    }
+
+    // Drive ids of the files updated in place (parent + name), so an update is one request
+    private final Map<String, String> inPlaceIds = new ConcurrentHashMap<>();
+
+    /**
+     * Creates the file, or replaces the content of the one with this name in the folder: the
+     * session manifest has one copy on Drive, updated after each chunk.
+     */
+    public com.google.api.services.drive.model.File upsertFile(String name, String mimeType, String parentFolderId,
+            byte[] content) throws IOException {
+        String key = parentFolderId + "/" + name;
+        ByteArrayContent media = new ByteArrayContent(mimeType, content);
+        String id = inPlaceIds.get(key);
+        if (id == null) {
+            com.google.api.services.drive.model.File existing = findFile(name, parentFolderId);
+            id = existing != null ? existing.getId() : null;
+        }
+        if (id != null) {
+            try {
+                com.google.api.services.drive.model.File updated = driveService.files()
+                        .update(id, new com.google.api.services.drive.model.File(), media)
+                        .setFields("id,name")
+                        .execute();
+                inPlaceIds.put(key, updated.getId());
+                return updated;
+            } catch (HttpResponseException e) {
+                inPlaceIds.remove(key);
+                if (e.getStatusCode() != 404) {
+                    throw e;
+                }
+                // Deleted on Drive meanwhile: create it again
+            }
+        }
+        com.google.api.services.drive.model.File meta = new com.google.api.services.drive.model.File();
+        meta.setName(name);
+        meta.setMimeType(mimeType);
+        meta.setParents(Collections.singletonList(parentFolderId));
+        com.google.api.services.drive.model.File created = driveService.files().create(meta, media)
+                .setFields("id,name")
+                .execute();
+        inPlaceIds.put(key, created.getId());
+        return created;
     }
 
     /**

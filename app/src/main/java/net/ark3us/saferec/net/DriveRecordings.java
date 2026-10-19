@@ -8,9 +8,14 @@ import androidx.core.content.FileProvider;
 
 import com.google.api.services.drive.model.FileList;
 
+import net.ark3us.saferec.media.WorkDir;
+
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileOutputStream;
+import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -30,6 +35,8 @@ public class DriveRecordings {
     public static class RecordingItem {
         public final MediaFile mediaFile;
         public final com.google.api.services.drive.model.File driveFile;
+        /** On a session manifest: the chunks it lists that Drive lacks. */
+        public SessionManifest.Gaps gaps;
 
         public RecordingItem(MediaFile mediaFile, com.google.api.services.drive.model.File driveFile) {
             this.mediaFile = mediaFile;
@@ -46,6 +53,65 @@ public class DriveRecordings {
     public DriveRecordings(Context context, String accessToken) {
         this.context = context.getApplicationContext();
         this.driveClient = new GoogleDriveClient(accessToken);
+    }
+
+    private static String groupKey(MediaFile file) {
+        return file.sessionId + "|" + file.dataType;
+    }
+
+    /**
+     * Reads each session's manifest and records, on its item, which chunks it lists that
+     * Drive lacks: still on this phone (waiting to upload, or to be repaired), or lost. A
+     * manifest that cannot be read leaves the session unchecked.
+     */
+    private void markGaps(List<RecordingItem> items) {
+        Map<String, Set<Integer>> onDrive = new HashMap<>();
+        List<RecordingItem> manifests = new ArrayList<>();
+        for (RecordingItem item : items) {
+            String extension = item.mediaFile.getExtension();
+            if ("mp4".equalsIgnoreCase(extension)) {
+                onDrive.computeIfAbsent(groupKey(item.mediaFile), k -> new HashSet<>()).add(item.mediaFile.sequenceNumber);
+            } else if (SessionManifest.EXTENSION.equalsIgnoreCase(extension)) {
+                manifests.add(item);
+            }
+        }
+        if (manifests.isEmpty()) {
+            return;
+        }
+        Map<String, Set<Integer>> onPhone = chunksOnThisPhone();
+        for (RecordingItem manifest : manifests) {
+            try {
+                ByteArrayOutputStream content = new ByteArrayOutputStream();
+                driveClient.downloadFile(manifest.driveFile.getId(), content);
+                String key = groupKey(manifest.mediaFile);
+                manifest.gaps = SessionManifest.gaps(content.toString("UTF-8"),
+                        onDrive.getOrDefault(key, Collections.emptySet()),
+                        onPhone.getOrDefault(key, Collections.emptySet()));
+                if (!manifest.gaps.isEmpty()) {
+                    Log.w(TAG, "Session " + key + ": on this phone " + manifest.gaps.onPhone + ", lost " + manifest.gaps.lost);
+                }
+            } catch (IOException e) {
+                Log.w(TAG, "Cannot read the manifest of session " + manifest.mediaFile.sessionId, e);
+            }
+        }
+    }
+
+    /** Sequence numbers of the chunks waiting on this phone, by session and type. */
+    private Map<String, Set<Integer>> chunksOnThisPhone() {
+        Map<String, Set<Integer>> chunks = new HashMap<>();
+        for (File dir : new File[]{GoogleDriveFileUploader.outboxDir(context), WorkDir.dir(context), WorkDir.repairDir(context)}) {
+            File[] files = dir.listFiles(f -> f.getName().endsWith(".mp4"));
+            if (files == null) {
+                continue;
+            }
+            for (File file : files) {
+                MediaFile chunk = MediaFile.fromFile(file);
+                if (chunk != null) {
+                    chunks.computeIfAbsent(groupKey(chunk), k -> new HashSet<>()).add(chunk.sequenceNumber);
+                }
+            }
+        }
+        return chunks;
     }
 
     public void shutdown() {
@@ -114,6 +180,8 @@ public class DriveRecordings {
                         }
                     }
                 }
+
+                markGaps(items);
 
                 // Sort by sessionId (descending) and then by timestamp
                 items.sort((a, b) -> {
