@@ -163,6 +163,7 @@ stop_recording() {
 }
 premature_stops() { count_log "AudioRecorder stopped"; } # call before stop_recording
 saved_chunks() { count_log "Processing saved chunk: .*\.mp4"; }
+# Chunk uploads only: the session manifest is uploaded again after every chunk
 duplicate_uploads() { count_log "Failed to delete file after upload"; } # 2nd copy of an uploaded file
 dropped_frames() { count_log "Skipping (audio|video) frame"; } # lost at a chunk boundary
 # Age of the first video frame on the clock MuxerSink picked: 0-1000 ms means camera and
@@ -335,7 +336,7 @@ scenario_errors_dont_stop() {
     local premature auth_errors uploads saved dups ok=1
     premature=$(premature_stops)
     auth_errors=$(count_log "Silent refresh requires user interaction|Silent refresh returned null")
-    uploads=$(count_log "uploaded successfully|Retry successful")
+    uploads=$(count_log "(uploaded successfully|Retry successful): [^ ]*\.mp4$")
     stop_recording
     sleep 8 # the relaunch after STOP scans pending files: duplicates would show up now
     saved=$(saved_chunks)
@@ -430,7 +431,7 @@ scenario_retry_after_outage() {
     sleep 8
     local saved uploaded dups ok=1
     saved=$(saved_chunks)
-    uploaded=$(count_log "uploaded successfully|Retry successful")
+    uploaded=$(count_log "(uploaded successfully|Retry successful): [^ ]*\.mp4$")
     dups=$(duplicate_uploads)
     logs >"$OUT/retry_after_outage.log"
     note "outbox while recording: $pending chunk(s) left ${drained}s after the network came back"
@@ -481,7 +482,7 @@ scenario_outbox_job() {
     left=$(list_store | wc -l)
     started=$(count_log "Outbox job started")
     restarted=$(tail -n +"$gone_line" "$OUT/full.log" | grep -cE " SafeRecService *: SafeRecService started")
-    uploaded=$(tail -n +"$gone_line" "$OUT/full.log" | grep -cE "uploaded successfully|Retry successful")
+    uploaded=$(tail -n +"$gone_line" "$OUT/full.log" | grep -cE "(uploaded successfully|Retry successful): [^ ]*\.mp4$")
     dups=$(duplicate_uploads)
     logs >"$OUT/outbox_job.log"
     adb shell dumpsys jobscheduler 2>/dev/null | grep -A3 "$PKG" >"$OUT/outbox_job-jobs.txt"
