@@ -371,6 +371,7 @@ public class SafeRecService extends Service {
      * A VPN stays the default network, and stays VALIDATED, while the phone has no network
      * under it, so onAvailable never fires when the network returns. Its transports do
      * change (VPN → WIFI|VPN): a transport appearing counts as the network coming back.
+     * A new Wi-Fi network shows up before its DNS works, so turning VALIDATED counts too.
      */
     private void registerNetworkCallback() {
         ConnectivityManager cm = getSystemService(ConnectivityManager.class);
@@ -381,16 +382,20 @@ public class SafeRecService extends Service {
             // Callbacks arrive one at a time, and onCapabilitiesChanged always follows onAvailable
             private Network current;
             private int transports;
+            private boolean validated;
 
             @Override
             public void onCapabilitiesChanged(@NonNull Network network, @NonNull NetworkCapabilities caps) {
                 int now = transportMask(caps);
-                boolean back = !network.equals(current) || (now & ~transports) != 0;
+                boolean nowValidated = caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED);
+                boolean back = !network.equals(current) || (now & ~transports) != 0
+                        || (nowValidated && !validated);
                 current = network;
                 transports = now;
+                validated = nowValidated;
                 GoogleDriveFileUploader uploader = sharedUploader;
                 if (back && uploader != null) {
-                    Log.i(TAG, "Network changed (transports " + Integer.toBinaryString(now) + "), retrying pending uploads");
+                    Log.i(TAG, "Network changed (transports " + Integer.toBinaryString(now) + ", validated " + nowValidated + "), retrying pending uploads");
                     uploader.retryNow();
                 }
             }
@@ -399,6 +404,7 @@ public class SafeRecService extends Service {
             public void onLost(@NonNull Network network) {
                 current = null;
                 transports = 0;
+                validated = false;
             }
         };
         try {
