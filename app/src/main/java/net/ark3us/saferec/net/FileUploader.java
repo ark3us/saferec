@@ -55,8 +55,14 @@ public abstract class FileUploader {
         this.listener = listener;
     }
 
-    /** Uploads the file and deletes it locally on success. Returns true on success. */
-    public abstract boolean uploadFile(File file);
+    /**
+     * Uploads the file and deletes it locally on success. Returns true on success.
+     *
+     * @param maybeSentBefore an earlier attempt may have reached the server without its answer
+     *                        coming back (the process died, a timeout): check before sending
+     *                        it again, or the server ends up with it twice
+     */
+    public abstract boolean uploadFile(File file, boolean maybeSentBefore);
 
     /**
      * A file waits in the outbox and may outlive this process: queued, or its upload failed.
@@ -103,10 +109,10 @@ public abstract class FileUploader {
         notifyStatusChanged();
     }
 
-    private boolean wrappedUploadFile(File file) {
+    private boolean wrappedUploadFile(File file, boolean maybeSentBefore) {
         onUploadStarted();
         try {
-            return uploadFile(file);
+            return uploadFile(file, maybeSentBefore);
         } finally {
             onUploadFinished();
         }
@@ -117,16 +123,27 @@ public abstract class FileUploader {
      * uploading it twice would duplicate it on Drive, so each file is queued at most once.
      */
     private void submit(File file) {
+        submit(file, false);
+    }
+
+    /**
+     * isNew: the file just entered the outbox, so this is its first upload. Only the caller that
+     * queues it gets to say so: if a scan queued it first, that upload checks, at the cost of
+     * one request. Everything else may be a repeat: a retry, or a file a dead process left in
+     * the outbox, maybe in the middle of its upload.
+     */
+    private void submit(File file, boolean isNew) {
         String path = file.getAbsolutePath();
         // exists(): a scan may list a file that was uploaded and deleted meanwhile
         if (!file.exists() || !queuedFiles.add(path)) {
             return;
         }
         onFilePending(file);
+        boolean maybeSentBefore = !isNew;
         uploadExecutor.submit(() -> {
             boolean uploaded = false;
             try {
-                uploaded = wrappedUploadFile(file);
+                uploaded = wrappedUploadFile(file, maybeSentBefore);
             } catch (RuntimeException e) {
                 Log.e(TAG, "Upload crashed: " + file.getName(), e);
             } finally {
@@ -200,6 +217,16 @@ public abstract class FileUploader {
             }
         } else {
             submit(fileOrDir);
+        }
+    }
+
+    /**
+     * A file that just entered the outbox (a chunk closed, a timestamp received): nothing can
+     * have sent it yet, so its first upload skips the check for an earlier copy.
+     */
+    public void uploadNew(File file) {
+        if (file != null && file.isFile()) {
+            submit(file, true);
         }
     }
 

@@ -343,7 +343,7 @@ public class SafeRecService extends Service {
                 byte[] hash = Settings.isTimestampingEnabled(this) ? TsaClient.sha256(closed) : null;
                 File file = moveToOutbox(closed);
                 // The chunk is the evidence: it never waits for the TSA, the timestamp can come later
-                uploader.upload(file);
+                uploader.uploadNew(file);
                 if (hash != null) {
                     // Counted now, not when the task starts: the service must not stop meanwhile
                     synchronized (this) {
@@ -426,7 +426,7 @@ public class SafeRecService extends Service {
             int dotIndex = path.lastIndexOf('.');
             File tsaFile = new File((dotIndex > 0 ? path.substring(0, dotIndex) : path) + ".tsa");
             if (TsaClient.timestampHash(this, hash, tsaFile)) {
-                uploader.upload(tsaFile);
+                uploader.uploadNew(tsaFile);
             }
         } finally {
             synchronized (this) {

@@ -8,7 +8,11 @@ import androidx.annotation.Nullable;
 import com.google.api.client.http.HttpResponseException;
 
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.IOException;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.Locale;
 import java.util.concurrent.ConcurrentHashMap;
 import android.content.Context;
 
@@ -115,10 +119,46 @@ public class GoogleDriveFileUploader extends FileUploader {
         return String.format("%s.%s.%s", mediaFile.timestamp, mediaFile.sequenceNumber, mediaFile.getExtension());
     }
 
-    /** Folders are only ever created by getOrCacheSessionFolderId, under its lock. */
-    private com.google.api.services.drive.model.File tryUpload(File file, MediaFile mediaFile) throws IOException {
+    /**
+     * Folders are only ever created by getOrCacheSessionFolderId, under its lock. When an
+     * earlier attempt may have reached Drive without its answer coming back, Drive is asked
+     * first: the same name with the same MD5 means that upload already happened. Sending it
+     * again put chunks on Drive twice, and merging the session repeated them. The same name
+     * with another MD5 is uploaded anyway: evidence is never dropped on a guess.
+     */
+    private com.google.api.services.drive.model.File tryUpload(File file, MediaFile mediaFile, boolean maybeSentBefore)
+            throws IOException {
         String parentFolderId = getOrCacheSessionFolderId(mediaFile.sessionId, mediaFile.dataType);
-        return driveClient.uploadFile(file, driveName(mediaFile), mediaFile.getMimeType(), parentFolderId);
+        String name = driveName(mediaFile);
+        if (maybeSentBefore) {
+            com.google.api.services.drive.model.File existing = driveClient.findFile(name, parentFolderId);
+            if (existing != null) {
+                if (md5(file).equalsIgnoreCase(String.valueOf(existing.getMd5Checksum()))) {
+                    Log.i(TAG, "Already on Drive, an earlier upload got there: " + name);
+                    return existing;
+                }
+                Log.w(TAG, "Drive has another " + name + " (different content): uploading this one too");
+            }
+        }
+        return driveClient.uploadFile(file, name, mediaFile.getMimeType(), parentFolderId);
+    }
+
+    private static String md5(File file) throws IOException {
+        try (FileInputStream in = new FileInputStream(file)) {
+            MessageDigest digest = MessageDigest.getInstance("MD5");
+            byte[] buffer = new byte[64 * 1024];
+            int read;
+            while ((read = in.read(buffer)) != -1) {
+                digest.update(buffer, 0, read);
+            }
+            StringBuilder hex = new StringBuilder();
+            for (byte b : digest.digest()) {
+                hex.append(String.format(Locale.ROOT, "%02x", b));
+            }
+            return hex.toString();
+        } catch (NoSuchAlgorithmException e) {
+            throw new IOException(e);
+        }
     }
 
     private static int httpStatus(IOException e) {
@@ -139,7 +179,7 @@ public class GoogleDriveFileUploader extends FileUploader {
     }
 
     @Override
-    public boolean uploadFile(File file) {
+    public boolean uploadFile(File file, boolean maybeSentBefore) {
         MediaFile mediaFile = MediaFile.fromFile(file);
         if (mediaFile == null) {
             Log.e(TAG, "Cannot parse media file from: " + file.getAbsolutePath());
@@ -149,10 +189,10 @@ public class GoogleDriveFileUploader extends FileUploader {
         String token = currentToken();
         if (token == null || token.equals(rejectedToken)) {
             // Drive would only answer 401 again: get a token before sending the chunk
-            return refreshToken(token) && retryUpload(file, mediaFile);
+            return refreshToken(token) && retryUpload(file, mediaFile, maybeSentBefore);
         }
         try {
-            com.google.api.services.drive.model.File res = tryUpload(file, mediaFile);
+            com.google.api.services.drive.model.File res = tryUpload(file, mediaFile, maybeSentBefore);
             Log.i(TAG, "File (seq=" + mediaFile.sequenceNumber + ") uploaded successfully: " + res.getName());
             deleteUploaded(file);
             return true;
@@ -162,7 +202,7 @@ public class GoogleDriveFileUploader extends FileUploader {
             int status = httpStatus(e);
             if (status == 401) {
                 Log.e(TAG, "Access token rejected during upload. Attempting silent token refresh...");
-                return refreshToken(token) && retryUpload(file, mediaFile);
+                return refreshToken(token) && retryUpload(file, mediaFile, maybeSentBefore);
             }
             if (status == 404) {
                 forgetFolders();
@@ -174,9 +214,9 @@ public class GoogleDriveFileUploader extends FileUploader {
         }
     }
 
-    private boolean retryUpload(File file, MediaFile mediaFile) {
+    private boolean retryUpload(File file, MediaFile mediaFile, boolean maybeSentBefore) {
         try {
-            com.google.api.services.drive.model.File res = tryUpload(file, mediaFile);
+            com.google.api.services.drive.model.File res = tryUpload(file, mediaFile, maybeSentBefore);
             Log.i(TAG, "Retry successful: " + res.getName());
             deleteUploaded(file);
             return true;

@@ -5,9 +5,13 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 import java.io.File;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -32,6 +36,7 @@ public class FileUploaderTest {
         final Map<String, AtomicInteger> attempts = new ConcurrentHashMap<>();
         final Set<String> failing = ConcurrentHashMap.newKeySet();
         final AtomicInteger pendingCalls = new AtomicInteger();
+        final Map<String, List<Boolean>> checks = new ConcurrentHashMap<>(); // maybeSentBefore per attempt
         volatile CountDownLatch gate; // when set, uploads wait for it
 
         FakeUploader(long retryMinMs, long retryMaxMs) {
@@ -39,8 +44,9 @@ public class FileUploaderTest {
         }
 
         @Override
-        public boolean uploadFile(File file) {
+        public boolean uploadFile(File file, boolean maybeSentBefore) {
             attempts.computeIfAbsent(file.getName(), k -> new AtomicInteger()).incrementAndGet();
+            checks.computeIfAbsent(file.getName(), k -> new CopyOnWriteArrayList<>()).add(maybeSentBefore);
             CountDownLatch g = gate;
             if (g != null) {
                 try {
@@ -255,5 +261,39 @@ public class FileUploaderTest {
         long start = System.currentTimeMillis();
         assertFalse(uploader.drain(() -> System.currentTimeMillis() > stopAt));
         assertTrue(System.currentTimeMillis() - start < 2000);
+    }
+
+    @Test
+    public void aNewFileIsSentWithoutAskingTheServer() throws Exception {
+        start(50, 400);
+        File a = chunk("a.mp4");
+        uploader.uploadNew(a);
+        waitUntil(() -> !a.exists(), 2000);
+        assertEquals(Collections.singletonList(false), uploader.checks.get("a.mp4"));
+    }
+
+    @Test
+    public void aRetryAsksTheServerFirst() throws Exception {
+        start(50, 400);
+        File a = chunk("a.mp4");
+        uploader.failing.add("a.mp4"); // or it reached the server and the answer was lost
+        uploader.uploadNew(a);
+        waitUntil(() -> uploader.attemptsOf("a.mp4") == 1, 2000);
+        uploader.failing.remove("a.mp4");
+        waitUntil(() -> !a.exists(), 3000);
+        assertEquals(Arrays.asList(false, true), uploader.checks.get("a.mp4"));
+    }
+
+    @Test
+    public void aFileFoundInTheOutboxAsksTheServerFirst() throws Exception {
+        start(60_000, 60_000);
+        File a = chunk("a.mp4"); // left by a process that may have died in the middle of its upload
+        uploader.retryNow();
+        waitUntil(() -> !a.exists(), 2000);
+        File b = chunk("b.mp4");
+        uploader.upload(b);
+        waitUntil(() -> !b.exists(), 2000);
+        assertEquals(Collections.singletonList(true), uploader.checks.get("a.mp4"));
+        assertEquals(Collections.singletonList(true), uploader.checks.get("b.mp4"));
     }
 }

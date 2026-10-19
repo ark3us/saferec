@@ -179,6 +179,23 @@ public class GoogleDriveClient {
     }
 
     /**
+     * The non-folder file with this name in the folder, with its size and MD5, or null when
+     * there is none. Throws when Drive cannot be asked.
+     */
+    @Nullable
+    public com.google.api.services.drive.model.File findFile(String name, String parentFolderId) throws IOException {
+        FileList result = driveService.files().list()
+                .setQ("name='" + name.replace("'", "\\'") + "' and '" + parentFolderId + "' in parents"
+                        + " and trashed=false and mimeType!='application/vnd.google-apps.folder'")
+                .setSpaces("drive")
+                .setFields("files(id,name,size,md5Checksum)")
+                .setPageSize(10)
+                .execute();
+        List<com.google.api.services.drive.model.File> files = result.getFiles();
+        return files == null || files.isEmpty() ? null : files.get(0);
+    }
+
+    /**
      * Uploads a file into an existing folder. The folder is required: resolving it here, outside
      * the uploader's lock, let concurrent uploads create the same folders twice.
      */
