@@ -135,30 +135,20 @@ public class GoogleDriveClient {
         return findFolderIds(BASE_FOLDER, null);
     }
 
-    public String shareBaseFolder() {
-        try {
-            String baseId = getOrCreateBaseFolderId();
-            if (baseId == null) {
-                Log.e(TAG, "Base folder not found or could not be created");
-                return null;
-            }
-
-            // Make it public
-            Permission permission = new Permission()
-                    .setType("anyone")
-                    .setRole("reader");
-
-            driveService.permissions().create(baseId, permission).execute();
-
-            // Get the webViewLink
-            com.google.api.services.drive.model.File folder = driveService.files().get(baseId).setFields("webViewLink")
-                    .execute();
-            Log.i(TAG, "Shared base folder: " + folder.getWebViewLink());
-            return folder.getWebViewLink();
-        } catch (Exception e) {
-            Log.e(TAG, "Error sharing base folder", e);
-            return null;
-        }
+    /**
+     * Gives one Google account read access to every recording, future ones included, and has
+     * Google email it. Never "anyone with the link": that exposed every recording to whoever
+     * got the link, and the app could not take it back.
+     */
+    public void shareBaseFolderWith(String email) throws IOException {
+        Permission permission = new Permission()
+                .setType("user")
+                .setRole("reader")
+                .setEmailAddress(email);
+        driveService.permissions().create(getOrCreateBaseFolderId(), permission)
+                .setSendNotificationEmail(true)
+                .execute();
+        Log.i(TAG, "Shared base folder with one account");
     }
 
     public String getOrCreateNestedFolders(@Nullable String nestedPath, @Nullable String parentFolderId)

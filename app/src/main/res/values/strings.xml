@@ -7,7 +7,7 @@
     <string name="switch_camera">Switch camera</string>
     <string name="toggle_camera">Toggle camera</string>
     <string name="video_quality">Video Quality</string>
-    <string name="share_root_folder">Share Root Folder</string>
+    <string name="share_root_folder">Share recordings with a person</string>
     <string name="view_recordings">View Recordings</string>
     <string name="google_drive_required">Google Drive Required</string>
     <string name="google_drive_required_msg">This app cannot function without access to your Google Drive to save recordings securely.</string>
@@ -56,8 +56,6 @@
     <string name="error_missing_file">Error: Missing file information</string>
     <string name="failed_play_video">Failed to play video. It might still be processing or requires a different player.</string>
     <string name="not_connected_drive">Not connected to Google Drive</string>
-    <string name="generating_link">Generating sharing link…</string>
-    <string name="failed_get_link">Failed to get sharing link</string>
     <string name="share_failed">Share failed: %1$s</string>
     <string name="session_expired">Session expired, please log in again</string>
     <string name="downloading_chunks">Downloading chunks…</string>
@@ -67,9 +65,6 @@
     <string name="share_recording">Share Recording</string>
     <string name="share_tsa_signature">Share TSA Signature</string>
     <string name="share_merged_recording">Share Merged Recording</string>
-    <string name="shared_folder_subject">Shared SafeRec Folder</string>
-    <string name="shared_folder_text">Here is the link to my SafeRec recordings: %1$s</string>
-    <string name="share_folder_link">Share Folder Link</string>
     <string name="notif_channel_name">SafeRec Service Channel</string>
     <string name="notif_title_recording">SafeRec Recording</string>
     <string name="notif_title_service">SafeRec Service</string>
@@ -110,4 +105,11 @@
         <item quantity="one">Deleting %1$d file</item>
         <item quantity="other">Deleting %1$d files</item>
     </plurals>
+    <string name="share_dialog_title">Share recordings</string>
+    <string name="share_dialog_message">This Google account gets read access to all your SafeRec recordings, future ones included. Google sends it an email. Nobody else can open them.</string>
+    <string name="share_email_hint">Email address</string>
+    <string name="share_invalid_email">Enter a valid email address</string>
+    <string name="sharing_recordings">Sharing…</string>
+    <string name="shared_with">Shared with %1$s. Google has sent them an email.</string>
+    <string name="share_refused_foreign_files">Google Drive refused: the SafeRec folder holds files this app cannot manage. Share it from the Google Drive app.</string>
 </resources>

@@ -24,6 +24,7 @@ import android.widget.ImageView;
 import android.widget.CompoundButton;
 import android.widget.EditText;
 import android.text.InputType;
+import android.util.Patterns;
 
 import com.google.android.material.bottomsheet.BottomSheetDialog;
 import com.google.android.material.materialswitch.MaterialSwitch;
@@ -391,30 +392,45 @@ public class MainActivity extends AppCompatActivity {
             Toast.makeText(this, R.string.not_connected_drive, Toast.LENGTH_SHORT).show();
             return;
         }
+        EditText input = new EditText(this);
+        input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS);
+        input.setHint(R.string.share_email_hint);
+        input.setText(Settings.getShareEmail(this));
 
-        Toast.makeText(this, R.string.generating_link, Toast.LENGTH_SHORT).show();
+        new AlertDialog.Builder(this)
+            .setTitle(R.string.share_dialog_title)
+            .setMessage(R.string.share_dialog_message)
+            .setView(input)
+            .setPositiveButton(R.string.share, (dialog, which) -> {
+                String email = input.getText().toString().trim();
+                if (!Patterns.EMAIL_ADDRESS.matcher(email).matches()) {
+                    Toast.makeText(this, R.string.share_invalid_email, Toast.LENGTH_SHORT).show();
+                    return;
+                }
+                Settings.setShareEmail(this, email);
+                shareRecordingsWith(accessToken, email);
+            })
+            .setNegativeButton(android.R.string.cancel, null)
+            .show();
+    }
 
+    private void shareRecordingsWith(String accessToken, String email) {
+        Toast.makeText(this, R.string.sharing_recordings, Toast.LENGTH_SHORT).show();
         backgroundExecutor.execute(() -> {
+            String message;
             try {
-                GoogleDriveClient client = new GoogleDriveClient(accessToken);
-                String link = client.shareBaseFolder();
-
-                runOnUiThread(() -> {
-                    if (link != null) {
-                        Intent shareIntent = new Intent(Intent.ACTION_SEND);
-                        shareIntent.setType("text/plain");
-                        shareIntent.putExtra(Intent.EXTRA_SUBJECT, getString(R.string.shared_folder_subject));
-                        shareIntent.putExtra(Intent.EXTRA_TEXT, getString(R.string.shared_folder_text, link));
-                        startActivity(Intent.createChooser(shareIntent, getString(R.string.share_folder_link)));
-                    } else {
-                        Toast.makeText(MainActivity.this, R.string.failed_get_link, Toast.LENGTH_SHORT).show();
-                    }
-                });
+                new GoogleDriveClient(accessToken).shareBaseFolderWith(email);
+                message = getString(R.string.shared_with, email);
             } catch (Exception e) {
-                Log.e(TAG, "Failed to share root folder", e);
-                runOnUiThread(() ->
-                        Toast.makeText(MainActivity.this, R.string.failed_get_link, Toast.LENGTH_SHORT).show());
+                Log.e(TAG, "Failed to share recordings", e);
+                // drive.file only reaches files this app created: a foreign file in the folder
+                // makes Drive refuse any change to the folder's sharing
+                message = String.valueOf(e.getMessage()).contains("appNotAuthorizedToChild")
+                        ? getString(R.string.share_refused_foreign_files)
+                        : getString(R.string.share_failed, e.getMessage());
             }
+            String result = message;
+            runOnUiThread(() -> Toast.makeText(MainActivity.this, result, Toast.LENGTH_LONG).show());
         });
     }
 

@@ -7,7 +7,7 @@
     <string name="switch_camera">Cambia fotocamera</string>
     <string name="toggle_camera">Inverti fotocamera</string>
     <string name="video_quality">Qualità video</string>
-    <string name="share_root_folder">Condividi cartella principale</string>
+    <string name="share_root_folder">Condividi le registrazioni con una persona</string>
     <string name="view_recordings">Visualizza registrazioni</string>
     <string name="google_drive_required">Google Drive richiesto</string>
     <string name="google_drive_required_msg">Questa app non può funzionare senza l\'accesso al tuo Google Drive per salvare le registrazioni in modo sicuro.</string>
@@ -56,8 +56,6 @@
     <string name="error_missing_file">Errore: Informazioni file mancanti</string>
     <string name="failed_play_video">Impossibile riprodurre il video. Potrebbe essere ancora in fase di elaborazione o richiede un player diverso.</string>
     <string name="not_connected_drive">Non connesso a Google Drive</string>
-    <string name="generating_link">Generazione link di condivisione…</string>
-    <string name="failed_get_link">Impossibile ottenere il link di condivisione</string>
     <string name="share_failed">Condivisione fallita: %1$s</string>
     <string name="session_expired">Sessione scaduta, effettua nuovamente l\'accesso</string>
     <string name="downloading_chunks">Download dei frammenti…</string>
@@ -67,9 +65,6 @@
     <string name="share_recording">Condividi Registrazione</string>
     <string name="share_tsa_signature">Condividi Firma TSA</string>
     <string name="share_merged_recording">Condividi Registrazione Unita</string>
-    <string name="shared_folder_subject">Cartella SafeRec condivisa</string>
-    <string name="shared_folder_text">Ecco il link alle mie registrazioni SafeRec: %1$s</string>
-    <string name="share_folder_link">Condividi link cartella</string>
     <string name="notif_channel_name">Canale Servizio SafeRec</string>
     <string name="notif_title_recording">Registrazione SafeRec</string>
     <string name="notif_title_service">Servizio SafeRec</string>
@@ -115,4 +110,11 @@
         <item quantity="many">Eliminazione di %1$d file</item>
         <item quantity="other">Eliminazione di %1$d file</item>
     </plurals>
+    <string name="share_dialog_title">Condividi registrazioni</string>
+    <string name="share_dialog_message">Questo account Google potrà vedere tutte le tue registrazioni SafeRec, anche quelle future. Google gli invierà un\'email. Nessun altro potrà aprirle.</string>
+    <string name="share_email_hint">Indirizzo email</string>
+    <string name="share_invalid_email">Inserisci un indirizzo email valido</string>
+    <string name="sharing_recordings">Condivisione…</string>
+    <string name="shared_with">Condivise con %1$s. Google gli ha inviato un\'email.</string>
+    <string name="share_refused_foreign_files">Google Drive ha rifiutato: la cartella SafeRec contiene file che questa app non può gestire. Condividila dall\'app Google Drive.</string>
 </resources>

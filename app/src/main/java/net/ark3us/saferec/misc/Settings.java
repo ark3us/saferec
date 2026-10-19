@@ -22,6 +22,15 @@ public class Settings {
         return getPrefs(context).getString("accessToken", null);
     }
 
+    /** Last address recordings were shared with, offered again next time. */
+    public static String getShareEmail(Context context) {
+        return getPrefs(context).getString("shareEmail", "");
+    }
+
+    public static void setShareEmail(Context context, String email) {
+        getPrefs(context).edit().putString("shareEmail", email).apply();
+    }
+
     public static boolean onlyAudio(Context context) {
         return getPrefs(context).getBoolean("onlyAudio", false);
     }
