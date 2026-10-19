@@ -13,12 +13,14 @@ import android.hardware.display.DisplayManager;
 import android.media.MediaCodec;
 import android.media.MediaCodecInfo;
 import android.media.MediaFormat;
+import android.os.Bundle;
 import android.os.Handler;
 import android.os.HandlerThread;
 import android.os.Looper;
 import android.util.Log;
 import android.util.Size;
 import android.view.Display;
+import android.view.OrientationEventListener;
 import android.view.Surface;
 import android.view.TextureView;
 
@@ -88,11 +90,14 @@ public class VideoStreamRecorder {
     private volatile boolean encoderRunning = false;
     private boolean useFront = false;
     private int sensorOrientationDeg;
-    private int recordingRotation;
-    private DisplayManager.DisplayListener rotationListener;
+    private volatile int recordingRotation;
+    // Physical orientation from the accelerometer: unlike the display rotation it replaced,
+    // it works with the screen off (phone in a pocket) and with auto-rotate disabled
+    private OrientationEventListener orientationListener;
+    private int deviceOrientation = VideoOrientation.UNKNOWN; // main thread only
     private final AtomicInteger sessionConfigCount = new AtomicInteger(0);
     private final AtomicInteger cameraOpenRequestCount = new AtomicInteger(0);
-    private TimestampRenderer timestampRenderer;
+    private volatile TimestampRenderer timestampRenderer;
 
     private static VideoStreamRecorder instance;
 
@@ -357,50 +362,68 @@ public class VideoStreamRecorder {
         encoderSurface = null;
     }
 
-    private DisplayManager displayManager;
-
+    /** Callbacks arrive on the main thread, like start() and stopRecording(). */
     private void registerRotationListener(Context context) {
-        displayManager = (DisplayManager) context.getSystemService(Context.DISPLAY_SERVICE);
-        if (displayManager == null) return;
-        rotationListener = new DisplayManager.DisplayListener() {
+        unregisterRotationListener();
+        deviceOrientation = VideoOrientation.UNKNOWN;
+        orientationListener = new OrientationEventListener(context.getApplicationContext()) {
             @Override
-            public void onDisplayChanged(int displayId) {
-                if (displayId != Display.DEFAULT_DISPLAY) return;
-                MuxerSink localMuxer = muxer;
-                if (localMuxer == null) return;
-                try {
-                    Display display = displayManager.getDisplay(Display.DEFAULT_DISPLAY);
-                    if (display == null) return;
-                    int newDeviceRotation = display.getRotation() * 90;
-                    int newRotation = (sensorOrientationDeg - newDeviceRotation + 360) % 360;
-                    if (newRotation != recordingRotation) {
-                        Log.i(TAG, "Device rotated: " + recordingRotation + "° → " + newRotation + "°");
-                        recordingRotation = newRotation;
-                        if (timestampRenderer != null) timestampRenderer.setRotation(newRotation);
-                        localMuxer.updateVideoRotation(newRotation);
-                    }
-                } catch (Exception e) {
-                    Log.w(TAG, "Error checking rotation", e);
+            public void onOrientationChanged(int degrees) {
+                int device = VideoOrientation.snap(degrees, deviceOrientation);
+                if (device == deviceOrientation) {
+                    return;
                 }
+                deviceOrientation = device;
+                applyRotation(VideoOrientation.recordingRotation(sensorOrientationDeg, device, useFront));
             }
-
-            @Override
-            public void onDisplayAdded(int displayId) {}
-
-            @Override
-            public void onDisplayRemoved(int displayId) {}
         };
-        displayManager.registerDisplayListener(rotationListener, cameraHandler);
-        Log.i(TAG, "Rotation listener registered");
+        if (orientationListener.canDetectOrientation()) {
+            orientationListener.enable();
+            Log.i(TAG, "Orientation listener enabled");
+        } else {
+            Log.w(TAG, "No orientation sensor: the recording keeps its starting rotation");
+        }
     }
 
     private void unregisterRotationListener() {
-        if (rotationListener != null && displayManager != null) {
-            displayManager.unregisterDisplayListener(rotationListener);
+        if (orientationListener != null) {
+            orientationListener.disable();
+            orientationListener = null;
+            Log.i(TAG, "Orientation listener disabled");
         }
-        rotationListener = null;
-        displayManager = null;
-        Log.i(TAG, "Rotation listener unregistered");
+    }
+
+    /** The overlay turns at once; the muxer starts a chunk with the new hint at the next key frame. */
+    private void applyRotation(int rotation) {
+        if (rotation == recordingRotation) {
+            return;
+        }
+        Log.i(TAG, "Device rotated: " + recordingRotation + "° → " + rotation + "°");
+        recordingRotation = rotation;
+        TimestampRenderer renderer = timestampRenderer;
+        if (renderer != null) {
+            renderer.setRotation(rotation);
+        }
+        MuxerSink localMuxer = muxer;
+        if (localMuxer != null) {
+            localMuxer.updateVideoRotation(rotation);
+            requestKeyFrame();
+        }
+    }
+
+    /** Without it the new chunk would wait up to I_FRAME_INTERVAL for its first key frame. */
+    private void requestKeyFrame() {
+        MediaCodec codec = encoder;
+        if (codec == null || !encoderRunning) {
+            return;
+        }
+        try {
+            Bundle params = new Bundle();
+            params.putInt(MediaCodec.PARAMETER_KEY_REQUEST_SYNC_FRAME, 0);
+            codec.setParameters(params);
+        } catch (IllegalStateException e) {
+            Log.w(TAG, "Cannot request a key frame", e);
+        }
     }
 
     private static String getCameraId(Context context, int lensFacing) {
@@ -488,11 +511,12 @@ public class VideoStreamRecorder {
 
     private void setupEncoder(Context context, String cameraId) throws Exception {
         sensorOrientationDeg = getSensorOrientation(cameraId);
-        int deviceRotation = getDeviceRotationDegrees(context);
-
-        recordingRotation = (sensorOrientationDeg - deviceRotation + 360) % 360;
+        // Until the accelerometer reports (a phone lying flat never does), use the display
+        int device = deviceOrientation != VideoOrientation.UNKNOWN ? deviceOrientation
+                : VideoOrientation.fromDisplayRotation(getDeviceRotationDegrees(context));
+        recordingRotation = VideoOrientation.recordingRotation(sensorOrientationDeg, device, useFront);
         Log.i(TAG, "Recording rotation: " + recordingRotation + "° (sensor=" + sensorOrientationDeg + ", device="
-                + deviceRotation + ")");
+                + device + ", front=" + useFront + ")");
 
         MediaFormat format = MediaFormat.createVideoFormat(MIME_TYPE, previewSize.getWidth(), previewSize.getHeight());
         format.setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface);

@@ -33,6 +33,7 @@ public class MuxerSink {
     private int videoTrackIndex = -1;
     private int audioTrackIndex = -1;
     private int videoRotation = -1;
+    private int pendingRotation = -1; // applied at the next key frame
 
     public interface FileSavedCallback {
         void onFileSaved(File file);
@@ -124,15 +125,17 @@ public class MuxerSink {
     }
 
     /**
-     * Updates the video rotation and forces a chunk rotation so the new file
-     * gets the correct orientation hint. No-op if rotation hasn't changed.
+     * The next chunk gets the new orientation hint (one MP4 holds one). The split waits for
+     * the next key frame: a chunk that starts without one cannot be played until it arrives.
      */
     public synchronized void updateVideoRotation(int newRotation) {
-        if (videoRotation == newRotation) return;
-        Log.i(TAG, "Video rotation changed: " + videoRotation + "° → " + newRotation + "°");
-        videoRotation = newRotation;
-        if (isStarted) {
-            rotate();
+        if (!isStarted) {
+            videoRotation = newRotation; // the track is not added yet: it takes this one
+            return;
+        }
+        pendingRotation = newRotation == videoRotation ? -1 : newRotation;
+        if (pendingRotation >= 0) {
+            Log.i(TAG, "Video rotation changed: " + videoRotation + "° → " + newRotation + "°, new chunk at the next key frame");
         }
     }
 
@@ -189,7 +192,11 @@ public class MuxerSink {
         }
         info.presentationTimeUs += videoToBootUs;
         boolean isKeyFrame = (info.flags & MediaCodec.BUFFER_FLAG_KEY_FRAME) != 0;
-        if (isKeyFrame && isChunkFull()) {
+        if (isKeyFrame && (isChunkFull() || pendingRotation >= 0)) {
+            if (pendingRotation >= 0) {
+                videoRotation = pendingRotation;
+                pendingRotation = -1;
+            }
             rotate();
         }
         return writeData(buffer, info, true);
