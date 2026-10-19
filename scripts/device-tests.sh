@@ -331,10 +331,18 @@ scenario_errors_dont_stop() {
     dups=$(duplicate_uploads)
     pending=$(list_store | grep -c '\.mp4$')
     token_after=$(token_fingerprint)
+    # Play services token requests: count and shortest gap in seconds (-1 with fewer than 2)
+    local requests gap
+    read -r requests gap < <(logs | grep "Requesting a new token from Play services" | awk '
+        { split($2, t, ":"); s = t[1] * 3600 + t[2] * 60 + t[3]
+          if (NR > 1 && (min == "" || s - prev < min)) min = s - prev; prev = s }
+        END { print NR, (min == "" ? -1 : int(min)) }')
     logs >"$OUT/errors_dont_stop.log"
     note "auth errors $auth_errors, successful uploads $uploads, saved chunks $saved, premature stops $premature, duplicates $dups"
     note "chunks kept on the phone $pending, token before/after: $token_before / $token_after"
+    note "token requests to Play services $requests, shortest gap ${gap}s"
     ((premature == 0 && saved >= 4 && (auth_errors + uploads) >= 1 && dups == 0)) || ok=0
+    ((requests <= 1 || gap >= 59)) || ok=0 # at most one request per minute
     # The background reports auth errors but never clears the token (a refresh may replace it)
     [[ $token_before == none || $token_after != none ]] || ok=0
     if ((ok)); then
@@ -344,7 +352,7 @@ scenario_errors_dont_stop() {
             record errors_dont_stop PASS "$auth_errors auth errors reported, recording ran the full 40 s"
         fi
     else
-        record errors_dont_stop FAIL "premature=$premature saved=$saved auth_errors=$auth_errors uploads=$uploads dups=$dups token $token_before→$token_after"
+        record errors_dont_stop FAIL "premature=$premature saved=$saved auth_errors=$auth_errors uploads=$uploads dups=$dups token $token_before→$token_after requests=$requests gap=${gap}s"
     fi
 }
 
