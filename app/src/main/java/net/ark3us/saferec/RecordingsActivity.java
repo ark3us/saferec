@@ -29,8 +29,7 @@ import androidx.swiperefreshlayout.widget.SwipeRefreshLayout;
 
 import net.ark3us.saferec.media.MediaMerger;
 import net.ark3us.saferec.misc.Settings;
-import net.ark3us.saferec.net.FileDownloader;
-import net.ark3us.saferec.net.GoogleDriveFileDownloader;
+import net.ark3us.saferec.net.DriveRecordings;
 import net.ark3us.saferec.services.SafeRecService;
 import net.ark3us.saferec.ui.TutorialOverlayView;
 
@@ -46,7 +45,7 @@ import java.util.concurrent.Executors;
 public class RecordingsActivity extends AppCompatActivity {
 
     private static final String TAG = RecordingsActivity.class.getSimpleName();
-    private static final Comparator<FileDownloader.RecordingItem> MERGE_ORDER =
+    private static final Comparator<DriveRecordings.RecordingItem> MERGE_ORDER =
             Comparator.comparingInt(item -> item.mediaFile.sequenceNumber);
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private final ExecutorService backgroundExecutor = Executors.newSingleThreadExecutor();
@@ -58,7 +57,7 @@ public class RecordingsActivity extends AppCompatActivity {
     private View selectionToolbar;
     private TextView selectionCountText;
     private CheckBox selectAllCheckbox;
-    private FileDownloader downloader;
+    private DriveRecordings drive;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -107,7 +106,7 @@ public class RecordingsActivity extends AppCompatActivity {
             }
 
             @Override
-            public void onShareTsa(FileDownloader.RecordingItem item) {
+            public void onShareTsa(DriveRecordings.RecordingItem item) {
                 shareTsaFile(item);
             }
         });
@@ -126,7 +125,7 @@ public class RecordingsActivity extends AppCompatActivity {
 
         String accessToken = Settings.getAccessToken(this);
         if (accessToken != null) {
-            downloader = new GoogleDriveFileDownloader(this, accessToken);
+            drive = new DriveRecordings(this, accessToken);
             loadRecordings();
         } else {
             Log.e(TAG, "No access token found");
@@ -168,13 +167,13 @@ public class RecordingsActivity extends AppCompatActivity {
     }
 
     private void deleteSelected() {
-        List<FileDownloader.RecordingItem> selected = adapter.getSelectedItems();
+        List<DriveRecordings.RecordingItem> selected = adapter.getSelectedItems();
         if (selected.isEmpty())
             return;
 
         List<String> fileIds = new ArrayList<>();
         Set<String> folderIds = new HashSet<>();
-        for (FileDownloader.RecordingItem item : selected) {
+        for (DriveRecordings.RecordingItem item : selected) {
             fileIds.add(item.driveFile.getId());
             if (item.driveFile.getParents() != null) {
                 folderIds.addAll(item.driveFile.getParents());
@@ -199,12 +198,12 @@ public class RecordingsActivity extends AppCompatActivity {
     }
 
     private void shareSelected() {
-        List<FileDownloader.RecordingItem> selected = adapter.getSelectedItems();
+        List<DriveRecordings.RecordingItem> selected = adapter.getSelectedItems();
         if (selected.isEmpty())
             return;
 
         progressBar.setVisibility(View.VISIBLE);
-        downloader.shareFiles(selected, new FileDownloader.Callback<List<Uri>>() {
+        drive.shareFiles(selected, new DriveRecordings.Callback<List<Uri>>() {
             @Override
             public void onSuccess(List<Uri> uris) {
                 mainHandler.post(() -> {
@@ -237,11 +236,11 @@ public class RecordingsActivity extends AppCompatActivity {
         });
     }
 
-    private void shareTsaFile(FileDownloader.RecordingItem item) {
-        List<FileDownloader.RecordingItem> single = new ArrayList<>();
+    private void shareTsaFile(DriveRecordings.RecordingItem item) {
+        List<DriveRecordings.RecordingItem> single = new ArrayList<>();
         single.add(item);
         progressBar.setVisibility(View.VISIBLE);
-        downloader.shareFiles(single, new FileDownloader.Callback<List<Uri>>() {
+        drive.shareFiles(single, new DriveRecordings.Callback<List<Uri>>() {
             @Override
             public void onSuccess(List<Uri> uris) {
                 mainHandler.post(() -> {
@@ -269,9 +268,9 @@ public class RecordingsActivity extends AppCompatActivity {
         if (!swipeRefreshLayout.isRefreshing()) {
             progressBar.setVisibility(View.VISIBLE);
         }
-        downloader.listRecordings(new FileDownloader.Callback<List<FileDownloader.RecordingItem>>() {
+        drive.listRecordings(new DriveRecordings.Callback<List<DriveRecordings.RecordingItem>>() {
             @Override
-            public void onSuccess(List<FileDownloader.RecordingItem> result) {
+            public void onSuccess(List<DriveRecordings.RecordingItem> result) {
                 Log.d(TAG, "Loaded " + (result != null ? result.size() : 0) + " recordings from server");
                 mainHandler.post(() -> {
                     progressBar.setVisibility(View.GONE);
@@ -316,7 +315,7 @@ public class RecordingsActivity extends AppCompatActivity {
     }
 
     private void mergeSession(String sessionId) {
-        List<FileDownloader.RecordingItem> sessionItems = adapter.getItemsBySession(sessionId);
+        List<DriveRecordings.RecordingItem> sessionItems = adapter.getItemsBySession(sessionId);
         if (sessionItems.isEmpty())
             return;
         sessionItems.sort(MERGE_ORDER);
@@ -325,7 +324,7 @@ public class RecordingsActivity extends AppCompatActivity {
         progressBar.setVisibility(View.VISIBLE);
         Toast.makeText(this, R.string.downloading_chunks, Toast.LENGTH_SHORT).show();
 
-        downloader.downloadFiles(sessionItems, new FileDownloader.Callback<List<File>>() {
+        drive.downloadFiles(sessionItems, new DriveRecordings.Callback<List<File>>() {
             @Override
             public void onSuccess(List<File> localFiles) {
                 backgroundExecutor.execute(() -> {
@@ -379,8 +378,8 @@ public class RecordingsActivity extends AppCompatActivity {
 
     @Override
     protected void onDestroy() {
-        if (downloader != null) {
-            downloader.shutdown();
+        if (drive != null) {
+            drive.shutdown();
         }
         backgroundExecutor.shutdownNow();
         super.onDestroy();

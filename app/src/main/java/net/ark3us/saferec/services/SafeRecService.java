@@ -23,9 +23,8 @@ import net.ark3us.saferec.media.AudioStreamRecorder;
 import net.ark3us.saferec.media.MuxerSink;
 import net.ark3us.saferec.media.VideoStreamRecorder;
 import net.ark3us.saferec.misc.Settings;
-import net.ark3us.saferec.net.FileDownloader;
+import net.ark3us.saferec.net.DriveRecordings;
 import net.ark3us.saferec.net.TsaClient;
-import net.ark3us.saferec.net.GoogleDriveFileDownloader;
 import net.ark3us.saferec.net.GoogleDriveFileUploader;
 
 import java.io.File;
@@ -538,7 +537,7 @@ public class SafeRecService extends Service {
             }
 
             Log.i(TAG, "Starting background deletion of " + fileIds.length + " files");
-            GoogleDriveFileDownloader downloader = new GoogleDriveFileDownloader(this, accessToken);
+            DriveRecordings drive = new DriveRecordings(this, accessToken);
 
             List<String> fileIdList = Arrays.asList(fileIds);
             Set<String> folderIdSet = new HashSet<>();
@@ -546,17 +545,19 @@ public class SafeRecService extends Service {
                 Collections.addAll(folderIdSet, folderIds);
             }
 
-            downloader.deleteFilesById(fileIdList, folderIdSet, new FileDownloader.Callback<Void>() {
+            drive.deleteFilesById(fileIdList, folderIdSet, new DriveRecordings.Callback<Void>() {
                 @Override
                 public void onSuccess(Void result) {
                     Log.i(TAG, "Background deletion completed successfully");
                     finishDeletion(fileIds.length);
+                    drive.shutdown(); // its thread is done: do not leak one per deletion
                 }
 
                 @Override
                 public void onError(Exception e) {
                     Log.e(TAG, "Background deletion failed", e);
                     finishDeletion(fileIds.length);
+                    drive.shutdown();
                 }
             });
         });

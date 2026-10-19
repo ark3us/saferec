@@ -16,19 +16,42 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
-public class GoogleDriveFileDownloader extends FileDownloader {
+/** The recordings on Drive: list, download, share and move to the trash. */
+public class DriveRecordings {
+    public interface Callback<T> {
+        void onSuccess(T result);
 
-    private static final String TAG = GoogleDriveFileDownloader.class.getSimpleName();
+        void onError(Exception e);
+    }
+
+    public static class RecordingItem {
+        public final MediaFile mediaFile;
+        public final com.google.api.services.drive.model.File driveFile;
+
+        public RecordingItem(MediaFile mediaFile, com.google.api.services.drive.model.File driveFile) {
+            this.mediaFile = mediaFile;
+            this.driveFile = driveFile;
+        }
+    }
+
+    private final ExecutorService executor = Executors.newSingleThreadExecutor();
+
+    private static final String TAG = DriveRecordings.class.getSimpleName();
     private final GoogleDriveClient driveClient;
     private final Context context;
 
-    public GoogleDriveFileDownloader(Context context, String accessToken) {
+    public DriveRecordings(Context context, String accessToken) {
         this.context = context.getApplicationContext();
         this.driveClient = new GoogleDriveClient(accessToken);
     }
 
-    @Override
+    public void shutdown() {
+        executor.shutdownNow();
+    }
+
     public void listRecordings(Callback<List<RecordingItem>> callback) {
         executor.execute(() -> {
             try {
@@ -218,7 +241,6 @@ public class GoogleDriveFileDownloader extends FileDownloader {
         }
     }
 
-    @Override
     public void shareFiles(List<RecordingItem> items, Callback<List<Uri>> callback) {
         executor.execute(() -> {
             try {
@@ -250,7 +272,6 @@ public class GoogleDriveFileDownloader extends FileDownloader {
         });
     }
 
-    @Override
     public void downloadFiles(List<RecordingItem> items, Callback<List<File>> callback) {
         executor.execute(() -> {
             try {

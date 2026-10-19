@@ -16,7 +16,7 @@ import androidx.recyclerview.widget.RecyclerView;
 
 import com.google.api.services.drive.model.File;
 
-import net.ark3us.saferec.net.FileDownloader;
+import net.ark3us.saferec.net.DriveRecordings;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -36,15 +36,15 @@ public class RecordingsAdapter extends RecyclerView.Adapter<RecyclerView.ViewHol
 
         void onMergeSession(String sessionId);
 
-        void onShareTsa(FileDownloader.RecordingItem item);
+        void onShareTsa(DriveRecordings.RecordingItem item);
     }
 
     private static class DisplayItem {
         final int type;
         final String sessionId;
         final String dataType;
-        final FileDownloader.RecordingItem recording;
-        FileDownloader.RecordingItem tsaRecording;
+        final DriveRecordings.RecordingItem recording;
+        DriveRecordings.RecordingItem tsaRecording;
         boolean selected = false;
 
         DisplayItem(String sessionId, String dataType) {
@@ -54,7 +54,7 @@ public class RecordingsAdapter extends RecyclerView.Adapter<RecyclerView.ViewHol
             this.recording = null;
         }
 
-        DisplayItem(FileDownloader.RecordingItem recording) {
+        DisplayItem(DriveRecordings.RecordingItem recording) {
             this.type = TYPE_ITEM;
             this.sessionId = recording.mediaFile.sessionId;
             this.dataType = recording.mediaFile.dataType;
@@ -70,16 +70,16 @@ public class RecordingsAdapter extends RecyclerView.Adapter<RecyclerView.ViewHol
         this.listener = listener;
     }
 
-    public void setFiles(List<FileDownloader.RecordingItem> newItems) {
+    public void setFiles(List<DriveRecordings.RecordingItem> newItems) {
         Log.d(TAG, "setFiles: updating with " + (newItems != null ? newItems.size() : 0) + " items");
         displayItems.clear();
         displayItems.addAll(buildDisplayItems(newItems));
         notifyDataSetChanged();
     }
 
-    public void removeItems(List<FileDownloader.RecordingItem> itemsToRemove) {
+    public void removeItems(List<DriveRecordings.RecordingItem> itemsToRemove) {
         Log.d(TAG, "removeItems: removing " + itemsToRemove.size() + " items");
-        for (FileDownloader.RecordingItem item : itemsToRemove) {
+        for (DriveRecordings.RecordingItem item : itemsToRemove) {
             for (int i = 0; i < displayItems.size(); i++) {
                 DisplayItem di = displayItems.get(i);
                 if (di.type == TYPE_ITEM && di.recording.driveFile.getId().equals(item.driveFile.getId())) {
@@ -122,15 +122,15 @@ public class RecordingsAdapter extends RecyclerView.Adapter<RecyclerView.ViewHol
         }
     }
 
-    private static List<DisplayItem> buildDisplayItems(List<FileDownloader.RecordingItem> newItems) {
+    private static List<DisplayItem> buildDisplayItems(List<DriveRecordings.RecordingItem> newItems) {
         List<DisplayItem> items = new ArrayList<>();
         if (newItems == null || newItems.isEmpty()) {
             return items;
         }
 
-        List<FileDownloader.RecordingItem> mediaItems = new ArrayList<>();
-        Map<String, FileDownloader.RecordingItem> tsaItemsByChunk = new HashMap<>();
-        for (FileDownloader.RecordingItem item : newItems) {
+        List<DriveRecordings.RecordingItem> mediaItems = new ArrayList<>();
+        Map<String, DriveRecordings.RecordingItem> tsaItemsByChunk = new HashMap<>();
+        for (DriveRecordings.RecordingItem item : newItems) {
             if ("tsa".equalsIgnoreCase(item.mediaFile.getExtension())) {
                 tsaItemsByChunk.put(buildChunkKey(item.mediaFile.sessionId, item.mediaFile.dataType,
                         item.mediaFile.sequenceNumber), item);
@@ -140,7 +140,7 @@ public class RecordingsAdapter extends RecyclerView.Adapter<RecyclerView.ViewHol
         }
 
         String currentGroupKey = null;
-        for (FileDownloader.RecordingItem item : mediaItems) {
+        for (DriveRecordings.RecordingItem item : mediaItems) {
             String nextGroupKey = item.mediaFile.sessionId + "|" + item.mediaFile.dataType;
             if (currentGroupKey == null || !currentGroupKey.equals(nextGroupKey)) {
                 currentGroupKey = nextGroupKey;
@@ -163,8 +163,8 @@ public class RecordingsAdapter extends RecyclerView.Adapter<RecyclerView.ViewHol
         return count;
     }
 
-    public List<FileDownloader.RecordingItem> getSelectedItems() {
-        List<FileDownloader.RecordingItem> selected = new ArrayList<>();
+    public List<DriveRecordings.RecordingItem> getSelectedItems() {
+        List<DriveRecordings.RecordingItem> selected = new ArrayList<>();
         for (DisplayItem item : displayItems) {
             if (item.type == TYPE_ITEM && item.selected) {
                 selected.add(item.recording);
@@ -176,8 +176,8 @@ public class RecordingsAdapter extends RecyclerView.Adapter<RecyclerView.ViewHol
         return selected;
     }
 
-    public List<FileDownloader.RecordingItem> getItemsBySession(String sessionId) {
-        List<FileDownloader.RecordingItem> items = new ArrayList<>();
+    public List<DriveRecordings.RecordingItem> getItemsBySession(String sessionId) {
+        List<DriveRecordings.RecordingItem> items = new ArrayList<>();
         for (DisplayItem item : displayItems) {
             if (item.type == TYPE_ITEM && item.sessionId.equals(sessionId)) {
                 items.add(item.recording);
@@ -223,7 +223,7 @@ public class RecordingsAdapter extends RecyclerView.Adapter<RecyclerView.ViewHol
                     .setOnClickListener(v -> listener.onMergeSession(displayItem.sessionId));
         } else if (holder instanceof RecordingViewHolder) {
             RecordingViewHolder recordingHolder = (RecordingViewHolder) holder;
-            FileDownloader.RecordingItem recording = displayItem.recording;
+            DriveRecordings.RecordingItem recording = displayItem.recording;
             File file = recording.driveFile;
 
             // dataType: sequenceNumber
