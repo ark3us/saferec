@@ -95,8 +95,8 @@
         <item quantity="other">%1$d selected</item>
     </plurals>
     <plurals name="deleting_recordings_bg">
-        <item quantity="one">Deleting %1$d recording in background…</item>
-        <item quantity="other">Deleting %1$d recordings in background…</item>
+        <item quantity="one">Moving %1$d recording to the Google Drive trash (kept 30 days)…</item>
+        <item quantity="other">Moving %1$d recordings to the Google Drive trash (kept 30 days)…</item>
     </plurals>
     <plurals name="notif_status_timestamping">
         <item quantity="one">Timestamping %1$d file</item>

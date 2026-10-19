@@ -162,18 +162,28 @@ public class GoogleDriveFileDownloader extends FileDownloader {
         deleteFilesById(fileIds, folderIds, callback);
     }
 
+    /**
+     * Never deletes for good: whoever forces the phone open (or a slip of the finger) could
+     * otherwise destroy the evidence. Drive keeps trashed files for 30 days.
+     */
+    private void trash(String fileId) throws Exception {
+        com.google.api.services.drive.model.File trashed = new com.google.api.services.drive.model.File();
+        trashed.setTrashed(true);
+        driveClient.getDriveService().files().update(fileId, trashed).execute();
+    }
+
     public void deleteFilesById(List<String> fileIds, Set<String> folderIdsToCheck, Callback<Void> callback) {
         executor.execute(() -> {
             try {
                 for (String fileId : fileIds) {
-                    driveClient.getDriveService().files().delete(fileId).execute();
+                    trash(fileId);
                 }
 
                 // Optional: Clean up empty folders (DataType and then Session)
                 if (folderIdsToCheck != null) {
                     for (String folderId : folderIdsToCheck) {
                         try {
-                            cleanEmptyFolderRecursively(folderId);
+                            trashEmptyFolderRecursively(folderId);
                         } catch (Exception folderEx) {
                             Log.e(TAG, "Failed to clean folders for: " + folderId, folderEx);
                         }
@@ -187,7 +197,11 @@ public class GoogleDriveFileDownloader extends FileDownloader {
         });
     }
 
-    public void cleanEmptyFolderRecursively(String folderId) throws Exception {
+    /**
+     * Folders holding trashed files stay: "Restore" in Drive then puts the files back where
+     * they were. Deleting such a folder for good would also delete the trashed files in it.
+     */
+    public void trashEmptyFolderRecursively(String folderId) throws Exception {
         if (folderId == null)
             return;
 
@@ -202,18 +216,18 @@ public class GoogleDriveFileDownloader extends FileDownloader {
         }
 
         FileList children = driveClient.getDriveService().files().list()
-                .setQ(String.format("trashed=false and '%s' in parents", folderId))
+                .setQ(String.format("'%s' in parents", folderId)) // trashed children count too
                 .setFields("files(id)")
                 .setPageSize(1)
                 .execute();
 
         if (children.getFiles() == null || children.getFiles().isEmpty()) {
-            Log.d(TAG, "Deleting empty folder: " + folder.getName() + " (" + folderId + ")");
-            driveClient.getDriveService().files().delete(folderId).execute();
+            Log.d(TAG, "Trashing empty folder: " + folder.getName() + " (" + folderId + ")");
+            trash(folderId);
 
             // Recurse to parent
             if (folder.getParents() != null && !folder.getParents().isEmpty()) {
-                cleanEmptyFolderRecursively(folder.getParents().get(0));
+                trashEmptyFolderRecursively(folder.getParents().get(0));
             }
         }
     }

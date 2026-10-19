@@ -96,9 +96,9 @@
         <item quantity="other">%1$d selezionati</item>
     </plurals>
     <plurals name="deleting_recordings_bg">
-        <item quantity="one">Eliminazione di %1$d registrazione in background…</item>
-        <item quantity="many">Eliminazione di %1$d registrazioni in background…</item>
-        <item quantity="other">Eliminazione di %1$d registrazioni in background…</item>
+        <item quantity="one">Spostamento di %1$d registrazione nel cestino di Google Drive (conservata 30 giorni)…</item>
+        <item quantity="many">Spostamento di %1$d registrazioni nel cestino di Google Drive (conservate 30 giorni)…</item>
+        <item quantity="other">Spostamento di %1$d registrazioni nel cestino di Google Drive (conservate 30 giorni)…</item>
     </plurals>
     <plurals name="notif_status_timestamping">
         <item quantity="one">Marcatura temporale di %1$d file</item>
