@@ -69,3 +69,6 @@ Before running, check that the default network is `VALIDATED` and that no global
 
 ### Shrink the release build
 Release builds have `isMinifyEnabled = false`. R8 would cut the APK size a lot, but google-api-client, Gson and BouncyCastle use reflection and need `keep` rules. Turn it on together with a release-signed run of the whole device suite, ideally on a spare phone: installing a release build over the debug one means uninstalling it, losing its token and local chunks.
+
+### Unit tests on every push
+The repository is public and now has JVM unit tests that need no phone. A small GitHub Actions workflow running `./gradlew testDebugUnitTest lintDebug` on each push would catch a broken build or a failing outbox test before it reaches `main`, now that changes are merged without a pull request. Secrets are not needed: the tests never touch Drive.
