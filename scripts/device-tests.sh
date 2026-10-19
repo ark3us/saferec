@@ -456,19 +456,20 @@ scenario_outbox_job() {
     go_offline || note "warning: still online after enabling airplane mode"
     start_recording || { record outbox_job FAIL "recording did not start"; return; }
     sleep 14
+    # After the stop the service stays in the foreground (dataSync) for the waiting chunks.
+    # A short time limit ends it like the Android 15 daily cap, which leaves a cached process
+    # with no service. Set before the stop: Android fixes the limit when dataSync starts.
+    # Not am kill: Android logs it as a user request, WorkManager takes it for a force stop,
+    # and the job then ran without the system job that keeps its network (cut after 5 s).
+    adb shell device_config put activity_manager data_sync_fgs_timeout_duration 20000
+    FGS_TIMEOUT_SET=1
     stop_recording
     local waiting
     waiting=$(list_store | wc -l)
-    # The service stays in the foreground (dataSync) for the waiting chunks. A short time
-    # limit ends it like the Android 15 daily cap, then the cached process is killed too.
-    adb shell device_config put activity_manager data_sync_fgs_timeout_duration 20000
-    FGS_TIMEOUT_SET=1
     wait_log "Foreground time limit reached" 60 || note "warning: the service did not reach its time limit"
     sleep 3
-    adb shell am kill "$PKG"
-    sleep 2
-    local pid gone_line
-    pid=$(adb shell pidof "$PKG" | tr -d '\r')
+    local services gone_line
+    services=$(adb shell dumpsys activity services "$PKG" | grep -c ServiceRecord)
     gone_line=$(wc -l <"$OUT/full.log")
     adb shell device_config delete activity_manager data_sync_fgs_timeout_duration >/dev/null
     FGS_TIMEOUT_SET=0
@@ -484,13 +485,13 @@ scenario_outbox_job() {
     dups=$(duplicate_uploads)
     logs >"$OUT/outbox_job.log"
     adb shell dumpsys jobscheduler 2>/dev/null | grep -A3 "$PKG" >"$OUT/outbox_job-jobs.txt"
-    note "waiting after the stop $waiting, process after the kill '${pid:-gone}', job runs $started"
+    note "waiting after the stop $waiting, services after the time limit $services, job runs $started"
     note "uploaded by the job $uploaded, left $left, ${took}s after the network came back, service restarts $restarted, duplicates $dups"
-    ((waiting >= 1 && ${#pid} == 0 && started >= 1 && restarted == 0 && left == 0 && uploaded >= waiting && dups == 0)) || ok=0
+    ((waiting >= 1 && services == 0 && started >= 1 && restarted == 0 && left == 0 && uploaded >= waiting && dups == 0)) || ok=0
     if ((ok)); then
-        record outbox_job PASS "$uploaded/$waiting files uploaded by the job ${took}s after the network returned, with no service and a new process"
+        record outbox_job PASS "$uploaded/$waiting files uploaded by the job ${took}s after the network returned, with no service"
     else
-        record outbox_job FAIL "waiting=$waiting pid='$pid' started=$started restarted=$restarted uploaded=$uploaded left=$left dups=$dups"
+        record outbox_job FAIL "waiting=$waiting services=$services started=$started restarted=$restarted uploaded=$uploaded left=$left dups=$dups"
     fi
 }
 
