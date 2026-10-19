@@ -33,21 +33,20 @@ graph TD
     end
 
     subgraph Net["Network Layer"]
-        FU["FileUploader (abstract)"]
+        FU["FileUploader (outbox, retry, dedupe)"]
         GDFU["GoogleDriveFileUploader"]
         GDC["GoogleDriveClient"]
-        FD["FileDownloader (abstract)"]
-        GDFD["GoogleDriveFileDownloader"]
+        DR["DriveRecordings"]
         MF["MediaFile"]
-        FTSA["FreeTSAClient"]
+        TSA["TsaClient"]
     end
 
     subgraph Data["Data / Config"]
-        LD["LiveData (singleton)"]
+        SS["ServiceState (singleton)"]
         S["Settings"]
     end
 
-    MA -- "startForegroundService(CMD_START/STOP)" --> SRS
+    MA -- "startForegroundService(CMD_START), startService(others)" --> SRS
     SRTS -- "launches MainActivity" --> MA
     SRS --> VSR
     SRS --> ASR
@@ -56,13 +55,15 @@ graph TD
     TR --> MS
     TR -- "draws to" --> VSR["VideoStreamRecorder preview"]
     MS -- "on chunk complete" --> SRS
-    SRS -- "timestamp/upload" --> FTSA
-    SRS -- "upload" --> GDFU
-    FTSA -- "construct TSQ" --> GDFU
+    SRS -- "hash, timestamp" --> TSA
+    SRS -- "upload chunks and .tsa" --> GDFU
+    FU -- "Drive specifics" --> GDFU
     GDFU --> GDC
-    MA -- "observes status" --> LD
-    SRS -- "updates status" --> LD
-    RA -- "list/download/delete/share" --> GDFD
+    MA -- "observes status and errors" --> SS
+    SRS -- "updates status, reports errors" --> SS
+    RA -- "list/download/trash/share" --> DR
+    SRS -- "CMD_DELETE (trash)" --> DR
+    DR --> GDC
     RA -- "merge chunks" --> MM
     SRS --> NH
 ```
@@ -94,12 +95,14 @@ net.ark3us.saferec/
 ├── PermissionsManager.java    # Runtime permissions + Google Drive OAuth
 │
 ├── data/
-│   └── LiveData.java          # Singleton observable for service status
+│   └── ServiceState.java      # Service status and one-shot errors, observed by the UI
 │
 ├── media/
 │   ├── VideoStreamRecorder.java  # Camera2 + MediaCodec video encoder (singleton)
 │   ├── AudioStreamRecorder.java  # AudioRecord + MediaCodec AAC encoder
-│   ├── MuxerSink.java            # MediaMuxer wrapper with chunking + upload
+│   ├── MuxerSink.java            # MediaMuxer wrapper: chunks, one A/V clock, outbox hand-off
+│   ├── ChunkPolicy.java          # When a chunk is full (10 s, or a manual size)
+│   ├── VideoOrientation.java     # Orientation math (snap, hint per camera facing)
 │   ├── MediaMerger.java          # Merges MP4 chunks into a single file
 │   └── TimestampRenderer.java    # OpenGL ES 2.0 pipeline for burned-in timestamp overlay
 │
@@ -107,13 +110,12 @@ net.ark3us.saferec/
 │   └── Settings.java          # SharedPreferences wrapper
 │
 ├── net/
-│   ├── FileUploader.java         # Abstract uploader with thread pool
-│   ├── GoogleDriveFileUploader.java  # Drive upload implementation
+│   ├── FileUploader.java         # Outbox queue, retry backoff, dedupe (abstract: tested with a fake)
+│   ├── GoogleDriveFileUploader.java  # Drive upload, folder cache, token refresh
 │   ├── GoogleDriveClient.java    # Low-level Drive API wrapper
-│   ├── FileDownloader.java       # Abstract downloader
-│   ├── GoogleDriveFileDownloader.java  # Drive download implementation
-│   ├── MediaFile.java           # Chunk filename parser/generator
-│   └── FreeTSAClient.java       # Timestamp Authority (TSA) client (Sectigo)
+│   ├── DriveRecordings.java      # Recordings on Drive: list, download, share, trash
+│   ├── MediaFile.java            # Chunk filename parser/generator
+│   └── TsaClient.java            # RFC 3161 Time Stamping Authority client (Sectigo)
 │
 │
 ├── services/
@@ -142,7 +144,7 @@ sequenceDiagram
 
     MA->>SRS: startForegroundService(CMD_START)
     SRS->>SRS: startRecording()
-    SRS->>MS: new MuxerSink(workDir, outboxDir, callback, dataType, sessionId, chunkSize, chunkDuration)
+    SRS->>MS: new MuxerSink(workDir, outboxDir, callback, dataType, sessionId, ChunkPolicy.fromSetting(MB))
     SRS->>VSR: start(context, muxer, useFront, surfaceTexture, callback)
     VSR->>VSR: initCamera() → syncQuality, ensureCameraThread, choosePreviewSize
     VSR->>VSR: setupEncoder() → MediaCodec (H.264), createInputSurface
@@ -157,7 +159,7 @@ sequenceDiagram
     ASR-->>MS: writeAudioData(buffer, info)
     MS->>MS: addVideoTrack(format, rotation) / addAudioTrack(format)
     MS->>MS: start() → muxer.start(), flush pending packets
-    SRS->>SRS: updateNotification(), LiveData → STATUS_STARTED
+    SRS->>SRS: updateNotification(), ServiceState → STATUS_STARTED
 ```
 
 ### 2. Chunking & Upload (during recording)
@@ -248,26 +250,26 @@ sequenceDiagram
     ASR->>ASR: audioRecord.stop/release, encoder.stop/release
     SRS->>MS: stop()
     MS->>MS: closeFile() → muxer.stop(), muxer.release(), upload last chunk
-    SRS->>SRS: LiveData → STATUS_STOPPED, updateNotification()
+    SRS->>SRS: ServiceState → STATUS_STOPPED, updateNotification()
 ```
 
 ### 4. Camera Switch Mid-Recording
 
-When the user switches front↔back during recording, [SafeRecService](file:///home/ark3us/Filen/Dev/SafeRec/app/src/main/java/net/ark3us/saferec/services/SafeRecService.java#21-227) receives a new `CMD_START`:
+When the user switches front↔back during recording, [SafeRecService](app/src/main/java/net/ark3us/saferec/services/SafeRecService.java) receives a new `CMD_START`:
 
-1. [stopRecording()](file:///home/ark3us/Filen/Dev/SafeRec/app/src/main/java/net/ark3us/saferec/MainActivity.java#523-530) — tears down audio, video, and muxer (uploads final chunk)
-2. [startRecording()](file:///home/ark3us/Filen/Dev/SafeRec/app/src/main/java/net/ark3us/saferec/services/SafeRecService.java#112-181) — creates a **new session/muxer**, re-opens camera with new ID
+1. [stopRecording()](app/src/main/java/net/ark3us/saferec/MainActivity.java) — tears down audio, video, and muxer (uploads final chunk)
+2. [startRecording()](app/src/main/java/net/ark3us/saferec/services/SafeRecService.java) — creates a **new session/muxer**, re-opens camera with new ID
 3. This is a full restart, not a hot swap — there's a brief gap in the recording
 
 ### 5. Preview Lifecycle (Independent of Recording)
 
 | State | Action |
 |-------|--------|
-| **App opens (not recording)** | [startPreview()](file:///home/ark3us/Filen/Dev/SafeRec/app/src/main/java/net/ark3us/saferec/media/VideoStreamRecorder.java#121-140) → opens camera, preview-only session (`TEMPLATE_PREVIEW`) |
-| **App opens (recording in progress)** | [attachPreview()](file:///home/ark3us/Filen/Dev/SafeRec/app/src/main/java/net/ark3us/saferec/media/VideoStreamRecorder.java#271-287) → rebuilds capture session with preview + encoder |
-| **App goes to background (recording)** | [detachPreview()](file:///home/ark3us/Filen/Dev/SafeRec/app/src/main/java/net/ark3us/saferec/media/VideoStreamRecorder.java#256-270) → rebuilds capture session without preview |
-| **App goes to background (not recording)** | [stop()](file:///home/ark3us/Filen/Dev/SafeRec/app/src/main/java/net/ark3us/saferec/media/VideoStreamRecorder.java#240-255) | closes camera entirely |
-| **Recording stops (app visible)** | [stopRecording()](file:///home/ark3us/Filen/Dev/SafeRec/app/src/main/java/net/ark3us/saferec/MainActivity.java#523-530) | releases encoder, rebuilds preview-only session |
+| **App opens (not recording)** | [startPreview()](app/src/main/java/net/ark3us/saferec/media/VideoStreamRecorder.java) → opens camera, preview-only session (`TEMPLATE_PREVIEW`) |
+| **App opens (recording in progress)** | [attachPreview()](app/src/main/java/net/ark3us/saferec/media/VideoStreamRecorder.java) → rebuilds capture session with preview + encoder |
+| **App goes to background (recording)** | [detachPreview()](app/src/main/java/net/ark3us/saferec/media/VideoStreamRecorder.java) → rebuilds capture session without preview |
+| **App goes to background (not recording)** | [stop()](app/src/main/java/net/ark3us/saferec/media/VideoStreamRecorder.java) | closes camera entirely |
+| **Recording stops (app visible)** | [stopRecording()](app/src/main/java/net/ark3us/saferec/MainActivity.java) | releases encoder, rebuilds preview-only session |
 
 ### 6. Playback Lifecycle
 
@@ -278,7 +280,7 @@ When the user switches front↔back during recording, [SafeRecService](file:///h
 
 ## Key Classes
 
-### [VideoStreamRecorder](file:///home/ark3us/Filen/Dev/SafeRec/app/src/main/java/net/ark3us/saferec/media/VideoStreamRecorder.java#32-584) — [VideoStreamRecorder.java](file:///home/ark3us/Filen/Dev/SafeRec/app/src/main/java/net/ark3us/saferec/media/VideoStreamRecorder.java)
+### [VideoStreamRecorder](app/src/main/java/net/ark3us/saferec/media/VideoStreamRecorder.java) — [VideoStreamRecorder.java](app/src/main/java/net/ark3us/saferec/media/VideoStreamRecorder.java)
 
 **Singleton.** Manages Camera2 device, preview, and H.264 MediaCodec encoder.
 
@@ -287,19 +289,19 @@ When the user switches front↔back during recording, [SafeRecService](file:///h
 | `muxer` | `volatile MuxerSink` | Set during recording, null otherwise |
 | `isRecording` | `volatile boolean` | True when encoder + muxer are active |
 | `encoder` | `MediaCodec` | H.264 encoder (Surface input) |
-| `encoderSurface` | [Surface](file:///home/ark3us/Filen/Dev/SafeRec/app/src/main/java/net/ark3us/saferec/MainActivity.java#165-168) | Input surface from encoder |
+| `encoderSurface` | [Surface](app/src/main/java/net/ark3us/saferec/MainActivity.java) | Input surface from encoder |
 | `cameraDevice` | `CameraDevice` | Currently open camera |
 | `captureSession` | `CameraCaptureSession` | Active session |
-| `previewSurface` | [Surface](file:///home/ark3us/Filen/Dev/SafeRec/app/src/main/java/net/ark3us/saferec/MainActivity.java#165-168) | From TextureView, null when no preview |
-| `quality` | [Quality](file:///home/ark3us/Filen/Dev/SafeRec/app/src/main/java/net/ark3us/saferec/media/VideoStreamRecorder.java#37-71) | LOW (640×360), MEDIUM (854×480), HIGH (1280×720) |
+| `previewSurface` | [Surface](app/src/main/java/net/ark3us/saferec/MainActivity.java) | From TextureView, null when no preview |
+| `quality` | [Quality](app/src/main/java/net/ark3us/saferec/media/VideoStreamRecorder.java) | LOW (640×360), MEDIUM (854×480), HIGH (1280×720) |
 
 Key methods:
-- [initCamera(context, useFront)](file:///home/ark3us/Filen/Dev/SafeRec/app/src/main/java/net/ark3us/saferec/media/VideoStreamRecorder.java#290-304) — shared setup (sync quality, camera thread, preview size)
-- [setupEncoder(context, cameraId)](file:///home/ark3us/Filen/Dev/SafeRec/app/src/main/java/net/ark3us/saferec/media/AudioStreamRecorder.java#105-120) — creates & starts MediaCodec with async callback
-- [startCaptureSession()](file:///home/ark3us/Filen/Dev/SafeRec/app/src/main/java/net/ark3us/saferec/media/VideoStreamRecorder.java#504-554) — builds targets list (encoder + preview), sets repeating request
+- [initCamera(context, useFront)](app/src/main/java/net/ark3us/saferec/media/VideoStreamRecorder.java) — shared setup (sync quality, camera thread, preview size)
+- [setupEncoder(context, cameraId)](app/src/main/java/net/ark3us/saferec/media/AudioStreamRecorder.java) — creates & starts MediaCodec with async callback
+- [startCaptureSession()](app/src/main/java/net/ark3us/saferec/media/VideoStreamRecorder.java) — builds targets list (encoder + preview), sets repeating request
 - `openCamera(...)` + request generation guard — ignores stale `onOpened` callbacks after stop/restart to avoid resurrecting dead sessions
-- [releaseEncoder()](file:///home/ark3us/Filen/Dev/SafeRec/app/src/main/java/net/ark3us/saferec/media/VideoStreamRecorder.java#305-321) — stops & releases encoder safely
-- [configureTransform(textureView)](file:///home/ark3us/Filen/Dev/SafeRec/app/src/main/java/net/ark3us/saferec/media/VideoStreamRecorder.java#141-197) — corrects preview for device rotation
+- [releaseEncoder()](app/src/main/java/net/ark3us/saferec/media/VideoStreamRecorder.java) — stops & releases encoder safely
+- [configureTransform(textureView)](app/src/main/java/net/ark3us/saferec/media/VideoStreamRecorder.java) — corrects preview for device rotation
 
 **Orientation** ([VideoOrientation](app/src/main/java/net/ark3us/saferec/media/VideoOrientation.java), pure Java, unit tested):
 
@@ -311,7 +313,7 @@ Key methods:
 - Verified hand-held on a Galaxy S10+ with the front camera: portrait, landscape, the other landscape and back to portrait all played upright. Every chunk started with a key frame, 23-52 ms after the turn.
 - Turning from one landscape to the other passes through portrait, which leaves a short chunk (~0.5 s). A duration split just before a turn leaves one too. Both are harmless. A debounce would remove them, at the cost of recording the first part of every real turn sideways.
 
-### [AudioStreamRecorder](file:///home/ark3us/Filen/Dev/SafeRec/app/src/main/java/net/ark3us/saferec/media/AudioStreamRecorder.java#18-179) — [AudioStreamRecorder.java](file:///home/ark3us/Filen/Dev/SafeRec/app/src/main/java/net/ark3us/saferec/media/AudioStreamRecorder.java)
+### [AudioStreamRecorder](app/src/main/java/net/ark3us/saferec/media/AudioStreamRecorder.java) — [AudioStreamRecorder.java](app/src/main/java/net/ark3us/saferec/media/AudioStreamRecorder.java)
 
 Manages `AudioRecord` (mic input) and AAC MediaCodec encoder on a background thread.
 
@@ -322,10 +324,10 @@ Manages `AudioRecord` (mic input) and AAC MediaCodec encoder on a background thr
 - **Stop sequence:** signals EOS to encoder, drains remaining output, then releases
 
 Key methods:
-- [processAudio()](file:///home/ark3us/Filen/Dev/SafeRec/app/src/main/java/net/ark3us/saferec/media/AudioStreamRecorder.java#121-158) — loop: read PCM → queue to encoder → [drainEncoder()](file:///home/ark3us/Filen/Dev/SafeRec/app/src/main/java/net/ark3us/saferec/media/AudioStreamRecorder.java#159-178)
-- [drainEncoder(bufferInfo)](file:///home/ark3us/Filen/Dev/SafeRec/app/src/main/java/net/ark3us/saferec/media/AudioStreamRecorder.java#159-178) — pulls encoded AAC from encoder, writes to muxer
+- [processAudio()](app/src/main/java/net/ark3us/saferec/media/AudioStreamRecorder.java) — loop: read PCM → queue to encoder → [drainEncoder()](app/src/main/java/net/ark3us/saferec/media/AudioStreamRecorder.java)
+- [drainEncoder(bufferInfo)](app/src/main/java/net/ark3us/saferec/media/AudioStreamRecorder.java) — pulls encoded AAC from encoder, writes to muxer
 
-### [MuxerSink](file:///home/ark3us/Filen/Dev/SafeRec/app/src/main/java/net/ark3us/saferec/media/MuxerSink.java#17-263) — [MuxerSink.java](file:///home/ark3us/Filen/Dev/SafeRec/app/src/main/java/net/ark3us/saferec/media/MuxerSink.java)
+### [MuxerSink](app/src/main/java/net/ark3us/saferec/media/MuxerSink.java) — [MuxerSink.java](app/src/main/java/net/ark3us/saferec/media/MuxerSink.java)
 
 Thread-safe (`synchronized`) wrapper around `MediaMuxer` with automatic chunking and upload.
 
@@ -337,15 +339,15 @@ Thread-safe (`synchronized`) wrapper around `MediaMuxer` with automatic chunking
 | **Camera lost** | `setExpectedVideo(false)`: following chunks carry audio only (still under the `video` folder) |
 | **One clock** | Video timestamps are brought to `CLOCK_BOOTTIME`, the audio clock. The camera uses `BOOTTIME` or `MONOTONIC` depending on the device, and the closer clock is picked on the first frame. |
 | **PTS normalization** | One session base for both tracks (first packet written) → chunk base = first packet of the chunk minus `CHUNK_LEAD_US` (1 s) → final. The lead keeps packets of the other track captured just before the chunk's first packet, instead of dropping them. The MP4 writer moves the earliest sample to 0, and the tracks keep their real offset (edit list). |
-| **File naming** | `{sessionId}_{dataType}_{timestamp}.{seq}` via [MediaFile](file:///home/ark3us/Filen/Dev/SafeRec/app/src/main/java/net/ark3us/saferec/net/MediaFile.java#7-71) |
+| **File naming** | `{sessionId}_{dataType}_{timestamp}.{seq}` via [MediaFile](app/src/main/java/net/ark3us/saferec/net/MediaFile.java) |
 
 **Chunk limit** is determined by:
 1. Manual setting (`Settings.getChunkSizeMB`) if > 0: split by size, no duration limit
-2. Otherwise (auto): split by duration, `DEFAULT_CHUNK_DURATION_MS` = 10 s (wall clock), for both video and audio-only
+2. Otherwise (auto): split by duration, `ChunkPolicy.DEFAULT_DURATION_MS` = 10 s (wall clock), for both video and audio-only
 
 Duration, not bytes, is what bounds data loss: a static or dark scene compresses well and would otherwise stretch a size-based chunk.
 
-### [FreeTSAClient](file:///home/ark3us/Filen/Dev/SafeRec/app/src/main/java/net/ark3us/saferec/net/FreeTSAClient.java) — [FreeTSAClient.java](file:///home/ark3us/Filen/Dev/SafeRec/app/src/main/java/net/ark3us/saferec/net/FreeTSAClient.java)
+### [TsaClient](app/src/main/java/net/ark3us/saferec/net/TsaClient.java)
 
 Utility to obtain cryptographically secure RFC 3161 timestamps.
 
@@ -356,7 +358,7 @@ Utility to obtain cryptographically secure RFC 3161 timestamps.
 - **Off the critical path:** `sha256()` runs before the chunk upload; `timestampHash()` only needs the hash and runs later on `SafeRecService.tsaExecutor`, so a slow TSA never delays uploads. Failed timestamps are not retried.
 
 
-### [TimestampRenderer](file:///home/ark3us/Filen/Dev/SafeRec/app/src/main/java/net/ark3us/saferec/media/TimestampRenderer.java) — [TimestampRenderer.java](file:///home/ark3us/Filen/Dev/SafeRec/app/src/main/java/net/ark3us/saferec/media/TimestampRenderer.java)
+### [TimestampRenderer](app/src/main/java/net/ark3us/saferec/media/TimestampRenderer.java) — [TimestampRenderer.java](app/src/main/java/net/ark3us/saferec/media/TimestampRenderer.java)
 
 OpenGL ES 2.0 pipeline that composites a burned-in date/time overlay onto camera frames before they reach the encoder. Always active during video recording.
 
@@ -370,16 +372,16 @@ OpenGL ES 2.0 pipeline that composites a burned-in date/time overlay onto camera
 - **Preview:** The renderer only feeds the encoder. The preview Surface (TextureView) is a separate camera target, so the on-screen preview does not show the overlay.
 - **Integration:** Created in `VideoStreamRecorder.setupEncoder()` for every video recording; its input surface replaces `encoderSurface` in the camera capture session targets.
 
-### [MediaMerger](file:///home/ark3us/Filen/Dev/SafeRec/app/src/main/java/net/ark3us/saferec/media/MediaMerger.java#14-169) — [MediaMerger.java](file:///home/ark3us/Filen/Dev/SafeRec/app/src/main/java/net/ark3us/saferec/media/MediaMerger.java)
+### [MediaMerger](app/src/main/java/net/ark3us/saferec/media/MediaMerger.java) — [MediaMerger.java](app/src/main/java/net/ark3us/saferec/media/MediaMerger.java)
 
-Merges multiple MP4 chunks into a single file. Used by [RecordingsActivity](file:///home/ark3us/Filen/Dev/SafeRec/app/src/main/java/net/ark3us/saferec/RecordingsActivity.java#40-332) when user taps "Merge".
+Merges multiple MP4 chunks into a single file. Used by [RecordingsActivity](app/src/main/java/net/ark3us/saferec/RecordingsActivity.java) when user taps "Merge".
 
 - Reads video/audio formats from the first chunk
 - Strips `KEY_ROTATION` from format, applies rotation via `setOrientationHint` only
 - Concatenates samples with PTS offset tracking per track. Each track continues where it ended in the previous file, measured from its own first sample. Only in the first file is the gap between the tracks kept, because there it is the real offset between microphone and camera start.
 - **Limitation:** Single MP4 = single rotation value. Mixed-camera sessions or merged chunks with different device rotations will have wrong orientation on some segments.
 
-### [SafeRecService](file:///home/ark3us/Filen/Dev/SafeRec/app/src/main/java/net/ark3us/saferec/services/SafeRecService.java#21-227) — [SafeRecService.java](file:///home/ark3us/Filen/Dev/SafeRec/app/src/main/java/net/ark3us/saferec/services/SafeRecService.java)
+### [SafeRecService](app/src/main/java/net/ark3us/saferec/services/SafeRecService.java) — [SafeRecService.java](app/src/main/java/net/ark3us/saferec/services/SafeRecService.java)
 
 Foreground service orchestrating the recording. Commands via `Intent` extras:
 
@@ -390,7 +392,7 @@ Foreground service orchestrating the recording. Commands via `Intent` extras:
 | `CMD_UPLOAD_PENDING` | Upload the outbox now (safe while recording) |
 | `CMD_DELETE` | Move Drive files (`EXTRA_FILE_IDS`) to the Drive trash, never delete them for good. Folders (`EXTRA_FOLDER_IDS`) are trashed only when they hold nothing, not even trashed files. Deleting a folder for good would also delete the trashed files in it, and keeping it lets Drive's "Restore" put files back where they were. |
 
-State is broadcast via [LiveData](file:///home/ark3us/Filen/Dev/SafeRec/app/src/main/java/net/ark3us/saferec/data/LiveData.java) singleton: `STATUS_READY` → `STATUS_STARTED` → `STATUS_STOPPED`.
+State is broadcast via the [ServiceState](app/src/main/java/net/ark3us/saferec/data/ServiceState.java) singleton: `STATUS_READY` → `STATUS_STARTED` → `STATUS_STOPPED`.
 
 Errors are a separate one-shot channel (`reportError()` / `getError()` / `clearError()`): `ERROR_AUTH` (Drive needs re-authentication), `ERROR_CAMERA` (camera lost, recording continues audio-only), `ERROR_RECORDING` (nothing can be recorded). Errors never change the recording status and never stop a recording.
 
@@ -410,14 +412,14 @@ Camera/encoder callbacks are posted to the main thread (`onVideoResult`) and ign
 - Sticky restart after the process was killed: Android forbids entering the foreground from the background, so the service never tries. It resumes the outbox as a plain background service for as long as Android lets it run. Verified on a Galaxy S10+: the waiting chunk was uploaded after the kill, with no crash.
 - Android 15+ caps `dataSync` at 6 h a day: `onTimeout()` stops the service, and the outbox waits on disk for the next launch or recording.
 
-### [Settings](file:///home/ark3us/Filen/Dev/SafeRec/app/src/main/java/net/ark3us/saferec/misc/Settings.java#7-78) — [Settings.java](file:///home/ark3us/Filen/Dev/SafeRec/app/src/main/java/net/ark3us/saferec/misc/Settings.java)
+### [Settings](app/src/main/java/net/ark3us/saferec/misc/Settings.java) — [Settings.java](app/src/main/java/net/ark3us/saferec/misc/Settings.java)
 
 SharedPreferences wrapper. Keys:
 
 | Setting | Type | Default |
 |---------|------|---------|
 | `accessToken` | String | null |
-| [onlyAudio](file:///home/ark3us/Filen/Dev/SafeRec/app/src/main/java/net/ark3us/saferec/misc/Settings.java#25-28) | boolean | false |
+| [onlyAudio](app/src/main/java/net/ark3us/saferec/misc/Settings.java) | boolean | false |
 | `useFrontCamera` | boolean | false |
 | `videoQuality` | String | "LOW" |
 | `chunkSizeMB` | int | 0 (auto = 10 s chunks) |
@@ -473,7 +475,7 @@ Chunks are uploaded immediately on completion and **deleted locally** on success
 
 ### Thread Safety Notes
 
-- [MuxerSink](file:///home/ark3us/Filen/Dev/SafeRec/app/src/main/java/net/ark3us/saferec/media/MuxerSink.java#17-263): all public methods are `synchronized`
+- [MuxerSink](app/src/main/java/net/ark3us/saferec/media/MuxerSink.java): all public methods are `synchronized`
 - `VideoStreamRecorder.muxer` and `.isRecording`: `volatile` for cross-thread visibility
 - `VideoStreamRecorder.cameraOpenRequestCount`: `AtomicInteger` generation guard against stale async camera-open callbacks
 - `AudioStreamRecorder.isRecording`: `volatile`, checked in processing loop
@@ -507,7 +509,12 @@ Chunks are uploaded immediately on completion and **deleted locally** on success
 
 ## Testing on a Device
 
-Unit tests (JVM, no phone): `./gradlew testDebugUnitTest`, which covers the orientation math.
+Unit tests (JVM, no phone, under a second): `./gradlew testDebugUnitTest`.
+- `VideoOrientationTest`: quadrant snapping with hysteresis, hint for back and front cameras.
+- `ChunkPolicyTest`: 10 s auto chunks whatever the size, manual size only.
+- `MediaFileTest`: chunk and `.tsa` names, Drive names, foreign names rejected.
+- `TsaClientTest`: SHA-256 against the FIPS test vector.
+- `FileUploaderTest`: the outbox logic with a fake uploader and millisecond backoff. It covers queuing once while uploading, retry from the outbox, a success releasing waiting files at once, and `retryNow()`. Breaking the dedupe or the success trigger fails exactly the matching test (checked by mutation).
 
 
 `scripts/device-tests.sh` drives a connected phone (debug build, `ANDROID_SERIAL` to pick one) and checks logcat, the chunk store and chunk durations with ffprobe. Scenarios: `offline_start`, `audio_only`, `camera_stolen`, `replay`, `errors_dont_stop`, `network_drop`, `retry_after_outage`, `tsa`, `av_sync`, plus a whole-run crash check. It toggles airplane mode, records camera and mic, rewrites SafeRec settings, and restores everything on exit. It refuses to run if the outbox or `recording/` is not empty.
