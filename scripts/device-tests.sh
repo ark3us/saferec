@@ -476,11 +476,11 @@ scenario_av_sync() {
     wait_until_ms $((t0 + 3000))
     tap_view btn_switch_camera || note "warning: switch camera button not found"
     RANDOM=7 # same pulse times on every run
-    for ((t = 6000; t < 38000; t += 800 + RANDOM % 800)); do
+    for ((t = 6000; t < 48000; t += 800 + RANDOM % 800)); do
         wait_until_ms $((t0 + t))
         vibrate
     done
-    wait_until_ms $((t0 + 40000))
+    wait_until_ms $((t0 + 50000))
     stop_recording
     pull_chunks "$OUT/av_sync"
     clear_store # before going online, or the outbox retry would upload these test chunks
@@ -500,17 +500,23 @@ scenario_av_sync() {
         awk -v p="$peak" 'BEGIN { exit !(p >= 0.3) }' && lags+=("$lag")
     done
     note "restart at chunk #${first:-?}, lag (audio after video) per chunk: ${summary:-none}"
-    if ((${#lags[@]} < 2)); then
+    if ((${#lags[@]} < 3)); then
         record av_sync SKIP "too little signal: the camera used after the switch must see a lit, textured scene"
         return
     fi
     # The rig itself (motor, AAC encoder delay) adds a constant ~0.1 s: only a large or
     # changing lag is a sync bug. Before the shared clock it was ~0.6 s after a switch.
-    if printf '%s\n' "${lags[@]}" | awk '{ if (NR == 1 || $1 < lo) lo = $1; if (NR == 1 || $1 > hi) hi = $1 }
-            END { exit !(lo >= -250 && hi <= 250 && hi - lo <= 40) }'; then
-        record av_sync PASS "lag $(printf '%s ' "${lags[@]}")ms after a cold camera start, stable across chunks"
+    # One chunk can lock onto a stray movement or noise, so the majority decides.
+    local verdict
+    verdict=$(printf '%s\n' "${lags[@]}" | sort -g | awk '{ v[NR] = $1 } END {
+        m = (NR % 2) ? v[(NR + 1) / 2] : (v[NR / 2] + v[NR / 2 + 1]) / 2
+        for (i = 1; i <= NR; i++) if (v[i] - m > 40 || m - v[i] > 40) out++
+        printf "%.0f %d", m, out }')
+    local median=${verdict% *} outliers=${verdict#* }
+    if ((median >= -250 && median <= 250 && outliers <= 1)); then
+        record av_sync PASS "median lag ${median} ms after a cold camera start, $((${#lags[@]} - outliers))/${#lags[@]} chunks within 40 ms of it"
     else
-        record av_sync FAIL "lag $(printf '%s ' "${lags[@]}")ms (allowed: within ±250 ms, spread ≤ 40 ms)"
+        record av_sync FAIL "median lag ${median} ms, $outliers of ${#lags[@]} chunks off by > 40 ms (allowed: median within ±250 ms, at most 1 off)"
     fi
 }
 

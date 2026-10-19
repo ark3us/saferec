@@ -515,7 +515,7 @@ Unit tests (JVM, no phone): `./gradlew testDebugUnitTest`, which covers the orie
 - `av_sync` checks sync on the content.
   - It switches camera at 3 s (a cold camera start), then vibrates the phone with 80 ms pulses at seeded irregular times. Long pulses (250 ms) failed in dim light: long exposures show motion mostly when the motor starts and stops, and the two make rival correlation peaks ~0.25 s apart. The motor is one physical event seen by both tracks: the buzz reaches the microphone and the shake moves the image.
   - `scripts/av_lag.py` cross-correlates the buzz envelope with the motion on textured pixels, per chunk.
-  - The scenario passes within ±250 ms with a spread ≤ 40 ms. It skips when the camera used after the switch sees too dark a scene (the phone must lie so that camera sees a lit room).
+  - It records 50 s and measures every chunk after the switch with a clear correlation peak. It passes when the median lag is within ±250 ms and at most one chunk is more than 40 ms from it. One chunk can lock onto a stray movement or noise, which once failed a run that two reruns passed. It skips when the camera used after the switch sees too dark a scene (the phone must lie so that camera sees a lit room).
   - Its own FAIL on the pre-fix build (+540..570 ms) confirmed it catches the bug.
 - Media scenarios also check that no frame is dropped at a chunk boundary (`Skipping … frame`), and that the first video frame is 0-1000 ms old on the shared clock (proof that both tracks use one clock).
 - Checks read the host-side logcat capture (`full.log`), not the device buffer: failed uploads log long stack traces and the device buffer silently drops old lines.
