@@ -27,6 +27,20 @@ Anchor the chain head with OpenTimestamps (free, no rate limit, anchored to Bitc
 ### Verification guide
 A short guide plus script (`openssl ts -verify -data chunk.mp4 -in chunk.tsa -CAfile …`) so a lawyer or expert can check a recording in two minutes.
 
+## Upload reliability
+
+### Say when Drive is full
+Drive answers HTTP 403 `storageQuotaExceeded` when the account is full. Today that is retried forever, silently. Report it as its own error ("Drive is full: recordings stay on the phone") so the user can free space before an emergency, not after.
+
+### VPN-aware network trigger
+With an always-on VPN the default network never changes, so `onAvailable` does not fire when the real network comes back. Also listen to `onCapabilitiesChanged` and retry when the network turns `VALIDATED` again, or when its underlying transports change.
+
+### Idempotent folder creation
+A folder `create` whose response is lost (timeout) can still succeed on Drive. Pre-generate folder IDs with `files.generateIds`, persist them, and create with that ID: a retry then fails with 409 instead of making a duplicate, whatever Drive's search index says.
+
+### Drive repair tool
+One button in the recordings screen that merges duplicate `SafeRec` (and session) folders made by older builds into the oldest one, then deletes the empty duplicates.
+
 ## Quality and testing
 
 ### In-app chunk health check
@@ -40,3 +54,6 @@ When Drive authorization fails with `UNREGISTERED_ON_API_CONSOLE`, have `scripts
 
 ### Device health guard in device tests
 Record `MemAvailable` and `SUnreclaim` (kernel unreclaimable memory) before and after each run, and refuse to run on a thrashing device. A custom-ROM kernel leak (5.3 GB of unreclaimable slab) once caused an ANR that looked like an app bug.
+
+### Fault injection in debug builds
+A debug-only `HttpRequestInitializer` that, on a switch from `adb shell am broadcast`, delays, fails or drops the response of the next Drive request after it was sent. Lost responses, timeouts and 401/403/404 then become repeatable tests instead of waiting for a bad network.

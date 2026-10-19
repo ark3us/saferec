@@ -78,6 +78,8 @@ The app exists to save evidence when things go wrong. Keep these invariants:
 3. **Network errors are not auth errors.** The access token is cleared only when Drive answers HTTP 401 and a silent refresh needs user interaction.
 4. **Chunks never wait for the TSA.** Hash first, upload, then timestamp the hash.
 5. **Degrade gracefully.** Camera lost → continue audio-only.
+6. **The outbox holds complete chunks only.** A chunk is written in `recording/` and moved to `data_store/` when closed, so the outbox can be uploaded at any time, even mid-recording.
+7. **A failed lookup is not "not found".** Drive folders are created only when Drive answered that they do not exist, and only under the uploader's lock. Treating a timeout as "not found" created duplicate `SafeRec` folders and split sessions between them.
 
 ---
 
@@ -140,7 +142,7 @@ sequenceDiagram
 
     MA->>SRS: startForegroundService(CMD_START)
     SRS->>SRS: startRecording()
-    SRS->>MS: new MuxerSink(baseDir, uploader, dataType, sessionId, chunkSize)
+    SRS->>MS: new MuxerSink(workDir, outboxDir, callback, dataType, sessionId, chunkSize, chunkDuration)
     SRS->>VSR: start(context, muxer, useFront, surfaceTexture, callback)
     VSR->>VSR: initCamera() → syncQuality, ensureCameraThread, choosePreviewSize
     VSR->>VSR: setupEncoder() → MediaCodec (H.264), createInputSurface
@@ -170,7 +172,7 @@ sequenceDiagram
     VSR-->>MS: writeVideoData(buffer, info)
     MS->>MS: (keyFrame && chunk full: 10 s or manual MB) OR device rotated?
     alt Chunk complete
-        MS->>MS: rotate() → closeFile() + onFileSaved(completedChunkFile)
+        MS->>MS: rotate() → closeFile() → move recording/ → data_store/ + onFileSaved(chunk)
         MS-->>SRS: onFileSaved() callback
         alt Timestamping enabled
             SRS->>FTSA: sha256(chunkFile) (local, before upload deletes it)
@@ -184,25 +186,37 @@ sequenceDiagram
             end
         end
         GDFU->>GDFU: uploadFile() on thread pool (max 4 concurrent)
-        alt Upload failed
-            GDFU->>GDC: checkAuthentication()
-            alt INVALID (HTTP 401)
-                GDFU->>GDFU: attempt silent refresh (AuthorizationClient)
-                alt Refresh success
-                    GDFU->>GDC: setAccessToken(newToken)
-                    GDFU->>GDFU: retry upload
-                else Resolution required
-                    GDFU->>S: setAccessToken(null)
-                    GDFU->>LD: reportError(ERROR_AUTH)
-                end
-            else UNKNOWN (network/Drive down)
-                GDFU->>GDFU: keep token and file for a later upload
+        alt Failed with HTTP 401
+            GDFU->>GDFU: attempt silent refresh (AuthorizationClient)
+            alt Refresh success
+                GDFU->>GDC: setAccessToken(newToken)
+                GDFU->>GDFU: retry upload once
+            else Resolution required
+                GDFU->>S: setAccessToken(null)
+                GDFU->>LD: reportError(ERROR_AUTH)
             end
+        else Any other failure (network down, timeout, Drive error)
+            GDFU->>GDFU: keep token and file, rescan the outbox later
         else Success
             GDFU->>GDFU: file.delete()
         end
     end
 ```
+
+Failures are classified from the error itself. An extra request to check the token would run later, could find the network back, and would say nothing about the failure. A 404 (a cached Drive folder was deleted) also clears the folder cache.
+
+### Outbox & Retry
+
+| Directory (under `files/`) | Holds |
+|-----------|-------|
+| `recording/` | The chunk being written |
+| `data_store/` | The outbox: complete chunks and `.tsa` replies waiting for upload |
+
+- `MuxerSink.closeFile()` renames a finished chunk into the outbox (same filesystem, atomic) and deletes empty ones.
+- `SafeRecService.onCreate()` moves orphans left in `recording/` by a crash or kill into the outbox. Such a chunk has no MP4 index and may not play, but it is kept as evidence.
+- The service owns one `GoogleDriveFileUploader` (`ensureUploader()`), shared by the recording and `CMD_UPLOAD_PENDING`, so the `queuedFiles` dedupe covers both.
+- When an upload fails, its file stays in the outbox, and `FileUploader` schedules one outbox rescan: 10 s, doubling up to 5 min.
+- A successful upload, or a new default network (`onAvailable`), rescans the outbox immediately and resets the backoff.
 
 ### 3. Stop Recording
 
@@ -357,7 +371,7 @@ Foreground service orchestrating the recording. Commands via `Intent` extras:
 |---------|--------|
 | `CMD_START` | If already recording: stop + restart (camera switch). Otherwise: start new recording |
 | `CMD_STOP` | Stop recording, reset session |
-| `CMD_UPLOAD_PENDING` | Upload any leftover local chunks to Drive |
+| `CMD_UPLOAD_PENDING` | Upload the outbox now (safe while recording) |
 | `CMD_DELETE` | Delete Drive files (`EXTRA_FILE_IDS`) and clean up empty folders (`EXTRA_FOLDER_IDS`) |
 
 State is broadcast via [LiveData](file:///home/ark3us/Filen/Dev/SafeRec/app/src/main/java/net/ark3us/saferec/data/LiveData.java) singleton: `STATUS_READY` → `STATUS_STARTED` → `STATUS_STOPPED`.
@@ -392,8 +406,10 @@ Security note:
 ### File Storage & Naming
 
 ```
-/data/data/net.ark3us.saferec/files/data_store/
-  └── {sessionId}_{video|audio}_{timestamp}.{seq}    ← local chunk files
+/data/data/net.ark3us.saferec/files/
+  ├── recording/                                      ← chunk being written
+  └── data_store/                                     ← outbox, complete chunks only
+      └── {sessionId}_{video|audio}_{timestamp}.{seq}
 ```
 
 `sessionId` = `System.currentTimeMillis()` at session start.
@@ -408,7 +424,7 @@ My Drive/
               └── {timestamp}.{seq}.mp4
 ```
 
-Chunks are uploaded immediately on completion and **deleted locally** on successful upload.
+Chunks are uploaded immediately on completion and **deleted locally** on successful upload. When duplicate `SafeRec` folders exist (made by older builds), uploads go to the oldest and the recordings list reads all of them.
 
 ---
 
@@ -420,7 +436,8 @@ Chunks are uploaded immediately on completion and **deleted locally** on success
 | **CameraBackground** (HandlerThread) | Camera2 callbacks, MediaCodec encoder callbacks (video) |
 | **Audio processing** (Thread) | `AudioStreamRecorder.processAudio()` loop |
 | **Upload pool** (4 threads) | `FileUploader.uploadExecutor` |
-| **Upload scan** (1 thread) | `FileUploader.scanExecutor` for directory scanning |
+| **Upload scan** (1 thread) | `FileUploader.scanExecutor`: outbox scans and the scheduled retry rescan |
+| **Network callback** (system thread) | `SafeRecService.networkCallback` → `retryNow()` |
 | **Service executor** (1 thread) | `SafeRecService.executor` for pending uploads |
 
 ### Thread Safety Notes
@@ -441,7 +458,7 @@ Chunks are uploaded immediately on completion and **deleted locally** on success
 2. **Mixed-rotation merge.** A single MP4 can only have one `setOrientationHint`. When chunks from different cameras (with different sensor orientations) or different device rotations are merged, some segments will display with wrong rotation.
 3. **No video mirroring.** Front camera video is recorded un-mirrored (you see yourself as others see you, not as a mirror reflection). This is standard for video recording.
 4. **Background Auth Failure.** If Drive rejects the access token (HTTP 401) during background upload, the app attempts a silent token refresh via Google Identity Services. If successful, the upload seamlessly resumes. If the refresh requires user interaction (e.g., token revoked or password changed), it clears the token and reports `ERROR_AUTH`, prompting the user to re-authenticate. The recording keeps going. Network errors never clear the token.
-5. **No upload retry during a session.** A chunk whose upload fails stays in `data_store/` and is only retried by `CMD_UPLOAD_PENDING`, sent at app launch when Drive is reachable and no recording is running.
+5. **Slow failure behind a VPN.** With a VPN app keeping its tunnel up while the phone has no network, packets vanish and each Drive call fails only after its 20 s timeout. `onAvailable` may never fire, because the VPN stays the default network. Recovery then relies on the backoff and on the next successful upload.
 6. **Preview rebuild failure drops video.** `onConfigureFailed` during `attachPreview`/`detachPreview` is handled like a camera loss: the rest of the session is audio-only.
 7. **Audio ~1 s behind video.** Audio and video are normalized to their own first packet, but audio starts before the camera delivers its first frame. Measured on a Galaxy S10+: chunk #0 holds ~10.1 s of audio vs ~9.0 s of video, and the offset persists for the session. A few audio frames (~70 ms) are also dropped at each chunk boundary. Fix needs one shared clock for both tracks.
 
@@ -449,9 +466,13 @@ Chunks are uploaded immediately on completion and **deleted locally** on success
 
 ## Testing on a Device
 
-`scripts/device-tests.sh` drives a connected phone (debug build, `ANDROID_SERIAL` to pick one) and checks logcat, the chunk store and chunk durations with ffprobe. Scenarios: `offline_start`, `audio_only`, `camera_stolen`, `replay`, `errors_dont_stop`, `network_drop`, `tsa`, plus a whole-run crash check. It toggles airplane mode, records camera and mic, rewrites SafeRec settings, and restores everything on exit. It refuses to run if the chunk store is not empty.
+`scripts/device-tests.sh` drives a connected phone (debug build, `ANDROID_SERIAL` to pick one) and checks logcat, the chunk store and chunk durations with ffprobe. Scenarios: `offline_start`, `audio_only`, `camera_stolen`, `replay`, `errors_dont_stop`, `network_drop`, `retry_after_outage`, `tsa`, plus a whole-run crash check. It toggles airplane mode, records camera and mic, rewrites SafeRec settings, and restores everything on exit. It refuses to run if the outbox or `recording/` is not empty.
 
 - Checks read the host-side logcat capture (`full.log`), not the device buffer: failed uploads log long stack traces and the device buffer silently drops old lines.
-- Drive scenarios (`errors_dont_stop`, `network_drop`, `tsa`) need a Google consent given once in the app. The OAuth client only accepts builds whose signing SHA-1 is registered in the Cloud Console, so a new dev machine's debug key must be added there first.
+- Drive scenarios (`errors_dont_stop`, `network_drop`, `retry_after_outage`, `tsa`) need a Google consent given once in the app. The OAuth client only accepts builds whose signing SHA-1 is registered in the Cloud Console, so a new dev machine's debug key must be added there first.
+- Airplane mode is not an outage when a VPN app keeps its tunnel up. On Android 13+ the script also blocks SafeRec's own traffic: `cmd connectivity set-chain3-enabled` plus `set-package-networking-enabled`, restored on exit and reset at the next setup.
+- `run-as` processes have no network permission, so `run-as … nc` or `curl` says nothing about the app's connectivity. Compare `/proc/net/dev` counters instead.
 
 Lesson learned: video encoders emit SPS/PPS as a `BUFFER_FLAG_CODEC_CONFIG` buffer with PTS 0. Writing it as a sample made 0 the video time base and silently dropped all audio after the first chunk. Codec config buffers must never reach `MuxerSink`.
+
+Lesson learned: `findFolderId` used to return null both for "no such folder" and for a timeout, so a lookup during an outage created a second `SafeRec` folder. A token-refresh retry also resolved folders outside the uploader's lock, so two threads built the same session folders in parallel. Lookups now throw on errors, and only `getOrCacheSessionFolderId` creates folders.
