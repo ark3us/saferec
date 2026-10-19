@@ -25,6 +25,7 @@
     <string name="video">video</string>
     <string name="audio">audio</string>
     <string name="chunk_name">Chunk %s</string>
+    <string name="chunk_repaired">(repaired after a cut, original kept)</string>
     <string name="share">Share</string>
     <string name="delete">Delete</string>
     <string name="no_recordings_found">No recordings found</string>

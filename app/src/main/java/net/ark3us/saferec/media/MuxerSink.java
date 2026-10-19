@@ -12,7 +12,9 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 public class MuxerSink {
     private static final String TAG = MuxerSink.class.getSimpleName();
@@ -25,6 +27,14 @@ public class MuxerSink {
     private static final long CLOCK_UNKNOWN = Long.MIN_VALUE;
 
     private MediaMuxer muxer;
+    // Lets a chunk cut by a crash or a power cut be repaired (ChunkRepair); deleted once closed
+    private SampleJournal.Writer journal;
+    // Format fields MediaMuxer needs to rebuild a track, with their types (MediaFormat has no
+    // typed key listing before Android 10)
+    private static final String[] INT_KEYS = {MediaFormat.KEY_WIDTH, MediaFormat.KEY_HEIGHT,
+            MediaFormat.KEY_SAMPLE_RATE, MediaFormat.KEY_CHANNEL_COUNT, MediaFormat.KEY_BIT_RATE,
+            MediaFormat.KEY_MAX_INPUT_SIZE, MediaFormat.KEY_PROFILE, MediaFormat.KEY_LEVEL};
+    private static final String[] BUFFER_KEYS = {"csd-0", "csd-1", "csd-2"};
     private MediaFormat videoFormat;
     private MediaFormat audioFormat;
     private int videoTrackIndex = -1;
@@ -160,10 +170,18 @@ public class MuxerSink {
             format.setInteger(MediaFormat.KEY_ROTATION, 0);
         }
         videoTrackIndex = muxer.addTrack(format);
+        logFormat(SampleJournal.VIDEO, format);
         if (rotation >= 0) {
             videoRotation = rotation;
             muxer.setOrientationHint(rotation);
             Log.i(TAG, "Video rotation: " + rotation + "°");
+            if (journal != null) {
+                try {
+                    journal.rotation(rotation);
+                } catch (IOException e) {
+                    dropJournal(e);
+                }
+            }
         }
         Log.i(TAG, "Video track added: " + videoTrackIndex);
         start();
@@ -173,6 +191,7 @@ public class MuxerSink {
         init();
         audioFormat = format;
         audioTrackIndex = muxer.addTrack(format);
+        logFormat(SampleJournal.AUDIO, format);
         Log.i(TAG, "Audio track added: " + audioTrackIndex);
         start();
     }
@@ -264,12 +283,78 @@ public class MuxerSink {
         info.presentationTimeUs = finalUs;
     
         try {
+            int sizeInFile = isVideo ? videoSizeInFile(buffer, info) : info.size;
             muxer.writeSampleData(trackIndex, buffer, info);
             bytesWritten += info.size;
+            if (journal != null) {
+                journal.sample(isVideo ? SampleJournal.VIDEO : SampleJournal.AUDIO, sizeInFile,
+                        info.presentationTimeUs, info.flags);
+            }
+        } catch (IOException e) {
+            dropJournal(e);
         } catch (Exception e) {
             Log.e(TAG, "Error writing data to track " + trackIndex, e);
         }
         return true;
+    }
+
+    /**
+     * MPEG4Writer stores a video sample as a 4-byte length plus the NAL unit: it replaces a
+     * leading 4-byte start code, or adds the length when there is none.
+     */
+    private static int videoSizeInFile(ByteBuffer buffer, MediaCodec.BufferInfo info) {
+        int o = info.offset;
+        boolean startCode = info.size >= 4 && buffer.get(o) == 0 && buffer.get(o + 1) == 0
+                && buffer.get(o + 2) == 0 && buffer.get(o + 3) == 1;
+        return startCode ? info.size : info.size + 4;
+    }
+
+    private void logFormat(int track, MediaFormat format) {
+        if (journal == null) {
+            return;
+        }
+        Map<String, Object> fields = new LinkedHashMap<>();
+        fields.put(MediaFormat.KEY_MIME, format.getString(MediaFormat.KEY_MIME));
+        for (String key : INT_KEYS) {
+            if (format.containsKey(key)) {
+                try {
+                    fields.put(key, format.getInteger(key));
+                } catch (RuntimeException ignored) {
+                    // stored with another type: MediaMuxer does without it
+                }
+            }
+        }
+        for (String key : BUFFER_KEYS) {
+            ByteBuffer value = format.containsKey(key) ? format.getByteBuffer(key) : null;
+            if (value != null) {
+                ByteBuffer copy = value.duplicate();
+                copy.rewind();
+                byte[] bytes = new byte[copy.remaining()];
+                copy.get(bytes);
+                fields.put(key, bytes);
+            }
+        }
+        try {
+            journal.format(track, fields);
+        } catch (IOException e) {
+            dropJournal(e);
+        }
+    }
+
+    /** Recording never depends on the log: without it a cut chunk is kept unrepaired. */
+    private void dropJournal(IOException e) {
+        Log.w(TAG, "Sample log failed, this chunk cannot be repaired after a crash", e);
+        closeJournal();
+    }
+
+    private void closeJournal() {
+        if (journal != null) {
+            try {
+                journal.close();
+            } catch (IOException ignored) {
+            }
+            journal = null;
+        }
     }
 
     // --- Lifecycle ---
@@ -298,7 +383,10 @@ public class MuxerSink {
             }
             muxer = null;
         }
+        closeJournal();
         if (currentFile != null) {
+            // Closed: the chunk has its index, the log is not needed
+            SampleJournal.of(currentFile).delete();
             if (bytesWritten > 0) {
                 if (fileSavedCallback != null) {
                     fileSavedCallback.onFileSaved(currentFile);
@@ -322,6 +410,12 @@ public class MuxerSink {
             // Reset bytesWritten when creating a new file
             bytesWritten = 0;
             muxer = new MediaMuxer(currentFile.getAbsolutePath(), MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4);
+            try {
+                journal = new SampleJournal.Writer(SampleJournal.of(currentFile));
+            } catch (IOException e) {
+                Log.w(TAG, "No sample log for " + currentFile.getName() + ": it cannot be repaired after a crash", e);
+                journal = null;
+            }
             isInitialized = true;
             Log.i(TAG, "Muxer initialized: " + currentFile.getName());
         } catch (IOException e) {

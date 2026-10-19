@@ -17,9 +17,11 @@ import androidx.work.WorkManager;
 import androidx.work.Worker;
 import androidx.work.WorkerParameters;
 
+import net.ark3us.saferec.media.ChunkRepair;
 import net.ark3us.saferec.media.WorkDir;
 import net.ark3us.saferec.misc.Settings;
 
+import java.io.File;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -97,11 +99,15 @@ public class OutboxWorker extends Worker {
         }
     }
 
-    /** True when files wait in the outbox or chunks in the work dir. */
+    /** True when files wait in the outbox, or chunks in the work dir or for their repair. */
     public static boolean filesWaiting(Context context) {
-        String[] outbox = GoogleDriveFileUploader.outboxDir(context).list();
-        String[] work = WorkDir.dir(context).list();
-        return (outbox != null && outbox.length > 0) || (work != null && work.length > 0);
+        for (File dir : new File[]{GoogleDriveFileUploader.outboxDir(context), WorkDir.dir(context), WorkDir.repairDir(context)}) {
+            String[] names = dir.list();
+            if (names != null && names.length > 0) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -127,7 +133,7 @@ public class OutboxWorker extends Worker {
     @Override
     public Result doWork() {
         Context context = getApplicationContext();
-        int adopted = WorkDir.get().recover(WorkDir.dir(context), GoogleDriveFileUploader.outboxDir(context));
+        int adopted = WorkDir.get().recover(WorkDir.dir(context), GoogleDriveFileUploader.outboxDir(context), new ChunkRepair());
         if (adopted > 0) {
             Log.w(TAG, "Adopted " + adopted + " chunks a dead process left in the work dir");
         }

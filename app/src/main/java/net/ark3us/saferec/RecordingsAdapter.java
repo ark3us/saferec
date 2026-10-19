@@ -45,6 +45,7 @@ public class RecordingsAdapter extends RecyclerView.Adapter<RecyclerView.ViewHol
         final String dataType;
         final DriveRecordings.RecordingItem recording;
         DriveRecordings.RecordingItem tsaRecording;
+        DriveRecordings.RecordingItem cutOriginal; // the untouched original of a repaired chunk
         boolean selected = false;
 
         DisplayItem(String sessionId, String dataType) {
@@ -130,10 +131,14 @@ public class RecordingsAdapter extends RecyclerView.Adapter<RecyclerView.ViewHol
 
         List<DriveRecordings.RecordingItem> mediaItems = new ArrayList<>();
         Map<String, DriveRecordings.RecordingItem> tsaItemsByChunk = new HashMap<>();
+        Map<String, DriveRecordings.RecordingItem> cutItemsByChunk = new HashMap<>();
         for (DriveRecordings.RecordingItem item : newItems) {
+            String chunkKey = buildChunkKey(item.mediaFile.sessionId, item.mediaFile.dataType,
+                    item.mediaFile.sequenceNumber);
             if ("tsa".equalsIgnoreCase(item.mediaFile.getExtension())) {
-                tsaItemsByChunk.put(buildChunkKey(item.mediaFile.sessionId, item.mediaFile.dataType,
-                        item.mediaFile.sequenceNumber), item);
+                tsaItemsByChunk.put(chunkKey, item);
+            } else if ("cut".equalsIgnoreCase(item.mediaFile.getExtension())) {
+                cutItemsByChunk.put(chunkKey, item);
             } else {
                 mediaItems.add(item);
             }
@@ -147,8 +152,10 @@ public class RecordingsAdapter extends RecyclerView.Adapter<RecyclerView.ViewHol
                 items.add(new DisplayItem(item.mediaFile.sessionId, item.mediaFile.dataType));
             }
             DisplayItem displayItem = new DisplayItem(item);
-            displayItem.tsaRecording = tsaItemsByChunk.get(buildChunkKey(item.mediaFile.sessionId,
-                    item.mediaFile.dataType, item.mediaFile.sequenceNumber));
+            String chunkKey = buildChunkKey(item.mediaFile.sessionId, item.mediaFile.dataType,
+                    item.mediaFile.sequenceNumber);
+            displayItem.tsaRecording = tsaItemsByChunk.get(chunkKey);
+            displayItem.cutOriginal = cutItemsByChunk.get(chunkKey);
             items.add(displayItem);
         }
         return items;
@@ -170,6 +177,9 @@ public class RecordingsAdapter extends RecyclerView.Adapter<RecyclerView.ViewHol
                 selected.add(item.recording);
                 if (item.tsaRecording != null) {
                     selected.add(item.tsaRecording);
+                }
+                if (item.cutOriginal != null) {
+                    selected.add(item.cutOriginal); // trashed with its chunk
                 }
             }
         }
@@ -229,6 +239,9 @@ public class RecordingsAdapter extends RecyclerView.Adapter<RecyclerView.ViewHol
             // dataType: sequenceNumber
             String name = recordingHolder.itemView.getContext().getString(R.string.chunk_name,
                     String.valueOf(recording.mediaFile.sequenceNumber));
+            if (displayItem.cutOriginal != null) {
+                name += " " + recordingHolder.itemView.getContext().getString(R.string.chunk_repaired);
+            }
             recordingHolder.fileName.setText(name);
             recordingHolder.fileDate.setText(DateFormat.format("HH:mm:ss", recording.mediaFile.timestamp));
 

@@ -33,6 +33,15 @@ public class MediaFileTest {
     }
 
     @Test
+    public void theOriginalOfARepairedChunkIsNotVideo() {
+        MediaFile cut = MediaFile.fromFile(new File("1792394615054_video_1792394620112.3.cut"));
+        assertNotNull(cut);
+        assertEquals("cut", cut.getExtension());
+        assertEquals(3, cut.sequenceNumber); // pairs with chunk 3 in the recordings list
+        assertEquals("application/octet-stream", cut.getMimeType());
+    }
+
+    @Test
     public void driveNameParsesWithTheFolderNames() {
         MediaFile drive = MediaFile.fromDriveData("1792394615054", "audio", "1792394620112.12.mp4");
         assertNotNull(drive);

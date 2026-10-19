@@ -23,6 +23,7 @@ import androidx.core.content.ContextCompat;
 
 import net.ark3us.saferec.data.ServiceState;
 import net.ark3us.saferec.media.AudioStreamRecorder;
+import net.ark3us.saferec.media.ChunkRepair;
 import net.ark3us.saferec.media.ChunkPolicy;
 import net.ark3us.saferec.media.MuxerSink;
 import net.ark3us.saferec.media.VideoStreamRecorder;
@@ -104,8 +105,6 @@ public class SafeRecService extends Service {
     public void onCreate() {
         super.onCreate();
         NotificationHelper.createNotificationChannel(this);
-        // Chunks left by a crash; skipped while a previous instance still post-processes
-        WorkDir.get().recover(workDir(), outboxDir());
         // Shared with the outbox job. While the service lives it retries on its own; once
         // it is gone, the job takes over.
         uploader = GoogleDriveFileUploader.getInstance(this);
@@ -117,6 +116,14 @@ public class SafeRecService extends Service {
         if (pendingFiles() > 0) {
             OutboxWorker.schedule(this);
         }
+        // Chunks left by a crash, repaired when they have their sample log. Not on the main
+        // thread: a repair can take seconds. A recording that starts first makes it skip
+        // (WorkDir), and the outbox job recovers them later.
+        postProcessExecutor.execute(() -> {
+            if (WorkDir.get().recover(workDir(), outboxDir(), new ChunkRepair()) > 0) {
+                uploader.upload(outboxDir());
+            }
+        });
         registerNetworkCallback();
         // Sent to receivers registered at runtime only: none in the manifest would get it
         ContextCompat.registerReceiver(this, shutdownReceiver, new IntentFilter(Intent.ACTION_SHUTDOWN),

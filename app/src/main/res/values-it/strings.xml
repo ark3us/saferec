@@ -25,6 +25,7 @@
     <string name="video">video</string>
     <string name="audio">audio</string>
     <string name="chunk_name">Frammento %s</string>
+    <string name="chunk_repaired">(riparato dopo un\'interruzione, originale conservato)</string>
     <string name="share">Condividi</string>
     <string name="delete">Elimina</string>
     <string name="no_recordings_found">Nessuna registrazione trovata</string>

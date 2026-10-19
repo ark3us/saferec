@@ -78,6 +78,11 @@ public class MediaFile {
         if ("tsa".equalsIgnoreCase(getExtension())) {
             return "application/timestamp-reply";
         }
+        if ("cut".equalsIgnoreCase(getExtension())) {
+            // The untouched original of a repaired chunk: an MP4 without its index, so no player
+            // (nor Drive's preview) can open it as video
+            return "application/octet-stream";
+        }
         return "video/mp4";
     }
 }
