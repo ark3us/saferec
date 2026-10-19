@@ -127,6 +127,7 @@ net.ark3us.saferec/
 │   ├── MediaFile.java            # Chunk filename parser/generator
 │   ├── SessionManifest.java      # What a session recorded (chunks, sizes, SHA-256); gaps against Drive
 │   ├── EvidencePackage.java      # The zip handed over: merged video, Drive files, README, report, verifier
+│   ├── SessionCheck.java         # The verifier's checks, on the phone, before a session is handed over
 │   └── TsaClient.java            # RFC 3161 Time Stamping Authority client (Sectigo)
 │
 │
@@ -250,7 +251,7 @@ cut 2 ….2.mp4 12345 sha256=…                        ← recovered as it was 
 - **Where.** The master stays on the phone (`files/manifests/`, never deleted: a recovery days later appends to it). After each line a full copy goes to the outbox, and Drive keeps one copy, `{sessionId}.0.manifest` (`text/plain`), replaced in place (`files.update`, allowed by `drive.file` on the app's own files; the id is cached, so an update is one request).
 - **A copy replaced while it uploads.** The next line can replace the outbox copy during its upload. The upload sends the bytes read at its start, then deletes the local copy only if it did not change, and otherwise sends the newer one too.
 - **Timestamp.** With timestamping on, the manifest is timestamped when a recording stops (after its last chunk's line) and after a recovery changed it, as `{sessionId}.0.manifest.tsa`. Not after every chunk: that would double the requests to the TSA. The token proves the list of chunks and their hashes at that time, so a chunk removed from Drive later shows. The master is hashed under the manifest's lock, and the TSA asked outside it, so new lines never wait for the network.
-- **Gaps in the list.** `DriveRecordings` reads each session's manifest and compares it with the `.mp4` files on Drive. Each missing chunk is "still on this phone" (outbox, `recording/` or `repair/`) or "recorded but missing on Drive". The session header shows it in red, also for a session with no chunk left on Drive. Gaps are computed from the manifest, not from consecutive sequence numbers, which can skip legitimately (an empty chunk).
+- **Gaps in the list.** `DriveRecordings` reads each session's manifest and compares it with the `.mp4` files on Drive. Each missing chunk is "still on this phone" (outbox, `recording/` or `repair/`) or "recorded but missing on Drive". The session header shows it in red, also for a session with no chunk on Drive (all lost, or a recording whose first chunk is not uploaded yet). That header takes its place among the sessions, newest first: it used to go to the bottom of the list, below every older session. Gaps are computed from the manifest, not from consecutive sequence numbers, which can skip legitimately (an empty chunk).
 - **Trash.** Selecting every chunk of a session also selects its manifest and timestamp, so the session folder empties and goes to the trash too.
 - **Verified on a Galaxy S10+:**
   - A 25 s recording left one manifest on Drive with `started` and `chunk` lines for chunks 0-2, whose sizes and SHA-256 matched the downloaded chunks.
@@ -271,9 +272,18 @@ cut 2 ….2.mp4 12345 sha256=…                        ← recovered as it was 
   SafeRec-<session>/verify_session.py  so `uv run verify_session.py evidence` works inside the package
   ```
   - The verifier comes from `scripts/` at build time (`copyVerifier` in `app/build.gradle.kts`, a generated assets directory), so the app never ships a copy that drifted.
-  - The report reads timestamp times and imprints with BouncyCastle (`TsaClient.read()`). It flags a timestamp that does not match its file, but the full signature and chain check is the verifier's.
+  - The report reads timestamp times with BouncyCastle (`TsaClient.read()`) and holds the phone's verdict (below).
   - Videos are stored in the zip, not deflated again.
-  - A package of a long session weighs gigabytes and Android clears the cache only when space runs out. Each export deletes the packages older than a day (`EvidencePackage.deleteOld()`), not the one just shared: the receiving app may still be reading it.
+  - A package of a long session weighs gigabytes and Android clears the cache only when space runs out. Opening the recordings screen deletes what is older than a day in `cache/merged_sharing/` and `cache/merging/` (`EvidencePackage.deleteOld()`): packages and merged videos already shared, and the downloads of an export or a merge cut short. A process that dies skips its own clean-up: a killed export once left 218 MB there. Not the files just shared: the receiving app may still be reading them.
+  - **Checked on the phone first** (`SessionCheck`). The export runs the verifier's rules on the downloaded files: the manifest's timestamp (whole file or a prefix), every listed file with its size and SHA-256, a never-closed chunk, and every timestamp. A timestamp is valid when it certifies the file's SHA-256, its signature checks out (BouncyCastle `TimeStampToken.validate()`: a timestamping certificate, valid at that time) and its chain reaches a root Android ships (`CertPathBuilder`, PKIX, no revocation check, as `openssl ts -verify`). Roots the user added are left out: they could vouch for anything.
+    - Same rules as `scripts/verify_session.py`, so both give the same verdict: keep them in step. `SessionManifest.entries()` parses the manifest as `parse_manifest()` does, and also feeds the gaps of the list.
+    - A verified package is shared at once ("Verified on this phone"). Otherwise a dialog lists the problems before the share sheet. That is the one moment a missing chunk can still be fixed. A chunk still on this phone (outbox, `recording/`, `repair/`) adds "Upload now" (`CMD_UPLOAD_PENDING`), and a chunk missing but not here points to a list loaded before its upload. "Share anyway" leaves the choice to the user, and the verdict goes into `report.txt` either way.
+    - A PKIX implementation that does not know the critical timestamping usage of the signer would reject every chain, so a `PKIXCertPathChecker` claims it. BouncyCastle checks it on the signer.
+    - Verified on the S10+, with real Sectigo tokens and Android's roots:
+      - a 7-chunk session: COMPLETE (7 files, 8 timestamps), shared at once, and the verifier said COMPLETE on the package;
+      - exported while still recording: its open chunk was "still on this phone", and "Upload now" reached the service;
+      - a chunk trashed on Drive: NOT VERIFIED in the dialog and in `report.txt`, "Share anyway" shared it, and the verifier failed it the same way.
+    - Exporting while recording also showed chunks missing that had reached Drive after the list was loaded. The dialog then suggests refreshing the list.
   - Android collapses runs of spaces in string resources: the README and the report's column header are quoted in `strings.xml` to keep their layout.
   - Verified on the S10+. A session recorded with timestamping on was exported from the list. In the zip, following its README, the verifier said COMPLETE (manifest, 3 chunks, real Sectigo tokens). The merged video played 22 s, and the report was aligned.
 - **Lessons from the test.** Drive's search (`files.list` with `trashed=false`) still returned a just-trashed file for a few seconds. And a JSON body passed through `adb shell` lost its double quotes: Drive ignored the body and answered with the file, which looked like a success.
@@ -673,7 +683,14 @@ Unit tests (JVM, no phone, under a second): `./gradlew testDebugUnitTest`. The s
   - a repair cut short starting over, leftovers and stray logs dropped;
   - timestamps made before the outbox going along with their chunk, an unrepaired chunk timestamped as it is, a timestamp left in `repair/` sent as it is.
 - `SampleJournalTest`: round trip, a record cut short, a foreign file.
-- `EvidencePackageTest`: the zip's layout (Drive's, under `evidence/`), videos stored and the rest deflated, files byte for byte, a package without merged video, the report's lines.
+- `EvidencePackageTest`: the zip's layout (Drive's, under `evidence/`), videos stored and the rest deflated, files byte for byte, a package without merged video, the report's lines, day-old files deleted.
+- `SessionCheckTest`: the verifier's cases, with a test authority made with BouncyCastle (a root and a timestamping certificate). It covers:
+  - a complete session, a missing, altered or never-closed chunk, a repaired chunk with its original;
+  - lines added after the manifest's timestamp, an edited manifest;
+  - another file's timestamp, a tampered signature, an untrusted authority;
+  - no timestamps at all, a chunk outside the manifest, no manifest.
+
+  Nine rules are checked by mutation (hash, signature, chain, imprint, manifest prefix, later lines, never closed, original, any token).
 - `SessionManifestTest`: line format, the last state of each chunk (a late `started` never undoing it), gaps split into on this phone and lost, no gap in a complete session, the manifest and its timestamp updated in place.
 - `ChunkIndexTest`, on synthetic chunks laid out like MPEG4Writer's:
   - every sample of a cut chunk found in place;

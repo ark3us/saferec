@@ -43,7 +43,7 @@ SafeRec solves this fundamental flaw by continuously uploading video and audio c
 
 Anyone who receives a SafeRec session (a lawyer, an expert, a court) can check it without trusting the app or Google Drive.
 
-The simplest way is the **evidence package**: in the recordings screen, tap the package icon of the session and share the zip. It holds the verifier and a README with the three steps below; run `uv run verify_session.py evidence` inside it. Otherwise, from the Drive folder:
+The simplest way is the **evidence package**: in the recordings screen, tap the package icon of the session and share the zip. The phone runs the verifier's checks first: if a chunk is missing or altered, it says so before sharing, while a chunk still on the phone can be uploaded. The zip holds the verifier and a README with the three steps below; run `uv run verify_session.py evidence` inside it. Otherwise, from the Drive folder:
 
 
 1. In Google Drive, right-click the session folder (it is named after the session's start, e.g. `1792429746374`) and choose **Download**. Unzip it.
