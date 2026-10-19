@@ -388,7 +388,7 @@ Foreground service orchestrating the recording. Commands via `Intent` extras:
 | `CMD_START` | If already recording: stop + restart (camera switch). Otherwise: start new recording |
 | `CMD_STOP` | Stop recording, reset session |
 | `CMD_UPLOAD_PENDING` | Upload the outbox now (safe while recording) |
-| `CMD_DELETE` | Delete Drive files (`EXTRA_FILE_IDS`) and clean up empty folders (`EXTRA_FOLDER_IDS`) |
+| `CMD_DELETE` | Move Drive files (`EXTRA_FILE_IDS`) to the Drive trash, never delete them for good. Folders (`EXTRA_FOLDER_IDS`) are trashed only when they hold nothing, not even trashed files. Deleting a folder for good would also delete the trashed files in it, and keeping it lets Drive's "Restore" put files back where they were. |
 
 State is broadcast via [LiveData](file:///home/ark3us/Filen/Dev/SafeRec/app/src/main/java/net/ark3us/saferec/data/LiveData.java) singleton: `STATUS_READY` → `STATUS_STARTED` → `STATUS_STOPPED`.
 
@@ -503,6 +503,7 @@ Unit tests (JVM, no phone): `./gradlew testDebugUnitTest`, which covers the orie
 - Checks read the host-side logcat capture (`full.log`), not the device buffer: failed uploads log long stack traces and the device buffer silently drops old lines.
 - Drive scenarios (`errors_dont_stop`, `network_drop`, `retry_after_outage`, `tsa`) need a Google consent given once in the app. The OAuth client only accepts builds whose signing SHA-1 is registered in the Cloud Console, so a new dev machine's debug key must be added there first.
 - Airplane mode is not an outage when a VPN app keeps its tunnel up. On Android 13+ the script also blocks SafeRec's own traffic: `cmd connectivity set-chain3-enabled` plus `set-package-networking-enabled`, restored on exit and reset at the next setup.
+- The Recordings screen lists the account's real recordings. A UI test must select only the items of the session it recorded, never "select all": a test once moved the owner's own recordings to the trash (restored, thanks to the trash).
 - `run-as` processes have no network permission, so `run-as … nc` or `curl` says nothing about the app's connectivity. Compare `/proc/net/dev` counters instead.
 
 Lesson learned: video encoders emit SPS/PPS as a `BUFFER_FLAG_CODEC_CONFIG` buffer with PTS 0. Writing it as a sample made 0 the video time base and silently dropped all audio after the first chunk. Codec config buffers must never reach `MuxerSink`.
