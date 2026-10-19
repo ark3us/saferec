@@ -165,7 +165,7 @@ public class GoogleDriveFileUploader extends FileUploader {
             }
             long now = SystemClock.elapsedRealtime();
             if (lastRefreshMs != 0 && now - lastRefreshMs < REFRESH_MIN_INTERVAL_MS) {
-                Log.w(TAG, "Token refresh tried " + (now - lastRefreshMs) / 1000 + " s ago, keeping file for a later retry");
+                Log.w(TAG, "Token refresh tried " + (now - lastRefreshMs) / 1000 + " s ago, the file waits for a later retry");
                 return false;
             }
             lastRefreshMs = now;
