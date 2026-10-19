@@ -640,7 +640,8 @@ R8 shrinks and optimizes the release (`isMinifyEnabled`, `isShrinkResources` in 
   - a recording uploaded with its TSA timestamps (BouncyCastle);
   - the recordings list, and playback streamed from Drive;
   - the settings sheet;
-  - the outbox job.
+  - the outbox job;
+  - an evidence package and its phone check: signatures and certificate chains (BouncyCastle, `CertPathBuilder`) said COMPLETE, as in the debug build.
 
   Check these again after adding a library or anything that uses reflection.
 
