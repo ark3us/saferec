@@ -70,10 +70,11 @@ The repository is public and now has JVM unit tests that need no phone. A small 
 ### Smoke test the release build in CI
 The `r8test` build can be checked automatically. A GitHub Actions job would build it and start it on an emulator (`reactivecircus/android-emulator-runner`). It would then launch the main screen, the recordings screen and the outbox job, and fail on any `ClassNotFoundException`, `NoSuchFieldException` or crash in logcat. No Google account is needed to catch R8 breaking reflection at startup. It would have caught a missing rule before a release, not on a user's phone.
 
-### Verify a session from the manifest
-A third party gets a Drive folder and needs to trust it. A small page or script could take the folder and do three checks:
-- verify the manifest's RFC 3161 token against the Sectigo chain;
-- check that every listed chunk is there with the listed SHA-256;
-- verify each chunk's own token.
+### Export an evidence package
+Handing a session to a lawyer today means downloading a Drive folder and explaining the verifier. The recordings screen could build one zip per session instead:
+- the merged video, to watch;
+- every chunk, timestamp, cut original and the manifest, to prove;
+- the verifier script and a short README in plain language;
+- a one-page report: session start, duration, chunk list with SHA-256 and timestamp times, gaps.
 
-It would print one verdict: complete and unchanged since the timestamp, or which chunk is missing or altered. Today that takes openssl commands only a specialist knows.
+It would be shared from the phone like a merged video. The receiver gets everything needed to watch and to check, in one file.

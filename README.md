@@ -25,6 +25,9 @@ SafeRec solves this fundamental flaw by continuously uploading video and audio c
 - **Quick Settings Tile**: Start and stop recordings instantly via the Android Quick Settings drop-down menu, without ever needing to open the app.
 - **Auto-Start**: Configure the app to automatically begin recording the moment the app is launched or the Tile is tapped.
 - **Cryptographic Timestamping (TSA)**: Hashes the media files (SHA-256) and requests timestamp certificates from a recognizable Time Stamping Authority (Sectigo), proving the integrity and creation time of your recordings.
+- **Survives Crashes, Kills and Reboots**: Chunks recorded offline wait on the phone and upload on their own once there is a network, even after the app was killed or the phone restarted, without opening the app again.
+- **Cut Chunk Repair**: A chunk cut by a crash or a sudden power cut is rebuilt into a playable video from a log kept while recording. Its untouched original goes to Drive too, and both are timestamped.
+- **Session Manifest**: Each session keeps, next to its chunks, the list of everything it recorded (sizes and SHA-256). The recordings screen flags a chunk missing on Drive, and anyone can check that nothing was removed or altered (see [Verifying a session](#verifying-a-session)).
 - **Chunk Management**: Automatically chunks video files (with adjustable chunk sizes) to ensure frequent and manageable uploads, minimizing the risk of losing long segments.
 - **Video Quality Controls**: Adjust video quality (High 720p, Medium 480p, Low 360p) to balance file size against upload speeds.
 
@@ -34,6 +37,25 @@ SafeRec solves this fundamental flaw by continuously uploading video and audio c
 - **Cloud Integration**: Powered by the Google Drive API v3 and Google Play Services Auth for secure, token-based uploads.
 - **Minimum SDK**: Android 8.0 (API Level 26).
 - **Target SDK**: Android 16 (API Level 36).
+
+## Verifying a session
+
+Anyone who receives a SafeRec session (a lawyer, an expert, a court) can check it without trusting the app or Google Drive:
+
+1. In Google Drive, right-click the session folder (it is named after the session's start, e.g. `1792429746374`) and choose **Download**. Unzip it.
+2. Install [uv](https://docs.astral.sh/uv/) and make sure the `openssl` command is available (it is on Linux and macOS).
+3. Run, from this repository:
+
+   ```
+   uv run scripts/verify_session.py <the unzipped folder>
+   ```
+
+For each session it checks:
+- the manifest's RFC 3161 timestamp: its signature, its certificate chain up to a root of Mozilla's trusted list (Sectigo's timestamping chain goes up to USERTrust RSA), and that it certifies this very manifest;
+- that every chunk listed in the manifest is there, with the listed size and SHA-256;
+- the timestamp of every chunk, and of the original of a repaired chunk.
+
+It ends with **COMPLETE** (every listed chunk present and unchanged) or **NOT VERIFIED**, followed by the reason: a chunk missing, altered, or never closed, or a manifest edited after its timestamp. Lines the app added to the manifest after its timestamp (a chunk recovered later) are reported separately, as not covered by that timestamp. Timestamps exist only if timestamping was on in the app's settings.
 
 ## Build and Run Instructions
 

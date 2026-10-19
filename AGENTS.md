@@ -255,6 +255,12 @@ cut 2 ….2.mp4 12345 sha256=…                        ← recovered as it was 
   - A 25 s recording left one manifest on Drive with `started` and `chunk` lines for chunks 0-2, whose sizes and SHA-256 matched the downloaded chunks.
   - The manifest's timestamp held the SHA-256 of the manifest on Drive.
   - Once chunk 1 was trashed on Drive, the list showed "Recorded but missing on Drive: chunk 1".
+- **Verifying a session.** `scripts/verify_session.py` (run with `uv run`) checks a session folder downloaded from Drive.
+  - The manifest's timestamp, with `openssl ts -verify -digest` against certifi's Mozilla roots. Sectigo's tokens carry their whole chain (Signer R37, CA R41, Root R46, cross-signed by USERTrust RSA), so no extra certificate is bundled.
+  - Every listed chunk, its own `.tsa`, and a repaired chunk's `.cut` and `.cut.tsa`.
+  - The manifest only grows. When it no longer matches its timestamp, the verifier looks for a prefix that does: lines added later (a recovery after the stop) are reported as not covered, while an edited line matches no prefix and fails.
+  - Its tests (`scripts/test_verify_session.py`) run offline, with a test TSA made with openssl. They cover a complete session, a missing, altered, never-closed or repaired chunk, lines added after the timestamp, an edited manifest, a token for another file and an untrusted authority. Four rules are checked by mutation.
+  - Verified on a real session from the S10+ (a chunk and a repaired one, real Sectigo tokens): COMPLETE. Flipping one bit of a chunk, or deleting the cut original, made it fail.
 - **Lessons from the test.** Drive's search (`files.list` with `trashed=false`) still returned a just-trashed file for a few seconds. And a JSON body passed through `adb shell` lost its double quotes: Drive ignored the body and answered with the file, which looked like a success.
 
 ### Cut Chunk Repair
@@ -640,7 +646,7 @@ R8 shrinks and optimizes the release (`isMinifyEnabled`, `isShrinkResources` in 
 
 ## Testing on a Device
 
-Unit tests (JVM, no phone, under a second): `./gradlew testDebugUnitTest`.
+Unit tests (JVM, no phone, under a second): `./gradlew testDebugUnitTest`. The session verifier's tests: `uv run --with pytest --with certifi pytest scripts/test_verify_session.py -q --basetemp=tmp/pytest`.
 - `VideoOrientationTest`: quadrant snapping with hysteresis, hint for back and front cameras.
 - `ChunkPolicyTest`: 10 s auto chunks whatever the size, manual size only.
 - `MediaFileTest`: chunk, `.tsa`, `.cut` and `.cut.tsa` names, Drive names, foreign names rejected.
