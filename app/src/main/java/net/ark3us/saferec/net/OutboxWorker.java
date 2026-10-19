@@ -91,8 +91,11 @@ public class OutboxWorker extends Worker {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 builder.setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST);
             }
+            // REPLACE, not KEEP: an earlier run that failed may wait in its backoff (up to 5 h),
+            // and keeping it would make "now" wait as long. Called rarely (service gone, boot),
+            // and a replaced running job loses nothing: its uploads go on in the shared uploader.
             return WorkManager.getInstance(context)
-                    .enqueueUniqueWork(NOW_WORK_NAME, ExistingWorkPolicy.KEEP, builder.build());
+                    .enqueueUniqueWork(NOW_WORK_NAME, ExistingWorkPolicy.REPLACE, builder.build());
         } catch (RuntimeException e) {
             Log.e(TAG, "Cannot schedule the outbox job", e);
             return null;
