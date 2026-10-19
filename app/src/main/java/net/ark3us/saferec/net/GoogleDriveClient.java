@@ -186,6 +186,8 @@ public class GoogleDriveClient {
             String parentFolderId) throws IOException {
         com.google.api.services.drive.model.File meta = new com.google.api.services.drive.model.File();
         meta.setName(name);
+        // Declared, or Drive guesses from the content: it took a cut chunk's original for video
+        meta.setMimeType(mimeType);
         // No createdTime: Drive sets it to the upload time, a witness the phone's clock cannot
         // fake. The recording time is already in the name.
         meta.setParents(Collections.singletonList(parentFolderId));

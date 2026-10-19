@@ -38,7 +38,7 @@ public class MediaFileTest {
         assertNotNull(cut);
         assertEquals("cut", cut.getExtension());
         assertEquals(3, cut.sequenceNumber); // pairs with chunk 3 in the recordings list
-        assertEquals("application/octet-stream", cut.getMimeType());
+        assertEquals("application/x-saferec-cut", cut.getMimeType());
     }
 
     @Test

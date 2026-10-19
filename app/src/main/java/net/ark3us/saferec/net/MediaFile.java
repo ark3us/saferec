@@ -80,8 +80,9 @@ public class MediaFile {
         }
         if ("cut".equalsIgnoreCase(getExtension())) {
             // The untouched original of a repaired chunk: an MP4 without its index, so no player
-            // (nor Drive's preview) can open it as video
-            return "application/octet-stream";
+            // (nor Drive's preview) can open it. Not application/octet-stream: Drive takes that
+            // for unknown, looks at the content and files it as video.
+            return "application/x-saferec-cut";
         }
         return "video/mp4";
     }
