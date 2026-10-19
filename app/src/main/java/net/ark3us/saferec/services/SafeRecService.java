@@ -5,9 +5,11 @@ import android.app.NotificationManager;
 import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.ServiceInfo;
 import android.net.ConnectivityManager;
 import android.net.Network;
 import android.net.NetworkCapabilities;
+import android.os.Build;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
@@ -57,7 +59,13 @@ public class SafeRecService extends Service {
     private MuxerSink sink;
 
     private boolean isRecording = false;
-    private boolean isForeground = false;
+    private static final int NOT_FOREGROUND = -1;
+    private int foregroundType = NOT_FOREGROUND; // main thread only
+    // Entering the foreground needs the app in front: true once a command came from the UI,
+    // false after a sticky restart of a killed process
+    private boolean mayEnterForeground = false;
+    private int lastStartId;
+    private boolean destroyed = false; // main thread only
     private int activeUploads = 0;
     private int activeDeletions = 0;
     private int activeTimestamping = 0;
@@ -121,40 +129,121 @@ public class SafeRecService extends Service {
         }
     }
 
-    private Notification buildNotification() {
-        return NotificationHelper.buildNotification(this, isRecording, activeUploads, activeDeletions, activeTimestamping);
+    private int pendingFiles() {
+        String[] names = outboxDir().list();
+        return names == null ? 0 : names.length;
     }
 
+    private Notification buildNotification(boolean recording) {
+        return NotificationHelper.buildNotification(this, recording, activeUploads, activeDeletions,
+                activeTimestamping, pendingFiles());
+    }
+
+    private int recordingForegroundType() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+            return 0;
+        }
+        int type = ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE;
+        return Settings.onlyAudio(this) ? type : type | ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA;
+    }
+
+    private static int dataSyncForegroundType() {
+        return Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q ? ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC : 0;
+    }
+
+    /** False when Android refuses (app not in front, missing permission): better than a crash. */
+    private boolean enterForeground(int type, Notification notification) {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                startForeground(NotificationHelper.NOTIFICATION_ID, notification, type);
+            } else {
+                startForeground(NotificationHelper.NOTIFICATION_ID, notification);
+            }
+            foregroundType = type;
+            Log.i(TAG, "Foreground with type " + type);
+            return true;
+        } catch (RuntimeException e) {
+            Log.w(TAG, "Cannot enter the foreground with type " + type, e);
+            return false;
+        }
+    }
+
+    /** Safe from any thread: the decision runs on the main thread, once the state has settled. */
     private void updateNotification() {
-        Notification notification = buildNotification();
-        if (!isForeground) {
-            startForeground(NotificationHelper.NOTIFICATION_ID, notification);
-            isForeground = true;
-            Log.i(TAG, "Started as foreground service");
-        } else {
+        mainHandler.post(this::refreshForeground);
+    }
+
+    /**
+     * In the foreground only while there is something to do, with the type of what it does:
+     * camera and microphone only while recording, dataSync while chunks wait to be uploaded.
+     * With nothing left the notification goes and the service stops. It used to stay in the
+     * foreground as camera|microphone forever, which Android 14+ and Play policies reject.
+     */
+    private void refreshForeground() {
+        if (destroyed) {
+            return; // posted before onDestroy()
+        }
+        int pending = pendingFiles();
+        boolean busy = isRecording || pending > 0 || activeUploads > 0 || activeDeletions > 0 || activeTimestamping > 0;
+        if (!busy) {
+            if (foregroundType != NOT_FOREGROUND) {
+                stopForeground(STOP_FOREGROUND_REMOVE);
+                foregroundType = NOT_FOREGROUND;
+            }
+            // Not if a newer command arrived meanwhile
+            if (stopSelfResult(lastStartId)) {
+                Log.i(TAG, "Nothing to record or upload: service stopped");
+            }
+            return;
+        }
+        Notification notification = buildNotification(isRecording);
+        int type = isRecording ? recordingForegroundType() : dataSyncForegroundType();
+        if (type == foregroundType) {
             NotificationManager manager = getSystemService(NotificationManager.class);
             if (manager != null) {
                 manager.notify(NotificationHelper.NOTIFICATION_ID, notification);
             }
+        } else if (foregroundType != NOT_FOREGROUND || mayEnterForeground) {
+            enterForeground(type, notification);
         }
+        // else: a sticky restart in the background, it runs as a plain service
+    }
+
+    /** Android 15+ caps dataSync at 6 h a day. The chunks stay in the outbox for next time. */
+    @Override
+    public void onTimeout(int startId, int fgsType) {
+        Log.w(TAG, "Foreground time limit reached (type " + fgsType + "), stopping; chunks stay in the outbox");
+        stopForeground(STOP_FOREGROUND_REMOVE);
+        foregroundType = NOT_FOREGROUND;
+        stopSelf();
     }
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         Log.i(TAG, "SafeRecService started");
-        updateNotification();
+        lastStartId = startId;
         String command = intent != null ? intent.getStringExtra(EXTRA_COMMAND) : null;
         if (command == null) {
             if (!isRecording) {
                 LiveData.getInstance().updateStatus(STATUS_READY);
             }
-            // Also the sticky restart after the process was killed: resume the outbox
+            // Sticky restart after the process was killed. The app is not in front, so Android
+            // forbids the foreground (and the camera and microphone): only resume the outbox,
+            // as a plain background service, for as long as Android lets it run.
             uploadPendingFiles();
+            updateNotification();
             return START_STICKY;
         }
+        mayEnterForeground = true;
         Log.i(TAG, "Received command: " + command);
         switch (command) {
             case CMD_START:
+                // Sent with startForegroundService(): the service must enter the foreground
+                // whatever happens next, or Android kills the app
+                Notification notification = buildNotification(true);
+                if (!enterForeground(recordingForegroundType(), notification)) {
+                    enterForeground(dataSyncForegroundType(), notification);
+                }
                 if (isRecording) {
                     Log.i(TAG, "Stopping ongoing recording before restart (camera switch)");
                     stopRecording();
@@ -174,6 +263,7 @@ public class SafeRecService extends Service {
                 deleteDriveFiles(intent);
                 break;
         }
+        updateNotification();
         return START_STICKY;
     }
 
@@ -228,6 +318,11 @@ public class SafeRecService extends Service {
                 // The chunk is the evidence: it never waits for the TSA, the timestamp can come later
                 uploader.upload(file);
                 if (hash != null) {
+                    // Counted now, not when the task starts: the service must not stop meanwhile
+                    synchronized (this) {
+                        activeTimestamping++;
+                    }
+                    updateNotification();
                     tsaExecutor.execute(() -> timestampChunk(uploader, file, hash));
                 }
             });
@@ -288,20 +383,18 @@ public class SafeRecService extends Service {
     }
 
     private void timestampChunk(GoogleDriveFileUploader uploader, File chunkFile, byte[] hash) {
-        synchronized (this) {
-            activeTimestamping++;
+        try {
+            String path = chunkFile.getAbsolutePath();
+            int dotIndex = path.lastIndexOf('.');
+            File tsaFile = new File((dotIndex > 0 ? path.substring(0, dotIndex) : path) + ".tsa");
+            if (FreeTSAClient.timestampHash(this, hash, tsaFile)) {
+                uploader.upload(tsaFile);
+            }
+        } finally {
+            synchronized (this) {
+                activeTimestamping--;
+            }
             updateNotification();
-        }
-        String path = chunkFile.getAbsolutePath();
-        int dotIndex = path.lastIndexOf('.');
-        File tsaFile = new File((dotIndex > 0 ? path.substring(0, dotIndex) : path) + ".tsa");
-        boolean success = FreeTSAClient.timestampHash(this, hash, tsaFile);
-        synchronized (this) {
-            activeTimestamping--;
-            updateNotification();
-        }
-        if (success) {
-            uploader.upload(tsaFile);
         }
     }
 
@@ -415,6 +508,13 @@ public class SafeRecService extends Service {
         }
     }
 
+    private void finishDeletion(int count) {
+        synchronized (this) {
+            activeDeletions -= count;
+        }
+        updateNotification();
+    }
+
     private void deleteDriveFiles(Intent intent) {
         String[] fileIds = intent.getStringArrayExtra(EXTRA_FILE_IDS);
         String[] folderIds = intent.getStringArrayExtra(EXTRA_FOLDER_IDS);
@@ -423,22 +523,23 @@ public class SafeRecService extends Service {
             Log.w(TAG, "Delete requested with empty file list");
             return;
         }
+        // Counted now, not when the task starts: the service must not stop meanwhile
+        synchronized (this) {
+            activeDeletions += fileIds.length;
+        }
+        updateNotification();
 
         executor.execute(() -> {
             String accessToken = Settings.getAccessToken(this);
             if (accessToken == null) {
                 Log.e(TAG, "Cannot delete: No access token");
+                finishDeletion(fileIds.length);
                 return;
             }
 
             Log.i(TAG, "Starting background deletion of " + fileIds.length + " files");
-            synchronized (this) {
-                activeDeletions += fileIds.length;
-                updateNotification();
-            }
-
             GoogleDriveFileDownloader downloader = new GoogleDriveFileDownloader(this, accessToken);
-            
+
             List<String> fileIdList = Arrays.asList(fileIds);
             Set<String> folderIdSet = new HashSet<>();
             if (folderIds != null) {
@@ -449,19 +550,13 @@ public class SafeRecService extends Service {
                 @Override
                 public void onSuccess(Void result) {
                     Log.i(TAG, "Background deletion completed successfully");
-                    synchronized (SafeRecService.this) {
-                        activeDeletions -= fileIds.length;
-                        updateNotification();
-                    }
+                    finishDeletion(fileIds.length);
                 }
 
                 @Override
                 public void onError(Exception e) {
                     Log.e(TAG, "Background deletion failed", e);
-                    synchronized (SafeRecService.this) {
-                        activeDeletions -= fileIds.length;
-                        updateNotification();
-                    }
+                    finishDeletion(fileIds.length);
                 }
             });
         });
@@ -469,6 +564,7 @@ public class SafeRecService extends Service {
 
     @Override
     public void onDestroy() {
+        destroyed = true;
         stopRecording();
         if (networkCallback != null) {
             ConnectivityManager cm = getSystemService(ConnectivityManager.class);

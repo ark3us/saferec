@@ -184,7 +184,7 @@ public class RecordingsActivity extends AppCompatActivity {
         Intent intent = SafeRecService.createCommandIntent(this, SafeRecService.CMD_DELETE);
         intent.putExtra(SafeRecService.EXTRA_FILE_IDS, fileIds.toArray(new String[0]));
         intent.putExtra(SafeRecService.EXTRA_FOLDER_IDS, folderIds.toArray(new String[0]));
-        startForegroundService(intent);
+        startService(intent); // the activity is in front: a plain start is allowed
 
         // Optimistic UI update
         adapter.removeItems(selected);

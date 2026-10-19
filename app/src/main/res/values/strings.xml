@@ -70,7 +70,7 @@
     <string name="notif_title_service">SafeRec Service</string>
     <string name="notif_content_recording">Recording in progress…</string>
     <string name="notif_content_timestamping">Timestamping…</string>
-    <string name="notif_content_deleting">Deleting recordings…</string>
+    <string name="notif_content_deleting">Moving recordings to the trash…</string>
     <string name="notif_content_uploading">Uploading…</string>
     <string name="notif_content_idle">Service is idle</string>
     <string name="tsa_failed_code">TSA connection failed (code %1$d)</string>
@@ -112,4 +112,8 @@
     <string name="sharing_recordings">Sharing…</string>
     <string name="shared_with">Shared with %1$s. Google has sent them an email.</string>
     <string name="share_refused_foreign_files">Google Drive refused: the SafeRec folder holds files this app cannot manage. Share it from the Google Drive app.</string>
+    <plurals name="notif_status_waiting">
+        <item quantity="one">%1$d file waiting to be uploaded</item>
+        <item quantity="other">%1$d files waiting to be uploaded</item>
+    </plurals>
 </resources>

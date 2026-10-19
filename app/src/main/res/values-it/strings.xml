@@ -70,7 +70,7 @@
     <string name="notif_title_service">Servizio SafeRec</string>
     <string name="notif_content_recording">Registrazione in corso…</string>
     <string name="notif_content_timestamping">Marcatura temporale in corso…</string>
-    <string name="notif_content_deleting">Eliminazione registrazioni…</string>
+    <string name="notif_content_deleting">Spostamento delle registrazioni nel cestino…</string>
     <string name="notif_content_uploading">Caricamento in corso…</string>
     <string name="notif_content_idle">Servizio inattivo</string>
     <string name="tsa_failed_code">Connessione TSA fallita (codice %1$d)</string>
@@ -117,4 +117,9 @@
     <string name="sharing_recordings">Condivisione…</string>
     <string name="shared_with">Condivise con %1$s. Google gli ha inviato un\'email.</string>
     <string name="share_refused_foreign_files">Google Drive ha rifiutato: la cartella SafeRec contiene file che questa app non può gestire. Condividila dall\'app Google Drive.</string>
+    <plurals name="notif_status_waiting">
+        <item quantity="one">%1$d file in attesa di caricamento</item>
+        <item quantity="many">%1$d file in attesa di caricamento</item>
+        <item quantity="other">%1$d file in attesa di caricamento</item>
+    </plurals>
 </resources>

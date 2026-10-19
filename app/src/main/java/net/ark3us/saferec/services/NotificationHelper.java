@@ -33,7 +33,8 @@ public class NotificationHelper {
         manager.createNotificationChannel(serviceChannel);
     }
 
-    public static Notification buildNotification(Context context, boolean isRecording, int activeUploads, int activeDeletions, int activeTimestamping) {
+    public static Notification buildNotification(Context context, boolean isRecording, int activeUploads, int activeDeletions,
+                                                 int activeTimestamping, int pendingFiles) {
         Intent intent = new Intent(context, MainActivity.class);
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         intent.putExtra(SafeRecService.EXTRA_FROM_NOTIFICATION, true);
@@ -50,6 +51,10 @@ public class NotificationHelper {
             contentText.append(context.getString(R.string.notif_content_deleting));
         } else if (activeUploads > 0) {
             contentText.append(context.getString(R.string.notif_content_uploading));
+        } else if (pendingFiles > 0) {
+            // Between upload retries (no network): the evidence is not on Drive yet
+            contentText.append(context.getResources().getQuantityString(
+                    R.plurals.notif_status_waiting, pendingFiles, pendingFiles));
         } else {
             contentText.append(context.getString(R.string.notif_content_idle));
         }
@@ -91,7 +96,7 @@ public class NotificationHelper {
                 .setLargeIcon(Icon.createWithResource(context, R.mipmap.ic_launcher))
                 .setColor(context.getColor(R.color.primary))
                 .setContentIntent(pendingIntent)
-                .setOngoing(isRecording || activeUploads > 0 || activeDeletions > 0 || activeTimestamping > 0)
+                .setOngoing(isRecording || activeUploads > 0 || activeDeletions > 0 || activeTimestamping > 0 || pendingFiles > 0)
                 .setOnlyAlertOnce(true);
 
         if (activeUploads > 0 || activeDeletions > 0 || activeTimestamping > 0) {

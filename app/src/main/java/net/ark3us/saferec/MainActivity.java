@@ -673,14 +673,30 @@ public class MainActivity extends AppCompatActivity {
             updateStartButtonState(null);
         }
         Intent intent = SafeRecService.createCommandIntent(this, command);
-        startForegroundService(intent);
+        if (SafeRecService.CMD_START.equals(command)) {
+            startForegroundService(intent);
+        } else {
+            startServiceCommand(intent);
+        }
+    }
+
+    /**
+     * Commands that do not record use startService(): with startForegroundService() the service
+     * would have to enter the foreground even when it has nothing to do.
+     */
+    private void startServiceCommand(Intent intent) {
+        try {
+            startService(intent);
+        } catch (IllegalStateException e) {
+            // The activity went to the background meanwhile: Android refuses background starts
+            Log.w(TAG, "Cannot reach the service from the background", e);
+        }
     }
 
     private void stopRecording() {
         Log.i(TAG, "Stopping recording");
         updateStartButtonState(null);
-        Intent intent = SafeRecService.createCommandIntent(this, SafeRecService.CMD_STOP);
-        startForegroundService(intent);
+        startServiceCommand(SafeRecService.createCommandIntent(this, SafeRecService.CMD_STOP));
     }
 
     /** Shows an error reported by the service. Never stops the recording: losing Drive must not lose evidence. */
