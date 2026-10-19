@@ -10,7 +10,7 @@
 #
 # Side effects (all restored or cleaned on exit):
 #   - records camera and microphone (lay the phone face down)
-#   - toggles airplane mode and Wi-Fi
+#   - toggles airplane mode and Wi-Fi, blocks SafeRec's own network (Android 13+)
 #   - rewrites SafeRec settings, deletes the test chunks it created
 #   - opens the default video camera app to steal the camera
 # It refuses to run if the chunk store already holds files: they may be real
@@ -21,7 +21,8 @@ set -uo pipefail
 PKG=net.ark3us.saferec
 ACTIVITY="$PKG/.MainActivity"
 APP_DIR="/data/user/0/$PKG"
-STORE="$APP_DIR/files/data_store"
+STORE="$APP_DIR/files/data_store" # upload outbox: complete chunks only
+WORK="$APP_DIR/files/recording"    # chunks being written
 PREFS="$APP_DIR/shared_prefs/SafeRecPrefs.xml"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 APK="${APK:-$ROOT/app/build/outputs/apk/debug/app-debug.apk}"
@@ -30,13 +31,15 @@ TAGS=(SafeRecService MuxerSink VideoStreamRecorder AudioStreamRecorder GoogleDri
       GoogleDriveClient FreeTSAClient MainActivity AndroidRuntime)
 CHUNK_MIN=8.5   # seconds, expected chunk duration window (target 10 s)
 CHUNK_MAX=12.5
-ALL_SCENARIOS=(offline_start audio_only camera_stolen replay errors_dont_stop network_drop tsa)
+ALL_SCENARIOS=(offline_start audio_only camera_stolen replay errors_dont_stop network_drop retry_after_outage tsa)
 
 RESULTS=()
 LOGCAT_PID=""
 ORIGINAL_PREFS=""
 INITIAL_AIRPLANE=0
 INITIAL_WIFI=1
+INITIAL_CHAIN3=""
+APP_BLOCK=0 # 1 when the device can block the network of SafeRec alone
 
 # --- Output -----------------------------------------------------------------
 
@@ -74,7 +77,17 @@ wait_log() { # pattern timeout_s
 }
 
 is_online() { adb shell ping -c1 -W2 1.1.1.1 >/dev/null 2>&1; }
+
+# Airplane mode alone is not an outage when a VPN app keeps its tunnel up: the app's packets
+# vanish into it and every request hangs until its timeout instead of failing. Blocking
+# SafeRec's own traffic makes the outage real whatever the VPN does.
+set_app_network() { # true|false
+    if ((APP_BLOCK)); then
+        adb shell cmd connectivity set-package-networking-enabled "$1" "$PKG"
+    fi
+}
 go_offline() {
+    set_app_network false
     adb shell cmd connectivity airplane-mode enable
     adb shell svc wifi disable # some ROMs keep Wi-Fi on in airplane mode
     for _ in $(seq 15); do
@@ -84,6 +97,7 @@ go_offline() {
     return 1
 }
 go_online() {
+    set_app_network true # first, so the app can use the network as soon as it is back
     adb shell cmd connectivity airplane-mode disable
     [[ $INITIAL_WIFI != 0 ]] && adb shell svc wifi enable
     for _ in $(seq 40); do
@@ -127,8 +141,9 @@ write_app_file() { # path, content on stdin
 }
 
 list_store() { app_sh ls -1 "$STORE" 2>/dev/null | tr -d '\r' | grep -E '\.(mp4|tsa)$' || true; }
+list_work() { app_sh ls -1 "$WORK" 2>/dev/null | tr -d '\r' | grep . || true; }
 # adb shell re-joins its arguments, so the inner command needs its own quotes
-clear_store() { adb shell "run-as $PKG sh -c 'rm -f $STORE/*'" 2>/dev/null || true; }
+clear_store() { adb shell "run-as $PKG sh -c 'rm -f $STORE/* $WORK/*'" 2>/dev/null || true; }
 
 launch() { # -f must come before --activity-clear-task, which adds to the flags
     adb shell am start -n "$ACTIVITY" "$@" >/dev/null
@@ -200,16 +215,17 @@ scenario_offline_start() {
     sleep 35
     local premature unknown refresh saved durations ok=1
     premature=$(premature_stops)
-    unknown=$(count_log "auth UNKNOWN")
+    unknown=$(count_log "keeping file")
     refresh=$(count_log "Silent refresh|Access token rejected")
     stop_recording
     saved=$(saved_chunks)
     logs >"$OUT/offline_start.log"
     pull_chunks "$OUT/offline_start"
     durations=$(check_chunks "$OUT/offline_start" "audio\+video") || ok=0
+    clear_store # before going online, or the outbox retry would upload these test chunks
     go_online
     note "start latency ${latency}s, saved chunks $saved, premature stops $premature"
-    note "uploads kept for later (auth UNKNOWN): $unknown, token refresh attempts: $refresh"
+    note "failed uploads kept for later: $unknown, token refresh attempts: $refresh"
     note "$durations"
     ((latency <= 10 && premature == 0 && saved >= 3 && unknown >= 1 && refresh == 0)) || ok=0
     if ((ok)); then
@@ -232,6 +248,7 @@ scenario_audio_only() {
     logs >"$OUT/audio_only.log"
     pull_chunks "$OUT/audio_only"
     durations=$(check_chunks "$OUT/audio_only" "audio") || ok=0
+    clear_store # before going online, or the outbox retry would upload these test chunks
     go_online
     note "$durations"
     ((premature == 0)) || ok=0
@@ -261,6 +278,7 @@ scenario_camera_stolen() {
     logs >"$OUT/camera_stolen.log"
     pull_chunks "$OUT/camera_stolen"
     durations=$(check_chunks "$OUT/camera_stolen" "audio\+video|audio") || ok=0
+    clear_store # before going online, or the outbox retry would upload these test chunks
     go_online
     note "fallback logged: $fell_back, chunks before/after steal: $before/$after"
     note "premature stops $premature, fatal $fatal"
@@ -304,7 +322,7 @@ scenario_errors_dont_stop() {
     local premature auth_errors uploads saved dups ok=1
     premature=$(premature_stops)
     auth_errors=$(count_log "Silent refresh requires user interaction|Silent refresh returned null")
-    uploads=$(count_log "uploaded successfully")
+    uploads=$(count_log "uploaded successfully|Retry successful")
     stop_recording
     sleep 8 # the relaunch after STOP scans pending files: duplicates would show up now
     saved=$(saved_chunks)
@@ -338,7 +356,7 @@ scenario_network_drop() {
     sleep 12
     local premature unknown saved dups ok=1
     premature=$(premature_stops)
-    unknown=$(count_log "auth UNKNOWN")
+    unknown=$(count_log "keeping file")
     stop_recording
     sleep 8 # let the post-STOP pending scan run
     saved=$(saved_chunks)
@@ -353,6 +371,50 @@ scenario_network_drop() {
         record network_drop PASS "recording continued through the outage, token unchanged ($token_after)"
     else
         record network_drop FAIL "premature=$premature saved=$saved unknown=$unknown dups=$dups token $token_before→$token_after"
+    fi
+}
+
+scenario_retry_after_outage() {
+    say "retry_after_outage: chunks that failed offline must go out once the network is back, while still recording"
+    write_prefs false false
+    clear_store
+    go_online || { record retry_after_outage FAIL "could not go online"; return; }
+    if [[ $(token_fingerprint) == none ]]; then
+        record retry_after_outage SKIP "needs a Drive token: give the Google consent in the app first"
+        return
+    fi
+    start_recording || { record retry_after_outage FAIL "recording did not start"; return; }
+    sleep 12
+    go_offline || note "warning: still online after enabling airplane mode"
+    sleep 25
+    go_online || note "warning: network did not come back"
+    # Still recording: the outbox (complete chunks only) must drain without waiting for STOP
+    local back=$SECONDS pending=-1 drained
+    while ((SECONDS - back < 45)); do
+        pending=$(list_store | grep -c '\.mp4$')
+        ((pending == 0)) && break
+        sleep 2
+    done
+    drained=$((SECONDS - back))
+    local premature unknown network_retry
+    premature=$(premature_stops)
+    unknown=$(count_log "keeping file")
+    network_retry=$(count_log "Network available, retrying pending uploads")
+    stop_recording
+    sleep 8
+    local saved uploaded dups ok=1
+    saved=$(saved_chunks)
+    uploaded=$(count_log "uploaded successfully|Retry successful")
+    dups=$(duplicate_uploads)
+    logs >"$OUT/retry_after_outage.log"
+    note "outbox while recording: $pending chunk(s) left ${drained}s after the network came back"
+    note "failed while offline $unknown, network-triggered retries $network_retry"
+    note "saved $saved, uploaded $uploaded, duplicates $dups, premature stops $premature"
+    ((premature == 0 && unknown >= 1 && pending == 0 && uploaded >= saved && dups == 0)) || ok=0
+    if ((ok)); then
+        record retry_after_outage PASS "outbox drained ${drained}s after the network returned, during recording; $uploaded/$saved uploaded"
+    else
+        record retry_after_outage FAIL "pending=$pending after ${drained}s, unknown=$unknown uploaded=$uploaded saved=$saved dups=$dups premature=$premature"
     fi
 }
 
@@ -404,6 +466,10 @@ cleanup() {
         adb shell cmd connectivity airplane-mode disable
     fi
     if [[ $INITIAL_WIFI == 0 ]]; then adb shell svc wifi disable; else adb shell svc wifi enable; fi
+    if ((APP_BLOCK)); then
+        set_app_network true
+        [[ $INITIAL_CHAIN3 == chain:disabled ]] && adb shell cmd connectivity set-chain3-enabled false
+    fi
     adb shell input keyevent KEYCODE_HOME
     note "network, settings and chunk store restored"
 }
@@ -420,7 +486,7 @@ setup() {
         exit 1
     fi
     local pending
-    pending=$(list_store | wc -l)
+    pending=$(($(list_store | wc -l) + $(list_work | wc -l)))
     if ((pending > 0)); then
         echo "The chunk store holds $pending files that may not be uploaded yet. Refusing to run."
         exit 1
@@ -432,6 +498,14 @@ setup() {
     INITIAL_AIRPLANE=$(adb shell settings get global airplane_mode_on | tr -d '\r')
     INITIAL_WIFI=$(adb shell settings get global wifi_on | tr -d '\r')
     trap cleanup EXIT
+    INITIAL_CHAIN3=$(adb shell cmd connectivity get-chain3-enabled 2>/dev/null | tr -d '\r')
+    if [[ $INITIAL_CHAIN3 == chain:* ]]; then
+        APP_BLOCK=1
+        adb shell cmd connectivity set-chain3-enabled true
+        set_app_network true # a killed run may have left SafeRec blocked
+    else
+        note "warning: cannot block SafeRec's network alone, a VPN may keep it online in airplane mode"
+    fi
     adb logcat -c
     adb logcat -v threadtime >"$OUT/full.log" 2>/dev/null &
     LOGCAT_PID=$!
@@ -463,4 +537,5 @@ main() {
     summary
 }
 
-main "$@"
+# Run only when executed, so other scripts can source the helpers
+[[ ${BASH_SOURCE[0]} == "$0" ]] && main "$@"
