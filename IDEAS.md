@@ -67,8 +67,11 @@ Before running, check that the default network is `VALIDATED` and that no global
 ### Unit tests on every push
 The repository is public and now has JVM unit tests that need no phone. A small GitHub Actions workflow running `./gradlew testDebugUnitTest lintDebug` on each push would catch a broken build or a failing outbox test before it reaches `main`, now that changes are merged without a pull request. Secrets are not needed: the tests never touch Drive.
 
-### Repair cut chunks
-A chunk cut by a power cut is uploaded, but it has no MP4 index (`moov atom not found`) and plays only after repair tools. The session's previous chunk has the same encoder settings, so its codec configuration (SPS/PPS, AAC config) is known. The index can be rebuilt by scanning the cut file's sample data against it, as untrunc does. `RecordingsActivity` could do this when it downloads or merges a session, so even the last seconds before the power went play on the phone. The original stays untouched on Drive, so the evidence is never altered.
-
 ### Smoke test the release build in CI
 The `r8test` build can be checked automatically. A GitHub Actions job would build it and start it on an emulator (`reactivecircus/android-emulator-runner`). It would then launch the main screen, the recordings screen and the outbox job, and fail on any `ClassNotFoundException`, `NoSuchFieldException` or crash in logcat. No Google account is needed to catch R8 breaking reflection at startup. It would have caught a missing rule before a release, not on a user's phone.
+
+### Timestamp the cut original
+A cut chunk never gets its TSA timestamp: the hash is taken when a chunk is closed, which never happened. At recovery, the outbox job could hash the `.cut` original and request a timestamp for it. That proves the raw evidence existed, unchanged, no later than the recovery: hours after the recording at worst, but before anyone could have touched it. The repaired copy can then be checked against the original sample by sample.
+
+### Skip uploads Drive already has
+An upload that reached Drive just before the process died, or before a timeout, is sent again, and Drive then holds the chunk twice (seen with a force stop during an upload). A fresh chunk's first upload cannot be a duplicate, so it needs no check. Any other attempt could first ask Drive for that name in the session folder: a retry, or a file found in the outbox at startup. If it is there with the same size, the upload already happened, and the local file is simply deleted. That is one cheap list call per retry, and no duplicate to confuse a merge.

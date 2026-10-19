@@ -107,6 +107,9 @@ net.ark3us.saferec/
 │   ├── MuxerSink.java            # MediaMuxer wrapper: chunks, one A/V clock, outbox hand-off
 │   ├── ChunkPolicy.java          # When a chunk is full (10 s, or a manual size)
 │   ├── WorkDir.java              # Where chunks are written; moves leftovers only while no recording uses it
+│   ├── SampleJournal.java        # A chunk's sample log (formats, sizes, times), kept until it is closed
+│   ├── ChunkIndex.java           # Finds the samples of a cut chunk from its log (pure Java)
+│   ├── ChunkRepair.java          # Rebuilds a playable MP4 from a cut chunk and its log
 │   ├── VideoOrientation.java     # Orientation math (snap, hint per camera facing)
 │   ├── MediaMerger.java          # Merges MP4 chunks into a single file
 │   └── TimestampRenderer.java    # OpenGL ES 2.0 pipeline for burned-in timestamp overlay
@@ -227,8 +230,20 @@ Token refreshes are shared: one at a time (`refreshLock`), at most one Play serv
 | `data_store/` | The outbox: complete chunks and `.tsa` replies waiting for upload |
 
 - `MuxerSink.closeFile()` hands a finished chunk over, still in `recording/`, and deletes empty ones. The service hashes it (TSA on), then renames it into the outbox (`moveToOutbox()`, same filesystem, atomic) and uploads it.
-- `WorkDir.recover()` moves chunks left in `recording/` by a dead process (crash, kill, sudden power cut) into the outbox. Such a chunk has no MP4 index and may not play, but it is kept as evidence. `SafeRecService.onCreate()` and the outbox job call it.
-- It moves nothing while a recording uses `recording/`. The service calls `WorkDir.acquire()` when a recording starts and `release()` once the post-processing of its last chunk is done (queued on the same executor). Moving the chunk being written would upload half a file, and moving a closed one before its post-processing would skip its TSA hash. One lock covers the counter and the moves, so a recording cannot start in the middle of a recovery.
+- `WorkDir.recover()` moves chunks left in `recording/` by a dead process (crash, kill, sudden power cut) into the outbox. Such a chunk has no MP4 index, so it is **repaired**, see Cut Chunk Repair below. `SafeRecService.onCreate()` (in the background: a repair can take seconds) and the outbox job call it.
+- It moves nothing while a recording uses `recording/`. The service calls `WorkDir.acquire()` when a recording starts and `release()` once the post-processing of its last chunk is done (queued on the same executor). Moving the chunk being written would upload half a file, and moving a closed one before its post-processing would skip its TSA hash. One lock covers the counter and the moves, so a recording cannot start in the middle of a recovery. Under it the chunks are only renamed into `repair/`. The repairs run afterwards, under a lock of their own, so a recording start never waits for one.
+
+### Cut Chunk Repair
+
+MediaMuxer writes the MP4 index (`moov`) only when a chunk is closed. A crash, a kill or a power cut leaves a chunk whose samples are all in its `mdat` but cannot be found, and no player opens it (`moov atom not found`).
+
+- **The sample log.** While a chunk is written, `MuxerSink` writes a log next to it (`SampleJournal`, `<chunk>.idx`). It holds the track formats with their codec configuration (SPS/PPS, AAC config), the orientation and, for every sample, its track, size in the file, time and flags. That is ~1.2 KB/s, flushed every 16 samples, and deleted once the chunk is closed. A failing log never stops a recording: the chunk is then just not repairable.
+- **Finding the samples** (`ChunkIndex`). MPEG4Writer lays out ftyp, a reserved free box, then mdat with runs of samples of one track, each track in its recording order. A video sample starts with its own length (size minus 4), so at each position the next logged video sample either matches, or the next logged audio sample comes. Checked first on a complete chunk: from its sample sizes alone it rebuilt its index exactly (715 of 715). The log records video sizes as MPEG4Writer stores them: it replaces a leading 4-byte start code with the length, or adds the length when there is none.
+- **Safe failure.** The walk stops at the first sample the file does not hold whole. It also stops when the log ran out before the file (not flushed when the power went) and the next bytes look like a video sample, rather than taking it for the next logged audio. If no logged video sample is found, the writer laid samples out differently and nothing is repaired. A chunk with its index is never repaired.
+- **Rebuilding** (`ChunkRepair`). The located samples go, unchanged, into a new MP4 with MediaMuxer, with the logged formats, orientation and times. Video gets its start code back, since MediaMuxer writes the length itself.
+- **Both reach Drive.** The playable copy goes under the chunk's name, and the cut file goes untouched as `<timestamp>.<seq>.cut`, typed `application/x-saferec-cut`. With `application/octet-stream` Drive looked at the content and filed it as video, whatever the metadata said. The recordings list hides the `.cut`, marks the chunk "repaired after a cut, original kept", and trashes both together.
+- **What is lost:** the samples MediaMuxer still held in memory when the process died (~0.5 s), and on a real power loss whatever had not reached the flash yet.
+- **Verified on a Galaxy S10+:** a force stop 5 s into a chunk left 472 KB and a 6.5 KB log. The repaired copy played 4.2 s (126 video, 178 audio samples, 0 decode errors with ffmpeg, rotation kept). The `.cut` on Drive had the same SHA-256 as the cut file on the phone, and the list showed the label.
 - There is one `GoogleDriveFileUploader` per process (`getInstance()`), shared by the recording, `CMD_UPLOAD_PENDING` and the outbox job. The `queuedFiles` dedupe, the folder lock and the token refresh therefore cover all of them: two uploaders would each create the same Drive folders, or upload the same chunk twice.
 - Each upload uses the token the app stored last, unless Drive already rejected it. The uploader lives as long as the process, across services, and the user may have reconnected Drive meanwhile.
 
@@ -248,7 +263,7 @@ Who retries depends on whether the service is alive:
 - It needs a network (`NetworkType.CONNECTED`) and runs 5 min after it was scheduled: while the service lives, the service does the work. A failed run comes back after 5 min, doubling up to WorkManager's 5 h cap.
 - When the service is known to be gone, an **expedited** job (`scheduleNow()`, unique name `outbox-now`) goes as soon as there is a network: from `onDestroy()` when files wait (the `dataSync` time limit, or Android stopping the service), and from `OutboxBootReceiver` after a boot with files left. Android may hold the delayed job of an app in the background for a long time: on a Galaxy S10+ (Android 16) it stayed "ready", every constraint met, for 35 min without starting, with this build and the one before. The expedited job is not held back and gets the network. Out of quota it runs as a regular job; below Android 12 it is a regular job, since WorkManager would need a foreground notification for it.
 - Several runs at once (the delayed and the expedited job) are harmless: they share the uploader, so each file is uploaded once.
-- It first adopts the chunks left in `recording/` (`WorkDir.recover()`), so a chunk cut by a sudden power cut is uploaded after the boot without opening the app.
+- It first adopts the chunks left in `recording/` (`WorkDir.recover()`, with `ChunkRepair`), so a chunk cut by a sudden power cut is repaired and uploaded after the boot without opening the app.
 - A run that finds a recording in progress queues a successor (`APPEND_OR_REPLACE`: with `KEEP`, scheduling does nothing while the job itself runs). Without it, a run that succeeded mid-recording left no job queued until the next chunk, and a power cut in that gap left the open chunk to the next app launch.
 - It calls `drain()`, which uploads the outbox and blocks until it is empty (success), an upload failed or the job is stopped (retry later). Uploads already running for the recording are waited for, not started twice. Chunks recorded meanwhile are uploaded in the same run: success means an empty outbox.
 - Verified on a Galaxy S10+ (Android 16):
@@ -373,6 +388,7 @@ Thread-safe (`synchronized`) wrapper around `MediaMuxer` with automatic chunking
 | **One clock** | Video timestamps are brought to `CLOCK_BOOTTIME`, the audio clock. The camera uses `BOOTTIME` or `MONOTONIC` depending on the device, and the closer clock is picked on the first frame. |
 | **PTS normalization** | One session base for both tracks (first packet written) → chunk base = first packet of the chunk minus `CHUNK_LEAD_US` (1 s) → final. The lead keeps packets of the other track captured just before the chunk's first packet, instead of dropping them. The MP4 writer moves the earliest sample to 0, and the tracks keep their real offset (edit list). |
 | **File naming** | `{sessionId}_{dataType}_{timestamp}.{seq}` via [MediaFile](app/src/main/java/net/ark3us/saferec/net/MediaFile.java) |
+| **Sample log** | `<chunk>.idx` next to the open chunk, so a cut chunk can be repaired (see Cut Chunk Repair) |
 
 **Chunk limit** is determined by:
 1. Manual setting (`Settings.getChunkSizeMB`) if > 0: split by size, no duration limit
@@ -575,7 +591,8 @@ R8 shrinks and optimizes the release (`isMinifyEnabled`, `isShrinkResources` in 
 8. **drive.file reaches only the app's own files.** If the `SafeRec` folder holds a file the app did not create (an older build with another OAuth client, or a file added by hand), Drive refuses any change to the folder's sharing with `appNotAuthorizedToChild`. That covers sharing it from the app and removing a public link that older builds created. Both must then be done in the Google Drive app.
 9. **Sharing is per person.** The share button grants one Google account read access to the whole `SafeRec` folder, future sessions included, and Google emails that person. The app never creates "anyone with the link" access, and it cannot revoke a share: that is done in Drive.
 10. **Android decides when the outbox job runs.** The delayed job of an app in the background can be held for over half an hour. The expedited one covers the cases the app sees coming (service stopped, boot), so this matters after a kill without notice: those chunks wait for that delayed job or the next app launch. In Doze jobs wait for a maintenance window, an app the user rarely opens gets fewer runs (App Standby buckets) and less expedited quota, and after repeated failed runs the job waits up to 5 h. A force stop cancels the jobs until the app leaves the stopped state. After a reboot nothing runs before the first unlock, because the outbox is in credential-encrypted storage. While the service lives, none of this applies.
-11. **A sudden power cut still cuts the open chunk.** Without a clean shutdown (a battery that fails before Android's ~1% shutdown, a kernel crash), the open chunk has no MP4 index: it needs repair tools to play. It is still uploaded after the boot, without opening the app: the expedited job adopts it from `recording/`.
+11. **A sudden power cut still costs the last moment.** Without a clean shutdown (a battery that fails before Android's ~1% shutdown, a kernel crash), the open chunk is cut. It is repaired from its sample log and uploaded after the boot without opening the app, but the last ~0.5 s that MediaMuxer held in memory is lost. On a real power loss, so is what had not reached the flash yet. Without a usable log the cut chunk is uploaded as it is, and plays only after repair tools.
+12. **An upload cut by the process dying can land twice.** When Drive already got a chunk but the process died before the answer, the file is still in the outbox and goes again. Seen three times with a force stop ~5 s into an upload: Drive then held chunk 0 twice, and merging that session would repeat it. A timeout after Drive got the file does the same.
 
 ---
 
@@ -584,9 +601,21 @@ R8 shrinks and optimizes the release (`isMinifyEnabled`, `isShrinkResources` in 
 Unit tests (JVM, no phone, under a second): `./gradlew testDebugUnitTest`.
 - `VideoOrientationTest`: quadrant snapping with hysteresis, hint for back and front cameras.
 - `ChunkPolicyTest`: 10 s auto chunks whatever the size, manual size only.
-- `MediaFileTest`: chunk and `.tsa` names, Drive names, foreign names rejected.
+- `MediaFileTest`: chunk, `.tsa` and `.cut` names, Drive names, foreign names rejected.
 - `TsaClientTest`: SHA-256 against the FIPS test vector.
-- `WorkDirTest`: leftovers moved and empty ones dropped, nothing moved while a recording uses the directory, a camera switch (two recordings overlapping), an extra release. Each rule is checked by mutation.
+- `WorkDirTest` covers:
+  - leftovers moved and empty ones dropped, nothing moved while a recording uses the directory;
+  - a camera switch (two recordings overlapping), an extra release;
+  - a chunk with its log repaired with the original kept as `.cut`, a failed repair sending the original;
+  - a repair cut short starting over, leftovers and stray logs dropped.
+- `SampleJournalTest`: round trip, a record cut short, a foreign file.
+- `ChunkIndexTest`, on synthetic chunks laid out like MPEG4Writer's:
+  - every sample of a cut chunk found in place;
+  - a complete chunk left alone;
+  - a log behind the file never placing a sample wrong;
+  - video that does not match the log never taken as video.
+
+  The `WorkDir` and `ChunkIndex` rules are checked by mutation.
 - `FileUploaderTest`: the outbox logic with a fake uploader and millisecond backoff. It covers:
   - queuing once while uploading;
   - retry from the outbox, and no retry with the loop off;
