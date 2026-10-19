@@ -64,11 +64,11 @@ A debug-only `HttpRequestInitializer` that, on a switch from `adb shell am broad
 ### Network sanity check in device tests
 Before running, check that the default network is `VALIDATED` and that no global HTTP proxy is set (`settings get global http_proxy`). A leftover proxy pointing to `127.0.0.1:8080` once cut every app off the internet while `adb shell` (which ignores the proxy) still looked fine.
 
-### Shrink the release build
-Release builds have `isMinifyEnabled = false`. R8 would cut the APK size a lot, but google-api-client, Gson and BouncyCastle use reflection and need `keep` rules. Turn it on together with a release-signed run of the whole device suite, ideally on a spare phone: installing a release build over the debug one means uninstalling it, losing its token and local chunks.
-
 ### Unit tests on every push
 The repository is public and now has JVM unit tests that need no phone. A small GitHub Actions workflow running `./gradlew testDebugUnitTest lintDebug` on each push would catch a broken build or a failing outbox test before it reaches `main`, now that changes are merged without a pull request. Secrets are not needed: the tests never touch Drive.
 
 ### Repair cut chunks
 A chunk cut by a power cut is uploaded, but it has no MP4 index (`moov atom not found`) and plays only after repair tools. The session's previous chunk has the same encoder settings, so its codec configuration (SPS/PPS, AAC config) is known. The index can be rebuilt by scanning the cut file's sample data against it, as untrunc does. `RecordingsActivity` could do this when it downloads or merges a session, so even the last seconds before the power went play on the phone. The original stays untouched on Drive, so the evidence is never altered.
+
+### Smoke test the release build in CI
+The `r8test` build can be checked automatically. A GitHub Actions job would build it and start it on an emulator (`reactivecircus/android-emulator-runner`). It would then launch the main screen, the recordings screen and the outbox job, and fail on any `ClassNotFoundException`, `NoSuchFieldException` or crash in logcat. No Google account is needed to catch R8 breaking reflection at startup. It would have caught a missing rule before a release, not on a user's phone.

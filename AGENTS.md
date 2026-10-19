@@ -532,6 +532,30 @@ Chunks are uploaded immediately on completion and **deleted locally** on success
 
 ---
 
+## Release Build
+
+R8 shrinks and optimizes the release (`isMinifyEnabled`, `isShrinkResources` in `app/build.gradle.kts`). The APK went from 16.8 MB to 3.9 MB.
+
+- **Rules.** The libraries bring their own. google-api-client fills its model classes (Drive `File`, `FileList`, `Permission`, error replies) by reflection on `@Key` fields: those rules ship with play-services-auth. WorkManager creates workers by class name, and Room and androidx.startup are covered too. `app/proguard-rules.pro` adds two things only:
+  - line numbers in stack traces;
+  - the app's own class names (`-keepnames`). The source is public, so renaming hides nothing, and it would turn the log tags (`Class.getSimpleName()`) into single letters. Unused code is still removed.
+- **Keep each release's `app/build/outputs/mapping/release/mapping.txt`**, e.g. uploaded to the Play Console. Without it, library frames in a crash report cannot be read.
+- **`r8test` build type.** It is the release, shrunk the same way, but signed with the debug key. Because it shares the debug signature:
+  - it installs over the debug app (`adb install -r`) and keeps its data;
+  - the Google consent still works, since OAuth knows the debug SHA-1. A release-signed build would need the debug app uninstalled first.
+
+  It is not debuggable, so `run-as` and `scripts/device-tests.sh` do not work with it. Change the settings with the debug build before installing it, and put the debug build back afterwards (`adb install -r -t`).
+- **Verified with `r8test` on a Galaxy S10+**, with no crash:
+  - the Play services authorization and the Drive token check;
+  - a recording uploaded with its TSA timestamps (BouncyCastle);
+  - the recordings list, and playback streamed from Drive;
+  - the settings sheet;
+  - the outbox job.
+
+  Check these again after adding a library or anything that uses reflection.
+
+---
+
 ## Known Limitations
 
 1. **Camera switch = recording gap.** Switching cameras mid-session does a full stop+restart, creating a new muxer/session segment.
