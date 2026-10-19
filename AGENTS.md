@@ -241,7 +241,13 @@ MediaMuxer writes the MP4 index (`moov`) only when a chunk is closed. A crash, a
 - **Finding the samples** (`ChunkIndex`). MPEG4Writer lays out ftyp, a reserved free box, then mdat with runs of samples of one track, each track in its recording order. A video sample starts with its own length (size minus 4), so at each position the next logged video sample either matches, or the next logged audio sample comes. Checked first on a complete chunk: from its sample sizes alone it rebuilt its index exactly (715 of 715). The log records video sizes as MPEG4Writer stores them: it replaces a leading 4-byte start code with the length, or adds the length when there is none.
 - **Safe failure.** The walk stops at the first sample the file does not hold whole. It also stops when the log ran out before the file (not flushed when the power went) and the next bytes look like a video sample, rather than taking it for the next logged audio. If no logged video sample is found, the writer laid samples out differently and nothing is repaired. A chunk with its index is never repaired.
 - **Rebuilding** (`ChunkRepair`). The located samples go, unchanged, into a new MP4 with MediaMuxer, with the logged formats, orientation and times. Video gets its start code back, since MediaMuxer writes the length itself.
-- **Both reach Drive.** The playable copy goes under the chunk's name, and the cut file goes untouched as `<timestamp>.<seq>.cut`, typed `application/x-saferec-cut`. With `application/octet-stream` Drive looked at the content and filed it as video, whatever the metadata said. The recordings list hides the `.cut`, marks the chunk "repaired after a cut, original kept", and trashes both together.
+- **Both reach Drive.** The playable copy goes under the chunk's name, and the cut file goes untouched as `<timestamp>.<seq>.cut`, typed `application/x-saferec-cut`. With `application/octet-stream` Drive looked at the content and filed it as video, whatever the metadata said. The recordings list lists `.mp4` files only. It hides the `.cut` and its `.cut.tsa`, marks the chunk "repaired after a cut, original kept", and trashes them all together.
+- **Timestamps.** A cut chunk never got its TSA timestamp, since the hash is taken when a chunk closes. With timestamping on, the recovery hashes the files while they are still in `repair/` (`Repairer.beforeOutbox()`), before an upload can delete them:
+  - the file that goes as the chunk (the repaired copy, or the original when it could not be repaired) gets `<base>.tsa`, paired with the chunk as usual;
+  - a repaired chunk's original gets `<base>.cut.tsa`.
+
+  They prove the bytes existed, unchanged, no later than the recovery. The tokens travel with their chunk into the outbox, and a token left in `repair/` by a recovery cut short goes as it is. Requests are quiet (no toast from background work) and, as for every chunk, not retried. Verified: both tokens on Drive held the SHA-256 of the file they certify, timed at the recovery.
+- **Compound names.** `MediaFile` takes everything after `timestamp.sequence` as the extension, so `x.1.cut.tsa` is a `cut.tsa`. Taking only the first part made it a `cut`, uploaded under the original's very name.
 - **What is lost:** the samples MediaMuxer still held in memory when the process died (~0.5 s), and on a real power loss whatever had not reached the flash yet.
 - **Verified on a Galaxy S10+:** a force stop 5 s into a chunk left 472 KB and a 6.5 KB log. The repaired copy played 4.2 s (126 video, 178 audio samples, 0 decode errors with ffmpeg, rotation kept). The `.cut` on Drive had the same SHA-256 as the cut file on the phone, and the list showed the label.
 - There is one `GoogleDriveFileUploader` per process (`getInstance()`), shared by the recording, `CMD_UPLOAD_PENDING` and the outbox job. The `queuedFiles` dedupe, the folder lock and the token refresh therefore cover all of them: two uploaders would each create the same Drive folders, or upload the same chunk twice.
@@ -605,13 +611,14 @@ R8 shrinks and optimizes the release (`isMinifyEnabled`, `isShrinkResources` in 
 Unit tests (JVM, no phone, under a second): `./gradlew testDebugUnitTest`.
 - `VideoOrientationTest`: quadrant snapping with hysteresis, hint for back and front cameras.
 - `ChunkPolicyTest`: 10 s auto chunks whatever the size, manual size only.
-- `MediaFileTest`: chunk, `.tsa` and `.cut` names, Drive names, foreign names rejected.
+- `MediaFileTest`: chunk, `.tsa`, `.cut` and `.cut.tsa` names, Drive names, foreign names rejected.
 - `TsaClientTest`: SHA-256 against the FIPS test vector.
 - `WorkDirTest` covers:
   - leftovers moved and empty ones dropped, nothing moved while a recording uses the directory;
   - a camera switch (two recordings overlapping), an extra release;
   - a chunk with its log repaired with the original kept as `.cut`, a failed repair sending the original;
-  - a repair cut short starting over, leftovers and stray logs dropped.
+  - a repair cut short starting over, leftovers and stray logs dropped;
+  - timestamps made before the outbox going along with their chunk, an unrepaired chunk timestamped as it is, a timestamp left in `repair/` sent as it is.
 - `SampleJournalTest`: round trip, a record cut short, a foreign file.
 - `ChunkIndexTest`, on synthetic chunks laid out like MPEG4Writer's:
   - every sample of a cut chunk found in place;
