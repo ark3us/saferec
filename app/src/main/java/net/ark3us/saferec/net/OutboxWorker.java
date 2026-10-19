@@ -4,11 +4,13 @@ import android.content.Context;
 import android.util.Log;
 
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 import androidx.work.BackoffPolicy;
 import androidx.work.Constraints;
 import androidx.work.ExistingWorkPolicy;
 import androidx.work.NetworkType;
 import androidx.work.OneTimeWorkRequest;
+import androidx.work.Operation;
 import androidx.work.WorkManager;
 import androidx.work.Worker;
 import androidx.work.WorkerParameters;
@@ -38,8 +40,10 @@ public class OutboxWorker extends Worker {
     /**
      * Makes sure a job will upload the outbox once there is a network, even after a reboot.
      * Cheap to call often: while a job is waiting or running, this does nothing.
+     * Returns null when WorkManager refused it.
      */
-    public static void schedule(Context context) {
+    @Nullable
+    public static Operation schedule(Context context) {
         try {
             Constraints constraints = new Constraints.Builder()
                     .setRequiredNetworkType(NetworkType.CONNECTED)
@@ -49,10 +53,30 @@ public class OutboxWorker extends Worker {
                     .setInitialDelay(START_DELAY_MIN, TimeUnit.MINUTES)
                     .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, BACKOFF_MIN, TimeUnit.MINUTES)
                     .build();
-            WorkManager.getInstance(context).enqueueUniqueWork(WORK_NAME, ExistingWorkPolicy.KEEP, request);
+            return WorkManager.getInstance(context).enqueueUniqueWork(WORK_NAME, ExistingWorkPolicy.KEEP, request);
         } catch (RuntimeException e) {
             // The safety net must never break an upload
             Log.e(TAG, "Cannot schedule the outbox job", e);
+            return null;
+        }
+    }
+
+    /**
+     * Like schedule(), but returns once the job is stored, for a caller about to lose the
+     * process (the phone switching off). WorkManager stores requests one after the other, so
+     * the ones made before are stored too. Returns false on timeout or failure.
+     */
+    public static boolean scheduleAndWait(Context context, long timeoutMs) {
+        Operation operation = schedule(context);
+        if (operation == null) {
+            return false;
+        }
+        try {
+            operation.getResult().get(timeoutMs, TimeUnit.MILLISECONDS);
+            return true;
+        } catch (Exception e) {
+            Log.w(TAG, "The outbox job may not be stored", e);
+            return false;
         }
     }
 

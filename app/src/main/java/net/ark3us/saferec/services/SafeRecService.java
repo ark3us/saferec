@@ -3,8 +3,10 @@ package net.ark3us.saferec.services;
 import android.app.Notification;
 import android.app.NotificationManager;
 import android.app.Service;
+import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.pm.ServiceInfo;
 import android.net.ConnectivityManager;
 import android.net.Network;
@@ -17,6 +19,7 @@ import android.util.Log;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.core.content.ContextCompat;
 
 import net.ark3us.saferec.data.ServiceState;
 import net.ark3us.saferec.media.AudioStreamRecorder;
@@ -37,6 +40,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 public class SafeRecService extends Service {
     public static final String CMD_START = "START";
@@ -80,6 +84,15 @@ public class SafeRecService extends Service {
     private final ExecutorService postProcessExecutor = Executors.newSingleThreadExecutor();
     // Separate from postProcessExecutor so a slow TSA never delays chunk uploads
     private final ExecutorService tsaExecutor = Executors.newSingleThreadExecutor();
+    // Android waits up to 10 s in all for the receivers of ACTION_SHUTDOWN
+    private static final long SHUTDOWN_QUEUE_WAIT_MS = 3000;
+    private static final long SHUTDOWN_JOB_WAIT_MS = 2000;
+    private final BroadcastReceiver shutdownReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            onShutdown();
+        }
+    };
 
     public static Intent createCommandIntent(Context context, @Nullable String command) {
         Intent intent = new Intent(context, SafeRecService.class);
@@ -104,6 +117,32 @@ public class SafeRecService extends Service {
             OutboxWorker.schedule(this);
         }
         registerNetworkCallback();
+        // Sent to receivers registered at runtime only: none in the manifest would get it
+        ContextCompat.registerReceiver(this, shutdownReceiver, new IntentFilter(Intent.ACTION_SHUTDOWN),
+                ContextCompat.RECEIVER_NOT_EXPORTED);
+    }
+
+    /**
+     * The phone is switching off: power key, reboot, or a battery about to die (Android shuts
+     * down cleanly at ~1%). The power cut left the open chunk without its MP4 index, so it
+     * needed repair tools to play, and it stayed outside the outbox until the app was opened
+     * again. Close it now, and wait until it is in the outbox with the job stored: the job
+     * uploads it after the next boot.
+     */
+    private void onShutdown() {
+        if (!isRecording) {
+            return; // waiting files already have their job
+        }
+        Log.w(TAG, "Phone switching off: closing the recording");
+        stopRecording();
+        try {
+            // The closed chunk is hashed and moved to the outbox there
+            postProcessExecutor.submit(() -> { }).get(SHUTDOWN_QUEUE_WAIT_MS, TimeUnit.MILLISECONDS);
+        } catch (Exception e) {
+            Log.w(TAG, "The last chunk may not reach the outbox before the shutdown", e);
+        }
+        boolean stored = OutboxWorker.scheduleAndWait(this, SHUTDOWN_JOB_WAIT_MS);
+        Log.i(TAG, "Recording closed before the shutdown: " + pendingFiles() + " files in the outbox, job stored " + stored);
     }
 
     private File workDir() {
@@ -565,6 +604,7 @@ public class SafeRecService extends Service {
     @Override
     public void onDestroy() {
         destroyed = true;
+        unregisterReceiver(shutdownReceiver);
         stopRecording();
         if (networkCallback != null) {
             ConnectivityManager cm = getSystemService(ConnectivityManager.class);
