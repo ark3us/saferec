@@ -45,6 +45,9 @@ public class SafeRecService extends Service {
     public static final String STATUS_STARTED = "STARTED";
     public static final String STATUS_STOPPED = "STOPPED";
     private static final String TAG = "SafeRecService";
+    // Chunks being written live in WORK_DIR; complete ones wait in OUTBOX_DIR until uploaded
+    private static final String WORK_DIR = "recording";
+    private static final String OUTBOX_DIR = "data_store";
     private VideoStreamRecorder videoRecorder;
     private AudioStreamRecorder audioRecorder;
     private MuxerSink sink;
@@ -75,6 +78,41 @@ public class SafeRecService extends Service {
     public void onCreate() {
         super.onCreate();
         NotificationHelper.createNotificationChannel(this);
+        recoverInterruptedChunks();
+    }
+
+    private File workDir() {
+        return new File(getFilesDir(), WORK_DIR);
+    }
+
+    private File outboxDir() {
+        return new File(getFilesDir(), OUTBOX_DIR);
+    }
+
+    /**
+     * A crash leaves the open chunk in the work dir. It has no MP4 index, but it is
+     * still evidence (recoverable with repair tools), so it goes to the outbox too.
+     * Safe here: no recording can be running before the service is created.
+     */
+    private void recoverInterruptedChunks() {
+        File[] orphans = workDir().listFiles();
+        if (orphans == null || orphans.length == 0) {
+            return;
+        }
+        File outbox = outboxDir();
+        if (!outbox.exists() && !outbox.mkdirs()) {
+            Log.e(TAG, "Cannot create outbox: " + outbox.getAbsolutePath());
+            return;
+        }
+        for (File orphan : orphans) {
+            if (orphan.length() == 0) {
+                orphan.delete();
+            } else if (orphan.renameTo(new File(outbox, orphan.getName()))) {
+                Log.w(TAG, "Recovered interrupted chunk: " + orphan.getName());
+            } else {
+                Log.e(TAG, "Failed to recover interrupted chunk: " + orphan.getName());
+            }
+        }
     }
 
     private Notification buildNotification() {
@@ -121,11 +159,8 @@ public class SafeRecService extends Service {
                 currentSequenceNumber = 0;
                 break;
             case CMD_UPLOAD_PENDING:
-                if (isRecording) {
-                    Log.i(TAG, "Skipping pending upload — recording in progress");
-                } else {
-                    uploadPendingFiles();
-                }
+                // Safe while recording: the outbox only ever holds complete chunks
+                uploadPendingFiles();
                 break;
             case CMD_DELETE:
                 deleteDriveFiles(intent);
@@ -168,7 +203,6 @@ public class SafeRecService extends Service {
             });
         }
 
-        File baseDir = new File(getFilesDir(), "data_store");
         boolean includeVideo = !Settings.onlyAudio(this);
         String dataType = includeVideo ? MuxerSink.DATA_TYPE_VIDEO : MuxerSink.DATA_TYPE_AUDIO;
         long chunkSize = 0;
@@ -197,7 +231,7 @@ public class SafeRecService extends Service {
             });
         };
 
-        sink = new MuxerSink(baseDir, callback, dataType, sessionId, chunkSize, chunkDurationMs);
+        sink = new MuxerSink(workDir(), outboxDir(), callback, dataType, sessionId, chunkSize, chunkDurationMs);
         sink.setSequenceNumber(currentSequenceNumber);
         audioRecorder = new AudioStreamRecorder(this);
         if (includeVideo) {
@@ -295,7 +329,7 @@ public class SafeRecService extends Service {
 
     private void uploadPendingFiles() {
         executor.execute(() -> {
-            File baseDir = new File(getFilesDir(), "data_store");
+            File baseDir = outboxDir();
             String accessToken = Settings.getAccessToken(this);
             if (accessToken == null || accessToken.isEmpty()) {
                 Log.w(TAG, "Skipping pending upload: missing access token");

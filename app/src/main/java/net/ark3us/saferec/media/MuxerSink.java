@@ -34,6 +34,9 @@ public class MuxerSink {
     }
 
     private final FileSavedCallback fileSavedCallback;
+    // Chunks are written in workDir and moved to storeDir (the upload outbox) only once
+    // closed, so the outbox never holds a half-written file and can be scanned any time.
+    private final File workDir;
     private final File storeDir;
     private final String dataType;
     private final String sessionId;
@@ -77,8 +80,9 @@ public class MuxerSink {
 
     private final List<PendingPacket> pendingPackets = new ArrayList<>();
 
-    public MuxerSink(File storeDir, FileSavedCallback fileSavedCallback, String dataType, String sessionId,
-            long partSize, long maxChunkDurationMs) {
+    public MuxerSink(File workDir, File storeDir, FileSavedCallback fileSavedCallback, String dataType,
+            String sessionId, long partSize, long maxChunkDurationMs) {
+        this.workDir = workDir;
         this.storeDir = storeDir;
         this.fileSavedCallback = fileSavedCallback;
         this.dataType = dataType;
@@ -88,8 +92,10 @@ public class MuxerSink {
         this.expectedAudio = true;
         this.expectedVideo = DATA_TYPE_VIDEO.equals(dataType);
 
-        if (!storeDir.exists() && !storeDir.mkdirs()) {
-            Log.e(TAG, "Storage directory cannot be created: " + storeDir.getAbsolutePath());
+        for (File dir : new File[]{workDir, storeDir}) {
+            if (!dir.exists() && !dir.mkdirs()) {
+                Log.e(TAG, "Storage directory cannot be created: " + dir.getAbsolutePath());
+            }
         }
     }
 
@@ -281,12 +287,27 @@ public class MuxerSink {
             muxer = null;
         }
         if (currentFile != null) {
-            if (fileSavedCallback != null && bytesWritten > 0) {
-                fileSavedCallback.onFileSaved(currentFile);
+            if (bytesWritten > 0) {
+                File saved = moveToOutbox(currentFile);
+                if (fileSavedCallback != null) {
+                    fileSavedCallback.onFileSaved(saved);
+                }
+            } else if (!currentFile.delete()) {
+                Log.w(TAG, "Failed to delete empty chunk: " + currentFile.getName());
             }
             currentFile = null;
             bytesWritten = 0;
         }
+    }
+
+    /** Atomic rename (same filesystem). On failure the chunk is still handed over from workDir. */
+    private File moveToOutbox(File file) {
+        File target = new File(storeDir, file.getName());
+        if (file.renameTo(target)) {
+            return target;
+        }
+        Log.e(TAG, "Failed to move chunk to outbox: " + file.getName());
+        return file;
     }
 
     // --- Private helpers ---
@@ -296,7 +317,7 @@ public class MuxerSink {
             return;
         try {
             MediaFile mediaFile = new MediaFile(sessionId, dataType, System.currentTimeMillis(), sequenceNumber++);
-            currentFile = new File(storeDir, mediaFile.getFileName());
+            currentFile = new File(workDir, mediaFile.getFileName());
             // Reset bytesWritten when creating a new file
             bytesWritten = 0;
             muxer = new MediaMuxer(currentFile.getAbsolutePath(), MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4);
