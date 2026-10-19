@@ -5,6 +5,7 @@ import android.util.Log;
 import androidx.annotation.Nullable;
 
 import java.io.File;
+import java.io.IOException;
 import java.util.concurrent.ConcurrentHashMap;
 import android.content.Context;
 
@@ -38,21 +39,49 @@ public class GoogleDriveFileUploader extends FileUploader {
         return sessionId + "\0" + dataType;
     }
 
+    /** Null when Drive cannot be reached or refuses the token: the caller keeps the file. */
+    @Nullable
     private String getOrCacheSessionFolderId(String sessionId, String dataType) {
         String key = cacheKey(sessionId, dataType);
         String cached = sessionFolderIdCache.get(key);
         if (cached != null) return cached;
+        // One thread at a time: concurrent lookups would each create the missing folders
         synchronized (this) {
             cached = sessionFolderIdCache.get(key);
             if (cached != null) return cached;
-            if (cachedBaseFolderId == null) {
-                cachedBaseFolderId = driveClient.getOrCreateBaseFolderId();
+            try {
+                if (cachedBaseFolderId == null) {
+                    cachedBaseFolderId = driveClient.getOrCreateBaseFolderId();
+                }
+                String folderId = driveClient.getOrCreateNestedFolders(sessionId + "/" + dataType, cachedBaseFolderId);
+                sessionFolderIdCache.put(key, folderId);
+                return folderId;
+            } catch (IOException e) {
+                Log.w(TAG, "Cannot resolve Drive folder " + sessionId + "/" + dataType + ": " + e);
+                return null;
             }
-            if (cachedBaseFolderId == null) return null;
-            String destPath = String.format("%s/%s", sessionId, dataType);
-            String folderId = driveClient.getOrCreateNestedFolders(destPath, cachedBaseFolderId);
-            if (folderId != null) sessionFolderIdCache.put(key, folderId);
-            return folderId;
+        }
+    }
+
+    private static String driveName(MediaFile mediaFile) {
+        return String.format("%s.%s.%s", mediaFile.timestamp, mediaFile.sequenceNumber, mediaFile.getExtension());
+    }
+
+    /** Folders are only ever created by getOrCacheSessionFolderId, under its lock. */
+    @Nullable
+    private com.google.api.services.drive.model.File tryUpload(File file, MediaFile mediaFile) {
+        String parentFolderId = getOrCacheSessionFolderId(mediaFile.sessionId, mediaFile.dataType);
+        if (parentFolderId == null) {
+            return null;
+        }
+        return driveClient.uploadFile(file, driveName(mediaFile), mediaFile.getMimeType(), parentFolderId, mediaFile.timestamp);
+    }
+
+    private void deleteUploaded(File file) {
+        if (!file.delete()) {
+            Log.w(TAG, "Failed to delete file after upload: " + file.getAbsolutePath());
+        } else {
+            Log.d(TAG, "File deleted after upload: " + file.getAbsolutePath());
         }
     }
 
@@ -63,26 +92,28 @@ public class GoogleDriveFileUploader extends FileUploader {
             Log.e(TAG, "Cannot parse media file from: " + file.getAbsolutePath());
             return false;
         }
-        String destPath = String.format("%s/%s", mediaFile.sessionId, mediaFile.dataType);
-        String destName = String.format("%s.%s.%s", mediaFile.timestamp, mediaFile.sequenceNumber, mediaFile.getExtension());
-        File destFile = new File(destPath, destName);
-        @Nullable String parentFolderId = getOrCacheSessionFolderId(mediaFile.sessionId, mediaFile.dataType);
-        Log.i(TAG, "Uploading file (seq=" + mediaFile.sequenceNumber + ") to Google Drive: " + destFile.getName());
-        com.google.api.services.drive.model.File res = driveClient.uploadFile(file, destFile, mediaFile.getMimeType(), parentFolderId, mediaFile.timestamp);
+        Log.i(TAG, "Uploading file (seq=" + mediaFile.sequenceNumber + ") to Google Drive: " + driveName(mediaFile));
+        com.google.api.services.drive.model.File res = tryUpload(file, mediaFile);
         if (res != null) {
             Log.i(TAG, "File (seq=" + mediaFile.sequenceNumber + ") uploaded successfully: " + res.getName());
-            if (!file.delete()) {
-                Log.w(TAG, "Failed to delete file after upload: " + file.getAbsolutePath());
-            } else {
-                Log.d(TAG, "File deleted after upload: " + file.getAbsolutePath());
-            }
+            deleteUploaded(file);
             return true;
         }
         Log.e(TAG, "File upload failed: " + file.getAbsolutePath());
         GoogleDriveClient.AuthStatus authStatus = driveClient.checkAuthentication();
         if (authStatus == GoogleDriveClient.AuthStatus.INVALID) {
             Log.e(TAG, "Access token rejected during upload. Attempting silent token refresh...");
-            return refreshTokenAndRetry(file, destFile, mediaFile, parentFolderId);
+            if (!refreshToken()) {
+                return false;
+            }
+            res = tryUpload(file, mediaFile);
+            if (res != null) {
+                Log.i(TAG, "Retry successful: " + res.getName());
+                deleteUploaded(file);
+                return true;
+            }
+            Log.e(TAG, "Retry upload failed despite fresh token.");
+            return false;
         }
         // Network down or Drive failing: the token is not the problem,
         // so keep it and leave the file in the outbox for a later upload.
@@ -90,8 +121,8 @@ public class GoogleDriveFileUploader extends FileUploader {
         return false;
     }
 
-    /** Returns true if the upload went through with the refreshed token. */
-    private boolean refreshTokenAndRetry(File file, File destFile, MediaFile mediaFile, @Nullable String parentFolderId) {
+    /** Returns true when a new token was obtained without user interaction. */
+    private boolean refreshToken() {
         try {
             AuthorizationRequest req = AuthorizationRequest.builder()
                     .setRequestedScopes(Collections.singletonList(new Scope(DriveScopes.DRIVE_FILE)))
@@ -105,30 +136,23 @@ public class GoogleDriveFileUploader extends FileUploader {
                 Log.e(TAG, "Silent refresh requires user interaction (resolution). Failing.");
                 Settings.setAccessToken(context, null);
                 LiveData.getInstance().reportError(LiveData.ERROR_AUTH);
-            } else {
-                String newToken = authResult.getAccessToken();
-                if (newToken != null) {
-                    Log.i(TAG, "Silent refresh succeeded! Updating token and retrying upload.");
-                    Settings.setAccessToken(context, newToken);
-                    driveClient.setAccessToken(newToken);
-                    // Retry upload once
-                    com.google.api.services.drive.model.File retryRes = driveClient.uploadFile(file, destFile, mediaFile.getMimeType(), parentFolderId, mediaFile.timestamp);
-                    if (retryRes != null) {
-                        Log.i(TAG, "Retry successful: " + retryRes.getName());
-                        file.delete();
-                        return true;
-                    }
-                    Log.e(TAG, "Retry upload failed despite fresh token.");
-                } else {
-                    Log.e(TAG, "Silent refresh returned null token. Failing.");
-                    Settings.setAccessToken(context, null);
-                    LiveData.getInstance().reportError(LiveData.ERROR_AUTH);
-                }
+                return false;
             }
+            String newToken = authResult.getAccessToken();
+            if (newToken == null) {
+                Log.e(TAG, "Silent refresh returned null token. Failing.");
+                Settings.setAccessToken(context, null);
+                LiveData.getInstance().reportError(LiveData.ERROR_AUTH);
+                return false;
+            }
+            Log.i(TAG, "Silent refresh succeeded! Updating token and retrying upload.");
+            Settings.setAccessToken(context, newToken);
+            driveClient.setAccessToken(newToken);
+            return true;
         } catch (Exception e) {
             // Usually a network failure: the stored token may still be valid, so keep it
             Log.e(TAG, "Exception during silent token refresh", e);
+            return false;
         }
-        return false;
     }
 }

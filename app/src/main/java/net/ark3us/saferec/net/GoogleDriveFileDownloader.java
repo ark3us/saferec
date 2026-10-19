@@ -11,7 +11,6 @@ import com.google.api.services.drive.model.FileList;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -33,17 +32,17 @@ public class GoogleDriveFileDownloader extends FileDownloader {
     public void listRecordings(Callback<List<RecordingItem>> callback) {
         executor.execute(() -> {
             try {
-                String safeRecId = driveClient.findFolderId("SafeRec", null);
-                if (safeRecId == null) {
+                List<String> baseFolderIds = driveClient.findBaseFolderIds();
+                if (baseFolderIds.isEmpty()) {
                     callback.onSuccess(new ArrayList<>());
                     return;
                 }
 
                 List<RecordingItem> items = new ArrayList<>();
 
-                // 1. Fetch Session Folders
-                List<com.google.api.services.drive.model.File> sessionFolders = fetchFilesBatch(
-                        Collections.singletonList(safeRecId), true);
+                // 1. Fetch Session Folders, from every base folder: older builds could
+                // create duplicates and split a session between them
+                List<com.google.api.services.drive.model.File> sessionFolders = fetchFilesBatch(baseFolderIds, true);
                 Map<String, String> folderIdToSessionId = new HashMap<>();
                 List<String> sessionFolderIds = new ArrayList<>();
                 for (com.google.api.services.drive.model.File f : sessionFolders) {

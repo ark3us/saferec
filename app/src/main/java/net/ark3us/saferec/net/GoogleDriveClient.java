@@ -7,7 +7,9 @@ import androidx.annotation.Nullable;
 import java.io.File;
 import java.io.IOException;
 import java.io.OutputStream;
+import java.util.ArrayList;
 import java.util.Collections;
+import java.util.List;
 
 import com.google.api.client.http.FileContent;
 import com.google.api.client.http.HttpRequest;
@@ -19,11 +21,6 @@ import com.google.api.client.util.DateTime;
 import com.google.api.services.drive.Drive;
 import com.google.api.services.drive.model.FileList;
 import com.google.api.services.drive.model.Permission;
-
-import java.io.File;
-import java.io.IOException;
-import java.io.OutputStream;
-import java.util.Collections;
 
 public class GoogleDriveClient {
 
@@ -53,74 +50,88 @@ public class GoogleDriveClient {
                 }).setApplicationName("SafeRec").build();
     }
 
-    public String findFolderId(String folderName, @Nullable String parentFolderId) {
-        try {
-            StringBuilder q = new StringBuilder();
-            q.append("mimeType='application/vnd.google-apps.folder'");
-            q.append(" and name='").append(folderName.replace("'", "\\'")).append("'");
-            q.append(" and trashed=false");
+    /**
+     * IDs of the folders with this name, oldest first. Throws when Drive cannot be asked:
+     * a failed lookup must never pass for "not found".
+     */
+    public List<String> findFolderIds(String folderName, @Nullable String parentFolderId) throws IOException {
+        StringBuilder q = new StringBuilder();
+        q.append("mimeType='application/vnd.google-apps.folder'");
+        q.append(" and name='").append(folderName.replace("'", "\\'")).append("'");
+        q.append(" and trashed=false");
 
-            if (parentFolderId != null) {
-                q.append(" and '").append(parentFolderId).append("' in parents");
+        if (parentFolderId != null) {
+            q.append(" and '").append(parentFolderId).append("' in parents");
+        }
+
+        FileList result = driveService.files().list()
+                .setQ(q.toString())
+                .setSpaces("drive")
+                .setFields("files(id)")
+                // Duplicates may exist (older builds made them): every client picks the oldest
+                .setOrderBy("createdTime")
+                .setPageSize(100)
+                .execute();
+
+        List<String> ids = new ArrayList<>();
+        if (result.getFiles() != null) {
+            for (com.google.api.services.drive.model.File f : result.getFiles()) {
+                ids.add(f.getId());
             }
+        }
+        return ids;
+    }
 
-            FileList result = driveService.files().list()
-                    .setQ(q.toString())
-                    .setSpaces("drive")
-                    .setFields("files(id,name)")
-                    .setPageSize(1)
-                    .execute();
-
-            if (result.getFiles() != null && !result.getFiles().isEmpty()) {
-                Log.i(TAG, "Found existing folder: " + folderName + " (ID: " + result.getFiles().get(0).getId() + ")");
-                return result.getFiles().get(0).getId();
-            }
-
+    /** Oldest folder with this name, or null if Drive says there is none. */
+    @Nullable
+    public String findFolderId(String folderName, @Nullable String parentFolderId) throws IOException {
+        List<String> ids = findFolderIds(folderName, parentFolderId);
+        if (ids.isEmpty()) {
             Log.i(TAG, "Folder not found: " + folderName);
             return null;
-        } catch (Exception e) {
-            Log.e(TAG, "Error finding folder: " + folderName, e);
-            return null;
         }
+        Log.i(TAG, "Found existing folder: " + folderName + " (ID: " + ids.get(0) + ")");
+        return ids.get(0);
     }
 
-    public String createFolder(String folderName, @Nullable String parentFolderId) {
-        try {
-            com.google.api.services.drive.model.File metadata = new com.google.api.services.drive.model.File();
-            metadata.setName(folderName);
-            metadata.setMimeType("application/vnd.google-apps.folder");
+    public String createFolder(String folderName, @Nullable String parentFolderId) throws IOException {
+        com.google.api.services.drive.model.File metadata = new com.google.api.services.drive.model.File();
+        metadata.setName(folderName);
+        metadata.setMimeType("application/vnd.google-apps.folder");
 
-            if (parentFolderId != null) {
-                metadata.setParents(Collections.singletonList(parentFolderId));
-            }
-
-            com.google.api.services.drive.model.File folder = driveService.files()
-                    .create(metadata)
-                    .setFields("id")
-                    .execute();
-
-            Log.i(TAG, "Created folder: " + folderName + " (ID: " + folder.getId() + ")");
-            return folder.getId();
-        } catch (Exception e) {
-            Log.e(TAG, "Error creating folder: " + folderName, e);
-            return null;
+        if (parentFolderId != null) {
+            metadata.setParents(Collections.singletonList(parentFolderId));
         }
+
+        com.google.api.services.drive.model.File folder = driveService.files()
+                .create(metadata)
+                .setFields("id")
+                .execute();
+
+        Log.i(TAG, "Created folder: " + folderName + " (ID: " + folder.getId() + ")");
+        return folder.getId();
     }
 
-    public String getOrCreateFolder(String folderName, @Nullable String parentFolderId) {
+    /**
+     * Creates the folder only when Drive answered that it does not exist. Treating a timeout
+     * as "not found" used to create duplicate folders and split recordings between them.
+     */
+    public String getOrCreateFolder(String folderName, @Nullable String parentFolderId) throws IOException {
         String folderId = findFolderId(folderName, parentFolderId);
-        if (folderId != null) {
-            return folderId;
-        }
-        return createFolder(folderName, parentFolderId);
+        return folderId != null ? folderId : createFolder(folderName, parentFolderId);
     }
 
     /**
      * Returns the "SafeRec" base folder ID (create if needed). Cache this to avoid
      * repeated lookups.
      */
-    public String getOrCreateBaseFolderId() {
+    public String getOrCreateBaseFolderId() throws IOException {
         return getOrCreateFolder(BASE_FOLDER, null);
+    }
+
+    /** Every "SafeRec" base folder, oldest first. */
+    public List<String> findBaseFolderIds() throws IOException {
+        return findFolderIds(BASE_FOLDER, null);
     }
 
     public String shareBaseFolder() {
@@ -149,7 +160,8 @@ public class GoogleDriveClient {
         }
     }
 
-    public String getOrCreateNestedFolders(@Nullable String nestedPath, @Nullable String parentFolderId) {
+    public String getOrCreateNestedFolders(@Nullable String nestedPath, @Nullable String parentFolderId)
+            throws IOException {
         // parentFolderId is where the path should be created under (can be null = My
         // Drive root)
         if (nestedPath == null || nestedPath.trim().isEmpty()) {
@@ -170,50 +182,28 @@ public class GoogleDriveClient {
             if (name.isEmpty())
                 continue;
 
-            String id = getOrCreateFolder(name, currentParent);
-            if (id == null)
-                return null;
-
-            currentParent = id;
+            currentParent = getOrCreateFolder(name, currentParent);
         }
         return currentParent;
     }
 
     /**
-     * Upload a file. If parentFolderId is non-null, uses it as the Drive parent
-     * (avoids folder
-     * lookups). Otherwise resolves SafeRec + destFile.getParent() as before.
+     * Uploads a file into an existing folder. The folder is required: resolving it here, outside
+     * the uploader's lock, let concurrent uploads create the same folders twice.
      */
-    public com.google.api.services.drive.model.File uploadFile(File localFile, File destFile, String mimeType,
-            @Nullable String parentFolderId, long timestampMillis) {
+    public com.google.api.services.drive.model.File uploadFile(File localFile, String name, String mimeType,
+            String parentFolderId, long timestampMillis) {
         try {
             com.google.api.services.drive.model.File meta = new com.google.api.services.drive.model.File();
-            meta.setName(destFile.getName());
-            
+            meta.setName(name);
+
             if (timestampMillis > 0) {
                 DateTime dt = new DateTime(timestampMillis);
                 meta.setCreatedTime(dt);
                 meta.setModifiedTime(dt);
             }
 
-            String destinationFolderId;
-            if (parentFolderId != null) {
-                destinationFolderId = parentFolderId;
-            } else {
-                String baseId = getOrCreateFolder(BASE_FOLDER, null);
-                if (baseId == null) {
-                    Log.e(TAG, "Failed to get or create base folder: " + BASE_FOLDER);
-                    return null;
-                }
-                String destPath = destFile.getParent();
-                destinationFolderId = getOrCreateNestedFolders(destPath, baseId);
-                if (destinationFolderId == null) {
-                    Log.e(TAG, "Failed to get or create nested folders: " + destPath);
-                    return null;
-                }
-            }
-
-            meta.setParents(Collections.singletonList(destinationFolderId));
+            meta.setParents(Collections.singletonList(parentFolderId));
 
             FileContent media = new FileContent(mimeType, localFile);
 
@@ -226,10 +216,6 @@ public class GoogleDriveClient {
             Log.e(TAG, "Failed to upload file to Google Drive", e);
             return null;
         }
-    }
-
-    public com.google.api.services.drive.model.File uploadFile(File localFile, File destFile, String mimeType) {
-        return uploadFile(localFile, destFile, mimeType, null, 0);
     }
 
     public void downloadFile(String fileId, OutputStream outputStream) throws IOException {
