@@ -57,11 +57,11 @@ public class GoogleDriveFileUploader extends FileUploader {
     }
 
     @Override
-    public void uploadFile(File file) {
+    public boolean uploadFile(File file) {
         MediaFile mediaFile = MediaFile.fromFile(file);
         if (mediaFile == null) {
             Log.e(TAG, "Cannot parse media file from: " + file.getAbsolutePath());
-            return;
+            return false;
         }
         String destPath = String.format("%s/%s", mediaFile.sessionId, mediaFile.dataType);
         String destName = String.format("%s.%s.%s", mediaFile.timestamp, mediaFile.sequenceNumber, mediaFile.getExtension());
@@ -76,21 +76,22 @@ public class GoogleDriveFileUploader extends FileUploader {
             } else {
                 Log.d(TAG, "File deleted after upload: " + file.getAbsolutePath());
             }
-        } else {
-            Log.e(TAG, "File upload failed: " + file.getAbsolutePath());
-            GoogleDriveClient.AuthStatus authStatus = driveClient.checkAuthentication();
-            if (authStatus == GoogleDriveClient.AuthStatus.INVALID) {
-                Log.e(TAG, "Access token rejected during upload. Attempting silent token refresh...");
-                refreshTokenAndRetry(file, destFile, mediaFile, parentFolderId);
-            } else {
-                // Network down or Drive failing: the token is not the problem,
-                // so keep it and leave the file on disk for a later upload.
-                Log.w(TAG, "Upload failed (auth " + authStatus + "), keeping file: " + file.getName());
-            }
+            return true;
         }
+        Log.e(TAG, "File upload failed: " + file.getAbsolutePath());
+        GoogleDriveClient.AuthStatus authStatus = driveClient.checkAuthentication();
+        if (authStatus == GoogleDriveClient.AuthStatus.INVALID) {
+            Log.e(TAG, "Access token rejected during upload. Attempting silent token refresh...");
+            return refreshTokenAndRetry(file, destFile, mediaFile, parentFolderId);
+        }
+        // Network down or Drive failing: the token is not the problem,
+        // so keep it and leave the file in the outbox for a later upload.
+        Log.w(TAG, "Upload failed (auth " + authStatus + "), keeping file: " + file.getName());
+        return false;
     }
 
-    private void refreshTokenAndRetry(File file, File destFile, MediaFile mediaFile, @Nullable String parentFolderId) {
+    /** Returns true if the upload went through with the refreshed token. */
+    private boolean refreshTokenAndRetry(File file, File destFile, MediaFile mediaFile, @Nullable String parentFolderId) {
         try {
             AuthorizationRequest req = AuthorizationRequest.builder()
                     .setRequestedScopes(Collections.singletonList(new Scope(DriveScopes.DRIVE_FILE)))
@@ -115,9 +116,9 @@ public class GoogleDriveFileUploader extends FileUploader {
                     if (retryRes != null) {
                         Log.i(TAG, "Retry successful: " + retryRes.getName());
                         file.delete();
-                    } else {
-                        Log.e(TAG, "Retry upload failed despite fresh token.");
+                        return true;
                     }
+                    Log.e(TAG, "Retry upload failed despite fresh token.");
                 } else {
                     Log.e(TAG, "Silent refresh returned null token. Failing.");
                     Settings.setAccessToken(context, null);
@@ -128,5 +129,6 @@ public class GoogleDriveFileUploader extends FileUploader {
             // Usually a network failure: the stored token may still be valid, so keep it
             Log.e(TAG, "Exception during silent token refresh", e);
         }
+        return false;
     }
 }

@@ -5,11 +5,14 @@ import android.app.NotificationManager;
 import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
+import android.net.ConnectivityManager;
+import android.net.Network;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
 import android.util.Log;
 
+import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
 import net.ark3us.saferec.data.LiveData;
@@ -59,7 +62,8 @@ public class SafeRecService extends Service {
     private int activeTimestamping = 0;
     private String currentSessionId;
     private String errorMessage;
-    private GoogleDriveFileUploader sharedUploader;
+    private volatile GoogleDriveFileUploader sharedUploader; // read by the network callback thread
+    private ConnectivityManager.NetworkCallback networkCallback;
     private int currentSequenceNumber = 0;
 
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
@@ -79,6 +83,7 @@ public class SafeRecService extends Service {
         super.onCreate();
         NotificationHelper.createNotificationChannel(this);
         recoverInterruptedChunks();
+        registerNetworkCallback();
     }
 
     private File workDir() {
@@ -142,6 +147,8 @@ public class SafeRecService extends Service {
             if (!isRecording) {
                 LiveData.getInstance().updateStatus(STATUS_READY);
             }
+            // Also the sticky restart after the process was killed: resume the outbox
+            uploadPendingFiles();
             return START_STICKY;
         }
         Log.i(TAG, "Received command: " + command);
@@ -195,13 +202,7 @@ public class SafeRecService extends Service {
         String sessionId = currentSessionId;
         Log.i(TAG, "Starting recording session id=" + sessionId + " sequence=" + currentSequenceNumber);
         
-        if (sharedUploader == null) {
-            sharedUploader = new GoogleDriveFileUploader(this, accessToken);
-            sharedUploader.setListener(num -> {
-                activeUploads = num;
-                updateNotification();
-            });
-        }
+        GoogleDriveFileUploader uploader = ensureUploader();
 
         boolean includeVideo = !Settings.onlyAudio(this);
         String dataType = includeVideo ? MuxerSink.DATA_TYPE_VIDEO : MuxerSink.DATA_TYPE_AUDIO;
@@ -224,9 +225,9 @@ public class SafeRecService extends Service {
                 // Hash before uploading: the uploader deletes the local file once it is on Drive
                 byte[] hash = Settings.isTimestampingEnabled(this) ? FreeTSAClient.sha256(file) : null;
                 // The chunk is the evidence: it never waits for the TSA, the timestamp can come later
-                sharedUploader.upload(file);
+                uploader.upload(file);
                 if (hash != null) {
-                    tsaExecutor.execute(() -> timestampChunk(file, hash));
+                    tsaExecutor.execute(() -> timestampChunk(uploader, file, hash));
                 }
             });
         };
@@ -285,7 +286,7 @@ public class SafeRecService extends Service {
         }
     }
 
-    private void timestampChunk(File chunkFile, byte[] hash) {
+    private void timestampChunk(GoogleDriveFileUploader uploader, File chunkFile, byte[] hash) {
         synchronized (this) {
             activeTimestamping++;
             updateNotification();
@@ -299,7 +300,7 @@ public class SafeRecService extends Service {
             updateNotification();
         }
         if (success) {
-            sharedUploader.upload(tsaFile);
+            uploader.upload(tsaFile);
         }
     }
 
@@ -327,6 +328,20 @@ public class SafeRecService extends Service {
         updateNotification();
     }
 
+    /** One uploader per service: it owns the outbox retry loop and the duplicate guard. */
+    private synchronized GoogleDriveFileUploader ensureUploader() {
+        if (sharedUploader == null) {
+            GoogleDriveFileUploader uploader = new GoogleDriveFileUploader(this, Settings.getAccessToken(this));
+            uploader.setOutbox(outboxDir());
+            uploader.setListener(num -> {
+                activeUploads = num;
+                updateNotification();
+            });
+            sharedUploader = uploader;
+        }
+        return sharedUploader;
+    }
+
     private void uploadPendingFiles() {
         executor.execute(() -> {
             File baseDir = outboxDir();
@@ -335,16 +350,33 @@ public class SafeRecService extends Service {
                 Log.w(TAG, "Skipping pending upload: missing access token");
                 return;
             }
-            if (sharedUploader == null) {
-                sharedUploader = new GoogleDriveFileUploader(this, accessToken);
-                sharedUploader.setListener(num -> {
-                    activeUploads = num;
-                    updateNotification();
-                });
-            }
             Log.i(TAG, "Uploading pending files from " + baseDir.getAbsolutePath());
-            sharedUploader.upload(baseDir);
+            ensureUploader().upload(baseDir);
         });
+    }
+
+    /** Network back → empty the outbox now instead of waiting for the retry backoff. */
+    private void registerNetworkCallback() {
+        ConnectivityManager cm = getSystemService(ConnectivityManager.class);
+        if (cm == null) {
+            return;
+        }
+        networkCallback = new ConnectivityManager.NetworkCallback() {
+            @Override
+            public void onAvailable(@NonNull Network network) {
+                GoogleDriveFileUploader uploader = sharedUploader;
+                if (uploader != null) {
+                    Log.i(TAG, "Network available, retrying pending uploads");
+                    uploader.retryNow();
+                }
+            }
+        };
+        try {
+            cm.registerDefaultNetworkCallback(networkCallback);
+        } catch (RuntimeException e) {
+            Log.e(TAG, "Cannot watch the network, relying on the retry backoff", e);
+            networkCallback = null;
+        }
     }
 
     private void deleteDriveFiles(Intent intent) {
@@ -402,6 +434,13 @@ public class SafeRecService extends Service {
     @Override
     public void onDestroy() {
         stopRecording();
+        if (networkCallback != null) {
+            ConnectivityManager cm = getSystemService(ConnectivityManager.class);
+            if (cm != null) {
+                cm.unregisterNetworkCallback(networkCallback);
+            }
+            networkCallback = null;
+        }
         if (sharedUploader != null) {
             sharedUploader.shutdown();
             sharedUploader = null;
