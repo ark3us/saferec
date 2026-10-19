@@ -125,6 +125,7 @@ net.ark3us.saferec/
 │   ├── GoogleDriveClient.java    # Low-level Drive API wrapper
 │   ├── DriveRecordings.java      # Recordings on Drive: list, download, share, trash
 │   ├── MediaFile.java            # Chunk filename parser/generator
+│   ├── SessionManifest.java      # What a session recorded (chunks, sizes, SHA-256); gaps against Drive
 │   └── TsaClient.java            # RFC 3161 Time Stamping Authority client (Sectigo)
 │
 │
@@ -232,6 +233,29 @@ Token refreshes are shared: one at a time (`refreshLock`), at most one Play serv
 - `MuxerSink.closeFile()` hands a finished chunk over, still in `recording/`, and deletes empty ones. The service hashes it (TSA on), then renames it into the outbox (`moveToOutbox()`, same filesystem, atomic) and uploads it.
 - `WorkDir.recover()` moves chunks left in `recording/` by a dead process (crash, kill, sudden power cut) into the outbox. Such a chunk has no MP4 index, so it is **repaired**, see Cut Chunk Repair below. `SafeRecService.onCreate()` (in the background: a repair can take seconds) and the outbox job call it.
 - It moves nothing while a recording uses `recording/`. The service calls `WorkDir.acquire()` when a recording starts and `release()` once the post-processing of its last chunk is done (queued on the same executor). Moving the chunk being written would upload half a file, and moving a closed one before its post-processing would skip its TSA hash. One lock covers the counter and the moves, so a recording cannot start in the middle of a recovery. Under it the chunks are only renamed into `repair/`. The repairs run afterwards, under a lock of their own, so a recording start never waits for one.
+
+### Session Manifest
+
+Drive shows which chunks arrived, not which ones should have. `SessionManifest` keeps the list of what a session recorded: plain text a third party can read, one line per event, with Drive names, sizes and SHA-256.
+
+```
+started 0 1792426343499.0.mp4                       ← the chunk got its first sample
+chunk 0 1792426343499.0.mp4 1107234 sha256=4fb5…    ← closed
+repaired 1 ….1.mp4 359569 sha256=… original ….1.cut 359569 sha256=…
+cut 2 ….2.mp4 12345 sha256=…                        ← recovered as it was (no usable log)
+```
+
+- **When.** `started` comes from `MuxerSink` at a chunk's first sample, not when its file opens: an empty chunk is deleted at close and must not look lost. `chunk` comes from the post-processing, with the hash taken before the chunk enters the outbox (now always, not only with timestamping on). `repaired` and `cut` come from the recovery (`ChunkRepair.beforeOutbox()`).
+- **Where.** The master stays on the phone (`files/manifests/`, never deleted: a recovery days later appends to it). After each line a full copy goes to the outbox, and Drive keeps one copy, `{sessionId}.0.manifest` (`text/plain`), replaced in place (`files.update`, allowed by `drive.file` on the app's own files; the id is cached, so an update is one request).
+- **A copy replaced while it uploads.** The next line can replace the outbox copy during its upload. The upload sends the bytes read at its start, then deletes the local copy only if it did not change, and otherwise sends the newer one too.
+- **Timestamp.** With timestamping on, the manifest is timestamped when a recording stops (after its last chunk's line) and after a recovery changed it, as `{sessionId}.0.manifest.tsa`. Not after every chunk: that would double the requests to the TSA. The token proves the list of chunks and their hashes at that time, so a chunk removed from Drive later shows. The master is hashed under the manifest's lock, and the TSA asked outside it, so new lines never wait for the network.
+- **Gaps in the list.** `DriveRecordings` reads each session's manifest and compares it with the `.mp4` files on Drive. Each missing chunk is "still on this phone" (outbox, `recording/` or `repair/`) or "recorded but missing on Drive". The session header shows it in red, also for a session with no chunk left on Drive. Gaps are computed from the manifest, not from consecutive sequence numbers, which can skip legitimately (an empty chunk).
+- **Trash.** Selecting every chunk of a session also selects its manifest and timestamp, so the session folder empties and goes to the trash too.
+- **Verified on a Galaxy S10+:**
+  - A 25 s recording left one manifest on Drive with `started` and `chunk` lines for chunks 0-2, whose sizes and SHA-256 matched the downloaded chunks.
+  - The manifest's timestamp held the SHA-256 of the manifest on Drive.
+  - Once chunk 1 was trashed on Drive, the list showed "Recorded but missing on Drive: chunk 1".
+- **Lessons from the test.** Drive's search (`files.list` with `trashed=false`) still returned a just-trashed file for a few seconds. And a JSON body passed through `adb shell` lost its double quotes: Drive ignored the body and answered with the file, which looked like a success.
 
 ### Cut Chunk Repair
 
@@ -509,9 +533,12 @@ Security note:
 
 ```
 /data/data/net.ark3us.saferec/files/
-  ├── recording/                                      ← chunk being written
-  └── data_store/                                     ← outbox, complete chunks only
-      └── {sessionId}_{video|audio}_{timestamp}.{seq}
+  ├── recording/                                      ← chunk being written, with its sample log (.idx)
+  ├── repair/                                         ← cut chunks taken from recording/ for their repair
+  ├── manifests/{sessionId}_{video|audio}.txt         ← session manifest masters, kept
+  └── data_store/                                     ← outbox, ready files only
+      ├── {sessionId}_{video|audio}_{timestamp}.{seq}.mp4 / .tsa / .cut / .cut.tsa
+      └── {sessionId}_{video|audio}_{sessionId}.0.manifest / .manifest.tsa  ← copies to upload
 ```
 
 `sessionId` = `System.currentTimeMillis()` at session start.
@@ -523,7 +550,12 @@ My Drive/
   └── SafeRec/
       └── {sessionId}/
           └── {video|audio}/
-              └── {timestamp}.{seq}.mp4
+              ├── {timestamp}.{seq}.mp4        ← chunk (or the repaired copy of a cut one)
+              ├── {timestamp}.{seq}.tsa        ← its RFC 3161 timestamp (timestamping on)
+              ├── {timestamp}.{seq}.cut        ← a repaired chunk's untouched original
+              ├── {timestamp}.{seq}.cut.tsa    ← the original's timestamp, taken at recovery
+              ├── {sessionId}.0.manifest       ← session manifest, one copy, updated in place
+              └── {sessionId}.0.manifest.tsa   ← its timestamp, at stop and after a recovery
 ```
 
 Chunks are uploaded immediately on completion and **deleted locally** on successful upload. When duplicate `SafeRec` folders exist (made by older builds), uploads go to the oldest and the recordings list reads all of them.
@@ -620,6 +652,7 @@ Unit tests (JVM, no phone, under a second): `./gradlew testDebugUnitTest`.
   - a repair cut short starting over, leftovers and stray logs dropped;
   - timestamps made before the outbox going along with their chunk, an unrepaired chunk timestamped as it is, a timestamp left in `repair/` sent as it is.
 - `SampleJournalTest`: round trip, a record cut short, a foreign file.
+- `SessionManifestTest`: line format, the last state of each chunk (a late `started` never undoing it), gaps split into on this phone and lost, no gap in a complete session, the manifest and its timestamp updated in place.
 - `ChunkIndexTest`, on synthetic chunks laid out like MPEG4Writer's:
   - every sample of a cut chunk found in place;
   - a complete chunk left alone;
