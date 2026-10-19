@@ -29,6 +29,9 @@ A short guide plus script (`openssl ts -verify -data chunk.mp4 -in chunk.tsa -CA
 
 ## Upload reliability
 
+### Outbox drained by WorkManager
+When the app is not recording, chunks still waiting for the network are uploaded only while the service lives: in the foreground (capped at 6 h a day on Android 15+), or after a sticky restart until Android stops the background service. A unique, persisted `WorkManager` job with a network constraint, enqueued when the service stops with a non-empty outbox, would upload them days later and after a reboot, with no notification. The job and the service must share the uploader's in-flight set, or a chunk could be uploaded twice.
+
 ### Say when Drive is full
 Drive answers HTTP 403 `storageQuotaExceeded` when the account is full. Today that is retried forever, silently. Report it as its own error ("Drive is full: recordings stay on the phone") so the user can free space before an emergency, not after.
 

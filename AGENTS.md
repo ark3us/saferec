@@ -385,7 +385,7 @@ Foreground service orchestrating the recording. Commands via `Intent` extras:
 
 | Command | Action |
 |---------|--------|
-| `CMD_START` | If already recording: stop + restart (camera switch). Otherwise: start new recording |
+| `CMD_START` | (`startForegroundService`) If already recording: stop + restart (camera switch). Otherwise: start new recording |
 | `CMD_STOP` | Stop recording, reset session |
 | `CMD_UPLOAD_PENDING` | Upload the outbox now (safe while recording) |
 | `CMD_DELETE` | Move Drive files (`EXTRA_FILE_IDS`) to the Drive trash, never delete them for good. Folders (`EXTRA_FOLDER_IDS`) are trashed only when they hold nothing, not even trashed files. Deleting a folder for good would also delete the trashed files in it, and keeping it lets Drive's "Restore" put files back where they were. |
@@ -395,6 +395,20 @@ State is broadcast via [LiveData](file:///home/ark3us/Filen/Dev/SafeRec/app/src/
 Errors are a separate one-shot channel (`reportError()` / `getError()` / `clearError()`): `ERROR_AUTH` (Drive needs re-authentication), `ERROR_CAMERA` (camera lost, recording continues audio-only), `ERROR_RECORDING` (nothing can be recorded). Errors never change the recording status and never stop a recording.
 
 Camera/encoder callbacks are posted to the main thread (`onVideoResult`) and ignored if they belong to a previous session.
+
+**Foreground lifecycle** (`refreshForeground()`, always on the main thread, posted after each state change):
+
+| State | Foreground | Notification |
+|-------|------------|--------------|
+| Recording video | `camera\|microphone` | Recording in progress |
+| Recording audio only | `microphone` | Recording in progress |
+| Not recording; files in the outbox, uploads, TSA or trashing running | `dataSync` | What is running, or "N files waiting to be uploaded" |
+| Nothing left | leaves the foreground, `stopSelfResult(lastStartId)` | none |
+
+- Only `CMD_START` is sent with `startForegroundService()`, and the service enters the foreground before anything else. Other commands use `startService()`: with `startForegroundService()` the service would have to enter the foreground even with nothing to do, or crash.
+- Work counters (`activeTimestamping`, `activeDeletions`) go up when the work is submitted, not when its task starts. Otherwise the service could stop in between and drop the work.
+- Sticky restart after the process was killed: Android forbids entering the foreground from the background, so the service never tries. It resumes the outbox as a plain background service for as long as Android lets it run. Verified on a Galaxy S10+: the waiting chunk was uploaded after the kill, with no crash.
+- Android 15+ caps `dataSync` at 6 h a day: `onTimeout()` stops the service, and the outbox waits on disk for the next launch or recording.
 
 ### [Settings](file:///home/ark3us/Filen/Dev/SafeRec/app/src/main/java/net/ark3us/saferec/misc/Settings.java#7-78) — [Settings.java](file:///home/ark3us/Filen/Dev/SafeRec/app/src/main/java/net/ark3us/saferec/misc/Settings.java)
 
