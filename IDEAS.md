@@ -41,6 +41,9 @@ A folder `create` whose response is lost (timeout) can still succeed on Drive. P
 ### Drive repair tool
 One button in the recordings screen that merges duplicate `SafeRec` (and session) folders made by older builds into the oldest one, then deletes the empty duplicates.
 
+### One merged file per orientation
+An MP4 holds one orientation hint, so merging a session where the phone was turned shows some segments sideways. When the hints differ, write one merged file per run of equal hints (`merged_<session>_1.mp4`, `_2` …) instead of one wrong file. No re-encoding, and every part plays upright.
+
 ## Quality and testing
 
 ### In-app chunk health check
