@@ -192,30 +192,24 @@ public class GoogleDriveClient {
      * the uploader's lock, let concurrent uploads create the same folders twice.
      */
     public com.google.api.services.drive.model.File uploadFile(File localFile, String name, String mimeType,
-            String parentFolderId, long timestampMillis) {
-        try {
-            com.google.api.services.drive.model.File meta = new com.google.api.services.drive.model.File();
-            meta.setName(name);
+            String parentFolderId, long timestampMillis) throws IOException {
+        com.google.api.services.drive.model.File meta = new com.google.api.services.drive.model.File();
+        meta.setName(name);
 
-            if (timestampMillis > 0) {
-                DateTime dt = new DateTime(timestampMillis);
-                meta.setCreatedTime(dt);
-                meta.setModifiedTime(dt);
-            }
-
-            meta.setParents(Collections.singletonList(parentFolderId));
-
-            FileContent media = new FileContent(mimeType, localFile);
-
-            return driveService.files()
-                    .create(meta, media)
-                    .setFields("id,name,parents,webViewLink")
-                    .execute();
-
-        } catch (Exception e) {
-            Log.e(TAG, "Failed to upload file to Google Drive", e);
-            return null;
+        if (timestampMillis > 0) {
+            DateTime dt = new DateTime(timestampMillis);
+            meta.setCreatedTime(dt);
+            meta.setModifiedTime(dt);
         }
+
+        meta.setParents(Collections.singletonList(parentFolderId));
+
+        FileContent media = new FileContent(mimeType, localFile);
+
+        return driveService.files()
+                .create(meta, media)
+                .setFields("id,name,parents,webViewLink")
+                .execute();
     }
 
     public void downloadFile(String fileId, OutputStream outputStream) throws IOException {
