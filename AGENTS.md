@@ -245,6 +245,11 @@ MediaMuxer writes the MP4 index (`moov`) only when a chunk is closed. A crash, a
 - **What is lost:** the samples MediaMuxer still held in memory when the process died (~0.5 s), and on a real power loss whatever had not reached the flash yet.
 - **Verified on a Galaxy S10+:** a force stop 5 s into a chunk left 472 KB and a 6.5 KB log. The repaired copy played 4.2 s (126 video, 178 audio samples, 0 decode errors with ffmpeg, rotation kept). The `.cut` on Drive had the same SHA-256 as the cut file on the phone, and the list showed the label.
 - There is one `GoogleDriveFileUploader` per process (`getInstance()`), shared by the recording, `CMD_UPLOAD_PENDING` and the outbox job. The `queuedFiles` dedupe, the folder lock and the token refresh therefore cover all of them: two uploaders would each create the same Drive folders, or upload the same chunk twice.
+- **No upload twice.** An upload can reach Drive while its answer never comes back: the process dies, or a timeout. The file then stays in the outbox and goes again, and Drive used to hold the chunk twice (seen three times with a force stop during an upload). Merging the session repeated it.
+  - A chunk or `.tsa` that just entered the outbox is queued with `uploadNew()`: its first upload cannot be a repeat, so it goes straight.
+  - Every other attempt is a retry, or a file found by a scan (maybe left mid-upload by a dead process). Those first ask Drive for that name in the session folder (`findFile()`). The same MD5 means the upload already happened: the local file is just deleted ("Already on Drive"). Another MD5 is uploaded anyway: evidence is never dropped on a guess.
+  - Only the caller that queues the file decides it is new (a flag on the queuing, no shared set). If a scan queued it first, that upload checks, at the cost of one request.
+  - Verified with the force-stop test that had duplicated chunk 0 three times out of three: the retry found it on Drive, and the session held each file once.
 - Each upload uses the token the app stored last, unless Drive already rejected it. The uploader lives as long as the process, across services, and the user may have reconnected Drive meanwhile.
 
 Who retries depends on whether the service is alive:
@@ -592,7 +597,6 @@ R8 shrinks and optimizes the release (`isMinifyEnabled`, `isShrinkResources` in 
 9. **Sharing is per person.** The share button grants one Google account read access to the whole `SafeRec` folder, future sessions included, and Google emails that person. The app never creates "anyone with the link" access, and it cannot revoke a share: that is done in Drive.
 10. **Android decides when the outbox job runs.** The delayed job of an app in the background can be held for over half an hour. The expedited one covers the cases the app sees coming (service stopped, boot), so this matters after a kill without notice: those chunks wait for that delayed job or the next app launch. In Doze jobs wait for a maintenance window, an app the user rarely opens gets fewer runs (App Standby buckets) and less expedited quota, and after repeated failed runs the job waits up to 5 h. A force stop cancels the jobs until the app leaves the stopped state. After a reboot nothing runs before the first unlock, because the outbox is in credential-encrypted storage. While the service lives, none of this applies.
 11. **A sudden power cut still costs the last moment.** Without a clean shutdown (a battery that fails before Android's ~1% shutdown, a kernel crash), the open chunk is cut. It is repaired from its sample log and uploaded after the boot without opening the app, but the last ~0.5 s that MediaMuxer held in memory is lost. On a real power loss, so is what had not reached the flash yet. Without a usable log the cut chunk is uploaded as it is, and plays only after repair tools.
-12. **An upload cut by the process dying can land twice.** When Drive already got a chunk but the process died before the answer, the file is still in the outbox and goes again. Seen three times with a force stop ~5 s into an upload: Drive then held chunk 0 twice, and merging that session would repeat it. A timeout after Drive got the file does the same.
 
 ---
 
@@ -620,9 +624,10 @@ Unit tests (JVM, no phone, under a second): `./gradlew testDebugUnitTest`.
   - queuing once while uploading;
   - retry from the outbox, and no retry with the loop off;
   - a success releasing waiting files at once, and `retryNow()`;
-  - `drain()`: empty outbox, a failure, waiting for an upload already running, chunks recorded meanwhile, stopping.
+  - `drain()`: empty outbox, a failure, waiting for an upload already running, chunks recorded meanwhile, stopping;
+  - repeat uploads: a new file's first upload goes straight, a retry and a file found in the outbox ask the server first.
 
-  Breaking the dedupe, the success trigger, the loop switch or any `drain()` rule fails the matching test (checked by mutation).
+  Breaking the dedupe, the success trigger, the loop switch, any `drain()` rule or the repeat check fails the matching test (checked by mutation).
 
 
 `scripts/device-tests.sh` drives a connected phone (debug build) and checks logcat, the chunk store and chunk durations with ffprobe. Scenarios: `offline_start`, `audio_only`, `camera_stolen`, `replay`, `errors_dont_stop`, `network_drop`, `retry_after_outage`, `outbox_job`, `tsa`, `av_sync`, plus a whole-run crash check. It toggles airplane mode, records camera and mic, rewrites SafeRec settings, and restores everything on exit. It refuses to run if the outbox or `recording/` is not empty.
