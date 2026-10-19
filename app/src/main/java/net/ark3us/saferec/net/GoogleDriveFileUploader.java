@@ -144,16 +144,17 @@ public class GoogleDriveFileUploader extends FileUploader {
                     Identity.getAuthorizationClient(context).authorize(req),
                     30, TimeUnit.SECONDS);
 
+            // Report, but keep the stored token: Play services also ask for user interaction
+            // when they cannot reach Google, and a cleared token stopped every later upload
+            // (pending scans skip without one) until the user reopened the app.
             if (authResult.hasResolution()) {
-                Log.e(TAG, "Silent refresh requires user interaction (resolution). Failing.");
-                Settings.setAccessToken(context, null);
+                Log.e(TAG, "Silent refresh requires user interaction (resolution), keeping files");
                 LiveData.getInstance().reportError(LiveData.ERROR_AUTH);
                 return false;
             }
             String newToken = authResult.getAccessToken();
             if (newToken == null) {
-                Log.e(TAG, "Silent refresh returned null token. Failing.");
-                Settings.setAccessToken(context, null);
+                Log.e(TAG, "Silent refresh returned null token, keeping files");
                 LiveData.getInstance().reportError(LiveData.ERROR_AUTH);
                 return false;
             }
