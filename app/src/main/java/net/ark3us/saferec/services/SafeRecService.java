@@ -27,6 +27,7 @@ import net.ark3us.saferec.misc.Settings;
 import net.ark3us.saferec.net.DriveRecordings;
 import net.ark3us.saferec.net.TsaClient;
 import net.ark3us.saferec.net.GoogleDriveFileUploader;
+import net.ark3us.saferec.net.OutboxWorker;
 
 import java.io.File;
 import java.util.Arrays;
@@ -51,9 +52,8 @@ public class SafeRecService extends Service {
     public static final String STATUS_STARTED = "STARTED";
     public static final String STATUS_STOPPED = "STOPPED";
     private static final String TAG = "SafeRecService";
-    // Chunks being written live in WORK_DIR; complete ones wait in OUTBOX_DIR until uploaded
+    // Chunks being written live in WORK_DIR; complete ones wait in the uploader's outbox
     private static final String WORK_DIR = "recording";
-    private static final String OUTBOX_DIR = "data_store";
     private VideoStreamRecorder videoRecorder;
     private AudioStreamRecorder audioRecorder;
     private MuxerSink sink;
@@ -71,7 +71,7 @@ public class SafeRecService extends Service {
     private int activeTimestamping = 0;
     private String currentSessionId;
     private String errorMessage;
-    private volatile GoogleDriveFileUploader sharedUploader; // read by the network callback thread
+    private GoogleDriveFileUploader uploader; // set in onCreate, before any other thread uses it
     private ConnectivityManager.NetworkCallback networkCallback;
     private int currentSequenceNumber = 0;
 
@@ -92,6 +92,17 @@ public class SafeRecService extends Service {
         super.onCreate();
         NotificationHelper.createNotificationChannel(this);
         recoverInterruptedChunks();
+        // Shared with the outbox job. While the service lives it retries on its own; once
+        // it is gone, the job takes over.
+        uploader = GoogleDriveFileUploader.getInstance(this);
+        uploader.setListener(num -> {
+            activeUploads = num;
+            updateNotification();
+        });
+        uploader.setRetryLoop(true);
+        if (pendingFiles() > 0) {
+            OutboxWorker.schedule(this);
+        }
         registerNetworkCallback();
     }
 
@@ -100,7 +111,7 @@ public class SafeRecService extends Service {
     }
 
     private File outboxDir() {
-        return new File(getFilesDir(), OUTBOX_DIR);
+        return GoogleDriveFileUploader.outboxDir(this);
     }
 
     /**
@@ -292,8 +303,6 @@ public class SafeRecService extends Service {
         }
         String sessionId = currentSessionId;
         Log.i(TAG, "Starting recording session id=" + sessionId + " sequence=" + currentSequenceNumber);
-        
-        GoogleDriveFileUploader uploader = ensureUploader();
 
         boolean includeVideo = !Settings.onlyAudio(this);
         String dataType = includeVideo ? MuxerSink.DATA_TYPE_VIDEO : MuxerSink.DATA_TYPE_AUDIO;
@@ -313,7 +322,7 @@ public class SafeRecService extends Service {
                         activeTimestamping++;
                     }
                     updateNotification();
-                    tsaExecutor.execute(() -> timestampChunk(uploader, file, hash));
+                    tsaExecutor.execute(() -> timestampChunk(file, hash));
                 }
             });
         };
@@ -372,7 +381,7 @@ public class SafeRecService extends Service {
         }
     }
 
-    private void timestampChunk(GoogleDriveFileUploader uploader, File chunkFile, byte[] hash) {
+    private void timestampChunk(File chunkFile, byte[] hash) {
         try {
             String path = chunkFile.getAbsolutePath();
             int dotIndex = path.lastIndexOf('.');
@@ -412,20 +421,6 @@ public class SafeRecService extends Service {
         updateNotification();
     }
 
-    /** One uploader per service: it owns the outbox retry loop and the duplicate guard. */
-    private synchronized GoogleDriveFileUploader ensureUploader() {
-        if (sharedUploader == null) {
-            GoogleDriveFileUploader uploader = new GoogleDriveFileUploader(this, Settings.getAccessToken(this));
-            uploader.setOutbox(outboxDir());
-            uploader.setListener(num -> {
-                activeUploads = num;
-                updateNotification();
-            });
-            sharedUploader = uploader;
-        }
-        return sharedUploader;
-    }
-
     private void uploadPendingFiles() {
         executor.execute(() -> {
             File baseDir = outboxDir();
@@ -435,7 +430,7 @@ public class SafeRecService extends Service {
                 return;
             }
             Log.i(TAG, "Uploading pending files from " + baseDir.getAbsolutePath());
-            ensureUploader().upload(baseDir);
+            uploader.upload(baseDir);
         });
     }
 
@@ -476,8 +471,7 @@ public class SafeRecService extends Service {
                 current = network;
                 transports = now;
                 validated = nowValidated;
-                GoogleDriveFileUploader uploader = sharedUploader;
-                if (back && uploader != null) {
+                if (back) {
                     Log.i(TAG, "Network changed (transports " + Integer.toBinaryString(now) + ", validated " + nowValidated + "), retrying pending uploads");
                     uploader.retryNow();
                 }
@@ -565,10 +559,9 @@ public class SafeRecService extends Service {
             }
             networkCallback = null;
         }
-        if (sharedUploader != null) {
-            sharedUploader.shutdown();
-            sharedUploader = null;
-        }
+        // Not shut down: uploads still running finish, and the outbox job carries on
+        uploader.setListener(null);
+        uploader.setRetryLoop(false);
         executor.shutdown();
         postProcessExecutor.shutdown();
         tsaExecutor.shutdown();

@@ -10,6 +10,7 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BooleanSupplier;
 
@@ -30,6 +31,7 @@ public class FileUploaderTest {
     static class FakeUploader extends FileUploader {
         final Map<String, AtomicInteger> attempts = new ConcurrentHashMap<>();
         final Set<String> failing = ConcurrentHashMap.newKeySet();
+        final AtomicInteger pendingCalls = new AtomicInteger();
         volatile CountDownLatch gate; // when set, uploads wait for it
 
         FakeUploader(long retryMinMs, long retryMaxMs) {
@@ -48,6 +50,11 @@ public class FileUploaderTest {
                 }
             }
             return !failing.contains(file.getName()) && file.delete();
+        }
+
+        @Override
+        protected void onFilePending(File file) {
+            pendingCalls.incrementAndGet();
         }
 
         int attemptsOf(String name) {
@@ -84,8 +91,16 @@ public class FileUploaderTest {
         }
     }
 
+    /** Like the service: the uploader retries on its own. */
     private void start(long retryMinMs, long retryMaxMs) {
         uploader = new FakeUploader(retryMinMs, retryMaxMs);
+        uploader.setOutbox(outbox);
+        uploader.setRetryLoop(true);
+    }
+
+    /** Like the outbox job after the service is gone: no retry loop, drain() only. */
+    private void startWithoutRetryLoop() {
+        uploader = new FakeUploader(50, 400);
         uploader.setOutbox(outbox);
     }
 
@@ -147,5 +162,98 @@ public class FileUploaderTest {
         uploader.retryNow();
         waitUntil(() -> !a.exists(), 2000);
         assertFalse(a.exists());
+    }
+
+    @Test
+    public void withoutTheRetryLoopAFailedFileWaitsForTheJob() throws Exception {
+        startWithoutRetryLoop();
+        File a = chunk("a.mp4");
+        uploader.failing.add("a.mp4");
+        uploader.upload(a);
+        waitUntil(() -> uploader.pendingCalls.get() == 2, 2000); // queued, then failed
+        Thread.sleep(300); // the loop would have retried after 50 ms
+        assertEquals(1, uploader.attemptsOf("a.mp4"));
+        assertTrue(a.exists());
+    }
+
+    @Test(timeout = 4000) // a broken drain() loops forever
+    public void drainEmptiesTheOutbox() throws Exception {
+        startWithoutRetryLoop();
+        File a = chunk("a.mp4");
+        File b = chunk("b.tsa");
+        assertTrue(uploader.drain(() -> false));
+        assertFalse(a.exists());
+        assertFalse(b.exists());
+    }
+
+    @Test(timeout = 4000) // a broken drain() loops forever
+    public void drainReportsAFailedUpload() throws Exception {
+        startWithoutRetryLoop();
+        File a = chunk("a.mp4");
+        File b = chunk("b.mp4");
+        uploader.failing.add("a.mp4");
+        assertFalse(uploader.drain(() -> false)); // the job must come back later
+        assertTrue(a.exists());
+        assertFalse(b.exists());
+    }
+
+    @Test(timeout = 4000) // a broken drain() loops forever
+    public void drainWaitsForAnUploadAlreadyRunning() throws Exception {
+        start(60_000, 60_000);
+        File a = chunk("a.mp4");
+        CountDownLatch gate = new CountDownLatch(1);
+        uploader.gate = gate;
+        uploader.upload(a); // the recording uploads it
+        waitUntil(() -> uploader.attemptsOf("a.mp4") == 1, 2000);
+
+        AtomicBoolean drained = new AtomicBoolean();
+        Thread job = new Thread(() -> {
+            try {
+                drained.set(uploader.drain(() -> false));
+            } catch (InterruptedException ignored) {
+            }
+        });
+        job.start();
+        Thread.sleep(300);
+        assertTrue(job.isAlive()); // waits for the running upload instead of reporting success
+
+        gate.countDown();
+        job.join(2000);
+        assertTrue(drained.get());
+        assertEquals(1, uploader.attemptsOf("a.mp4")); // never uploaded twice
+    }
+
+    @Test(timeout = 4000) // a broken drain() loops forever
+    public void drainAlsoUploadsChunksRecordedMeanwhile() throws Exception {
+        startWithoutRetryLoop();
+        File a = chunk("a.mp4");
+        CountDownLatch gate = new CountDownLatch(1);
+        uploader.gate = gate;
+        AtomicBoolean drained = new AtomicBoolean();
+        Thread job = new Thread(() -> {
+            try {
+                drained.set(uploader.drain(() -> false));
+            } catch (InterruptedException ignored) {
+            }
+        });
+        job.start();
+        waitUntil(() -> uploader.attemptsOf("a.mp4") == 1, 2000);
+        File b = chunk("b.mp4"); // the next chunk lands while a is uploading
+        gate.countDown();
+        job.join(3000);
+        assertTrue(drained.get());
+        assertFalse(a.exists());
+        assertFalse(b.exists()); // success means an empty outbox
+    }
+
+    @Test(timeout = 4000) // a broken drain() loops forever
+    public void drainStopsWhenAsked() throws Exception {
+        startWithoutRetryLoop();
+        chunk("a.mp4");
+        uploader.gate = new CountDownLatch(1); // the upload hangs
+        long stopAt = System.currentTimeMillis() + 300;
+        long start = System.currentTimeMillis();
+        assertFalse(uploader.drain(() -> System.currentTimeMillis() > stopAt));
+        assertTrue(System.currentTimeMillis() - start < 2000);
     }
 }

@@ -2,6 +2,8 @@ package net.ark3us.saferec.net;
 
 import android.util.Log;
 
+import androidx.annotation.Nullable;
+
 import java.io.File;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -11,6 +13,7 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.BooleanSupplier;
 
 public abstract class FileUploader {
     private static final String TAG = FileUploader.class.getSimpleName();
@@ -27,6 +30,9 @@ public abstract class FileUploader {
     private final Object retryLock = new Object();
     private long retryDelayMs; // guarded by retryLock
     private ScheduledFuture<?> pendingRetry; // guarded by retryLock
+    // Rescans after a failure only make sense while something keeps the process alive
+    private volatile boolean retryLoop = false;
+    private static final long DRAIN_POLL_MS = 200;
 
     protected FileUploader() {
         this(10_000, 5 * 60_000);
@@ -43,18 +49,42 @@ public abstract class FileUploader {
         void onUploadStatusChanged(int activeUploads);
     }
 
-    private UploadListener listener;
+    private volatile UploadListener listener;
 
-    public void setListener(UploadListener listener) {
+    public void setListener(@Nullable UploadListener listener) {
         this.listener = listener;
     }
 
     /** Uploads the file and deletes it locally on success. Returns true on success. */
     public abstract boolean uploadFile(File file);
 
+    /**
+     * A file waits in the outbox and may outlive this process: queued, or its upload failed.
+     * Subclasses schedule a job that survives the process here.
+     */
+    protected void onFilePending(File file) {
+    }
+
     /** Files left in this directory by a failed upload are retried until they get through. */
     public void setOutbox(File dir) {
         outbox = dir;
+    }
+
+    /**
+     * On: a failure rescans the outbox later, 10 s doubling up to 5 min. Off: the file waits
+     * for retryNow(), drain() or the next upload.
+     */
+    public void setRetryLoop(boolean on) {
+        retryLoop = on;
+        if (!on) {
+            synchronized (retryLock) {
+                if (pendingRetry != null) {
+                    pendingRetry.cancel(false);
+                    pendingRetry = null;
+                }
+                retryDelayMs = retryMinMs;
+            }
+        }
     }
 
     protected void notifyStatusChanged() {
@@ -92,6 +122,7 @@ public abstract class FileUploader {
         if (!file.exists() || !queuedFiles.add(path)) {
             return;
         }
+        onFilePending(file);
         uploadExecutor.submit(() -> {
             boolean uploaded = false;
             try {
@@ -105,6 +136,7 @@ public abstract class FileUploader {
             if (uploaded) {
                 onUploadSucceeded();
             } else if (file.exists()) {
+                onFilePending(file);
                 onUploadFailed();
             }
         });
@@ -128,7 +160,7 @@ public abstract class FileUploader {
 
     private void onUploadFailed() {
         File dir = outbox;
-        if (dir == null) {
+        if (dir == null || !retryLoop) {
             return;
         }
         synchronized (retryLock) {
@@ -181,6 +213,50 @@ public abstract class FileUploader {
             return;
         }
         scanExecutor.execute(() -> uploadInternal(fileOrDir));
+    }
+
+    /**
+     * Uploads what waits in the outbox and blocks until it is empty (true), an upload failed
+     * (false) or the caller stops (false). An upload already running, for the recording, is
+     * waited for, never started twice. For the background job, which must know whether to
+     * come back later.
+     */
+    public boolean drain(BooleanSupplier stopped) throws InterruptedException {
+        File dir = outbox;
+        if (dir == null) {
+            return true;
+        }
+        while (!stopped.getAsBoolean()) {
+            File[] files = dir.listFiles(File::isFile);
+            if (files == null || files.length == 0) {
+                return true;
+            }
+            for (File file : files) {
+                submit(file);
+            }
+            while (anyQueued(files)) {
+                if (stopped.getAsBoolean()) {
+                    return false;
+                }
+                Thread.sleep(DRAIN_POLL_MS);
+            }
+            for (File file : files) {
+                if (file.exists() && !queuedFiles.contains(file.getAbsolutePath())) {
+                    return false; // its upload failed
+                }
+            }
+            // Chunks recorded meanwhile: go round again
+        }
+        return false;
+    }
+
+    private boolean anyQueued(File[] files) {
+        for (File file : files) {
+            if (queuedFiles.contains(file.getAbsolutePath())) {
+                return true;
+            }
+        }
+        return false;
     }
 
     public void shutdown() {

@@ -72,6 +72,7 @@ dependencies {
     implementation(libs.activity)
     implementation(libs.constraintlayout)
     implementation(libs.swiperefreshlayout)
+    implementation(libs.work.runtime)
 
     implementation(libs.play.services.auth)
 // Google API Client (Android) + Drive v3 generated library

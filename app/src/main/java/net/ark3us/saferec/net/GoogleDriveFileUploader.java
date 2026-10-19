@@ -40,10 +40,47 @@ public class GoogleDriveFileUploader extends FileUploader {
     private final Object refreshLock = new Object();
     private long lastRefreshMs; // guarded by refreshLock, elapsedRealtime
     private volatile String rejectedToken; // last token Drive answered 401 to
+    // Complete chunks and .tsa replies wait here until uploaded
+    private static final String OUTBOX_DIR = "data_store";
+    private static GoogleDriveFileUploader instance;
 
-    public GoogleDriveFileUploader(Context context, String accessToken) {
+    private GoogleDriveFileUploader(Context context) {
         this.context = context.getApplicationContext();
-        this.driveClient = new GoogleDriveClient(accessToken);
+        this.driveClient = new GoogleDriveClient(Settings.getAccessToken(context));
+        setOutbox(outboxDir(context));
+    }
+
+    /**
+     * One uploader per process, shared by the service and the background job: one folder
+     * lock, one in-flight set and one token refresh, so neither duplicate folders nor
+     * duplicate uploads can happen between them.
+     */
+    public static synchronized GoogleDriveFileUploader getInstance(Context context) {
+        if (instance == null) {
+            instance = new GoogleDriveFileUploader(context);
+        }
+        return instance;
+    }
+
+    public static File outboxDir(Context context) {
+        return new File(context.getFilesDir(), OUTBOX_DIR);
+    }
+
+    @Override
+    protected void onFilePending(File file) {
+        OutboxWorker.schedule(context);
+    }
+
+    /** The app stores a new token whenever the user opens it: the stored one wins, unless Drive rejected it. */
+    @Nullable
+    private String currentToken() {
+        String current = driveClient.getAccessToken();
+        String stored = Settings.getAccessToken(context);
+        if (stored != null && !stored.equals(current) && !stored.equals(rejectedToken)) {
+            driveClient.setAccessToken(stored);
+            return stored;
+        }
+        return current;
     }
 
     private String cacheKey(String sessionId, String dataType) {
@@ -109,7 +146,7 @@ public class GoogleDriveFileUploader extends FileUploader {
             return false;
         }
         Log.i(TAG, "Uploading file (seq=" + mediaFile.sequenceNumber + ") to Google Drive: " + driveName(mediaFile));
-        String token = driveClient.getAccessToken();
+        String token = currentToken();
         if (token == null || token.equals(rejectedToken)) {
             // Drive would only answer 401 again: get a token before sending the chunk
             return refreshToken(token) && retryUpload(file, mediaFile);
