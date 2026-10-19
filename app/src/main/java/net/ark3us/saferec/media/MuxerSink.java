@@ -33,14 +33,18 @@ public class MuxerSink {
     private int pendingRotation = -1; // applied at the next key frame
 
     public interface FileSavedCallback {
+        /**
+         * The chunk is complete and still in workDir. The receiver moves it to the upload
+         * outbox once ready (hashed for the TSA): from there it may be uploaded and deleted
+         * at any time.
+         */
         void onFileSaved(File file);
     }
 
     private final FileSavedCallback fileSavedCallback;
-    // Chunks are written in workDir and moved to storeDir (the upload outbox) only once
-    // closed, so the outbox never holds a half-written file and can be scanned any time.
+    // Chunks are written in workDir and handed over only once closed, so the outbox never
+    // holds a half-written file and can be scanned any time.
     private final File workDir;
-    private final File storeDir;
     private final String dataType;
     private final String sessionId;
     private final ChunkPolicy chunkPolicy;
@@ -85,10 +89,9 @@ public class MuxerSink {
 
     private final List<PendingPacket> pendingPackets = new ArrayList<>();
 
-    public MuxerSink(File workDir, File storeDir, FileSavedCallback fileSavedCallback, String dataType,
+    public MuxerSink(File workDir, FileSavedCallback fileSavedCallback, String dataType,
             String sessionId, ChunkPolicy chunkPolicy) {
         this.workDir = workDir;
-        this.storeDir = storeDir;
         this.fileSavedCallback = fileSavedCallback;
         this.dataType = dataType;
         this.sessionId = sessionId;
@@ -96,10 +99,8 @@ public class MuxerSink {
         this.expectedAudio = true;
         this.expectedVideo = DATA_TYPE_VIDEO.equals(dataType);
 
-        for (File dir : new File[]{workDir, storeDir}) {
-            if (!dir.exists() && !dir.mkdirs()) {
-                Log.e(TAG, "Storage directory cannot be created: " + dir.getAbsolutePath());
-            }
+        if (!workDir.exists() && !workDir.mkdirs()) {
+            Log.e(TAG, "Storage directory cannot be created: " + workDir.getAbsolutePath());
         }
     }
 
@@ -299,9 +300,8 @@ public class MuxerSink {
         }
         if (currentFile != null) {
             if (bytesWritten > 0) {
-                File saved = moveToOutbox(currentFile);
                 if (fileSavedCallback != null) {
-                    fileSavedCallback.onFileSaved(saved);
+                    fileSavedCallback.onFileSaved(currentFile);
                 }
             } else if (!currentFile.delete()) {
                 Log.w(TAG, "Failed to delete empty chunk: " + currentFile.getName());
@@ -309,16 +309,6 @@ public class MuxerSink {
             currentFile = null;
             bytesWritten = 0;
         }
-    }
-
-    /** Atomic rename (same filesystem). On failure the chunk is still handed over from workDir. */
-    private File moveToOutbox(File file) {
-        File target = new File(storeDir, file.getName());
-        if (file.renameTo(target)) {
-            return target;
-        }
-        Log.e(TAG, "Failed to move chunk to outbox: " + file.getName());
-        return file;
     }
 
     // --- Private helpers ---

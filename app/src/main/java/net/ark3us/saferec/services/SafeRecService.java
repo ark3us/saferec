@@ -115,9 +115,10 @@ public class SafeRecService extends Service {
     }
 
     /**
-     * A crash leaves the open chunk in the work dir. It has no MP4 index, but it is
-     * still evidence (recoverable with repair tools), so it goes to the outbox too.
-     * Safe here: no recording can be running before the service is created.
+     * A crash leaves the open chunk in the work dir, and maybe a closed one not moved yet.
+     * The open one has no MP4 index, but it is still evidence (recoverable with repair
+     * tools), so both go to the outbox. Safe here: no recording can be running before the
+     * service is created.
      */
     private void recoverInterruptedChunks() {
         File[] orphans = workDir().listFiles();
@@ -220,10 +221,10 @@ public class SafeRecService extends Service {
         // else: a sticky restart in the background, it runs as a plain service
     }
 
-    /** Android 15+ caps dataSync at 6 h a day. The chunks stay in the outbox for next time. */
+    /** Android 15+ caps dataSync at 6 h a day. The outbox job uploads what is left. */
     @Override
     public void onTimeout(int startId, int fgsType) {
-        Log.w(TAG, "Foreground time limit reached (type " + fgsType + "), stopping; chunks stay in the outbox");
+        Log.w(TAG, "Foreground time limit reached (type " + fgsType + "), stopping; the outbox job takes over");
         stopForeground(STOP_FOREGROUND_REMOVE);
         foregroundType = NOT_FOREGROUND;
         stopSelf();
@@ -309,11 +310,13 @@ public class SafeRecService extends Service {
         ChunkPolicy chunkPolicy = ChunkPolicy.fromSetting(Settings.getChunkSizeMB(this));
         Log.i(TAG, "Chunk policy: " + chunkPolicy);
 
-        MuxerSink.FileSavedCallback callback = file -> {
+        MuxerSink.FileSavedCallback callback = closed -> {
             postProcessExecutor.execute(() -> {
-                Log.i(TAG, "Processing saved chunk: " + file.getName());
-                // Hash before uploading: the uploader deletes the local file once it is on Drive
-                byte[] hash = Settings.isTimestampingEnabled(this) ? TsaClient.sha256(file) : null;
+                Log.i(TAG, "Processing saved chunk: " + closed.getName());
+                // Hash before the chunk enters the outbox: from there a rescan or the outbox
+                // job may upload and delete it at any time
+                byte[] hash = Settings.isTimestampingEnabled(this) ? TsaClient.sha256(closed) : null;
+                File file = moveToOutbox(closed);
                 // The chunk is the evidence: it never waits for the TSA, the timestamp can come later
                 uploader.upload(file);
                 if (hash != null) {
@@ -327,7 +330,7 @@ public class SafeRecService extends Service {
             });
         };
 
-        sink = new MuxerSink(workDir(), outboxDir(), callback, dataType, sessionId, chunkPolicy);
+        sink = new MuxerSink(workDir(), callback, dataType, sessionId, chunkPolicy);
         sink.setSequenceNumber(currentSequenceNumber);
         audioRecorder = new AudioStreamRecorder(this);
         if (includeVideo) {
@@ -379,6 +382,17 @@ public class SafeRecService extends Service {
             ServiceState.getInstance().reportError(ServiceState.ERROR_RECORDING);
             stopRecording();
         }
+    }
+
+    /** Atomic rename (same filesystem). On failure the chunk is uploaded from the work dir. */
+    private File moveToOutbox(File chunk) {
+        File outbox = outboxDir();
+        File target = new File(outbox, chunk.getName());
+        if ((outbox.isDirectory() || outbox.mkdirs()) && chunk.renameTo(target)) {
+            return target;
+        }
+        Log.e(TAG, "Failed to move chunk to outbox: " + chunk.getName());
+        return chunk;
     }
 
     private void timestampChunk(File chunkFile, byte[] hash) {

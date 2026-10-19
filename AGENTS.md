@@ -82,7 +82,7 @@ The app exists to save evidence when things go wrong. Keep these invariants:
 3. **Network errors are not auth errors.** Only HTTP 401 triggers a token refresh. The background never clears the stored token: when a silent refresh needs user interaction, it reports `ERROR_AUTH` and keeps the files. Play services also ask for interaction when they cannot reach Google, and a cleared token stopped every later upload until the user reopened the app.
 4. **Chunks never wait for the TSA.** Hash first, upload, then timestamp the hash.
 5. **Degrade gracefully.** Camera lost → continue audio-only.
-6. **The outbox holds complete chunks only.** A chunk is written in `recording/` and moved to `data_store/` when closed, so the outbox can be uploaded at any time, even mid-recording.
+6. **The outbox holds ready chunks only.** A chunk is written in `recording/` and moved to `data_store/` once closed and hashed for the TSA, so the outbox can be uploaded at any time, even mid-recording. Hashing after the move let a rescan or the outbox job upload and delete a chunk before its hash was taken, leaving it without a timestamp.
 7. **A failed lookup is not "not found".** Drive folders are created only when Drive answered that they do not exist, and only under the uploader's lock. Treating a timeout as "not found" created duplicate `SafeRec` folders and split sessions between them.
 8. **The outbox outlives the service.** Every file waiting in the outbox has a WorkManager job behind it, so a chunk recorded offline reaches Drive after a kill or a reboot without the user opening the app.
 
@@ -149,7 +149,7 @@ sequenceDiagram
 
     MA->>SRS: startForegroundService(CMD_START)
     SRS->>SRS: startRecording()
-    SRS->>MS: new MuxerSink(workDir, outboxDir, callback, dataType, sessionId, ChunkPolicy.fromSetting(MB))
+    SRS->>MS: new MuxerSink(workDir, callback, dataType, sessionId, ChunkPolicy.fromSetting(MB))
     SRS->>VSR: start(context, muxer, useFront, surfaceTexture, callback)
     VSR->>VSR: initCamera() → syncQuality, ensureCameraThread, choosePreviewSize
     VSR->>VSR: setupEncoder() → MediaCodec (H.264), createInputSurface
@@ -179,11 +179,12 @@ sequenceDiagram
     VSR-->>MS: writeVideoData(buffer, info)
     MS->>MS: (keyFrame && chunk full: 10 s or manual MB) OR device rotated?
     alt Chunk complete
-        MS->>MS: rotate() → closeFile() → move recording/ → data_store/ + onFileSaved(chunk)
+        MS->>MS: rotate() → closeFile() → onFileSaved(chunk, still in recording/)
         MS-->>SRS: onFileSaved() callback
         alt Timestamping enabled
-            SRS->>FTSA: sha256(chunkFile) (local, before upload deletes it)
+            SRS->>FTSA: sha256(chunkFile) (before it enters the outbox)
         end
+        SRS->>SRS: moveToOutbox(chunk): recording/ → data_store/
         SRS->>GDFU: upload(mediaFile) (never waits for the TSA)
         alt Timestamping enabled
             SRS->>FTSA: timestampHash(hash, tsaFile) on tsaExecutor
@@ -223,7 +224,7 @@ Token refreshes are shared: one at a time (`refreshLock`), at most one Play serv
 | `recording/` | The chunk being written |
 | `data_store/` | The outbox: complete chunks and `.tsa` replies waiting for upload |
 
-- `MuxerSink.closeFile()` renames a finished chunk into the outbox (same filesystem, atomic) and deletes empty ones.
+- `MuxerSink.closeFile()` hands a finished chunk over, still in `recording/`, and deletes empty ones. The service hashes it (TSA on), then renames it into the outbox (`moveToOutbox()`, same filesystem, atomic) and uploads it.
 - `SafeRecService.onCreate()` moves orphans left in `recording/` by a crash or kill into the outbox. Such a chunk has no MP4 index and may not play, but it is kept as evidence.
 - There is one `GoogleDriveFileUploader` per process (`getInstance()`), shared by the recording, `CMD_UPLOAD_PENDING` and the outbox job. The `queuedFiles` dedupe, the folder lock and the token refresh therefore cover all of them: two uploaders would each create the same Drive folders, or upload the same chunk twice.
 - Each upload uses the token the app stored last, unless Drive already rejected it. The uploader lives as long as the process, across services, and the user may have reconnected Drive meanwhile.
@@ -554,7 +555,9 @@ Unit tests (JVM, no phone, under a second): `./gradlew testDebugUnitTest`.
   - `scripts/av_lag.py` cross-correlates the buzz envelope with the motion on textured pixels, per chunk.
   - It records 50 s and measures every chunk after the switch with a clear correlation peak. It passes when the median lag is within ±250 ms and at most one chunk is more than 40 ms from it. One chunk can lock onto a stray movement or noise, which once failed a run that two reruns passed. It skips when the camera used after the switch sees too dark a scene (the phone must lie so that camera sees a lit room).
   - Its own FAIL on the pre-fix build (+540..570 ms) confirmed it catches the bug.
-- `outbox_job` records offline and then ends the service the way Android does. It shortens the `dataSync` time limit to 20 s (`device_config put activity_manager data_sync_fgs_timeout_duration`, removed afterwards), so `onTimeout()` stops the service. Then `am kill` removes the cached process. Back online, it waits for the job's own run (~5 min, nothing forced) and checks that the job uploaded every chunk from a new process with no service. `run-as kill` cannot do this: SELinux forbids it, and `am force-stop` would cancel the job too.
+- `outbox_job` records offline and then ends the service the way Android does. It shortens the `dataSync` time limit to 20 s (`device_config put activity_manager data_sync_fgs_timeout_duration`, removed afterwards), so `onTimeout()` stops the service. The limit must be set before the stop: Android fixes it when `dataSync` starts. Back online, it waits for the job's own run (~5 min, nothing forced) and checks that the job uploaded every chunk with no service alive.
+  - The process is not killed. `run-as kill` is forbidden by SELinux, and `am force-stop` cancels the job.
+  - `am kill` is logged as a user request (`REASON_USER_REQUESTED`), and WorkManager takes that for a force stop. Its rescheduling finished the system job while the worker still ran. Android 16 then cut the network of the job-less background process after 5 s ("Software caused connection abort"). A real low-memory kill is logged differently.
 - Media scenarios also check that no frame is dropped at a chunk boundary (`Skipping … frame`), and that the first video frame is 0-1000 ms old on the shared clock (proof that both tracks use one clock).
 - Checks read the host-side logcat capture (`full.log`), not the device buffer: failed uploads log long stack traces and the device buffer silently drops old lines.
 - Drive scenarios (`errors_dont_stop`, `network_drop`, `retry_after_outage`, `tsa`) need a Google consent given once in the app. The OAuth client only accepts builds whose signing SHA-1 is registered in the Cloud Console, so a new dev machine's debug key must be added there first.
