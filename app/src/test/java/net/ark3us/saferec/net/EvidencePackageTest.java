@@ -110,10 +110,10 @@ public class EvidencePackageTest {
                 new EvidencePackage.Row(0, "1792429747336.0.mp4", 1140800, "da36fd", "2026-10-19 17:09:17 UTC", null),
                 new EvidencePackage.Row(1, "1792429758115.1.mp4", 465349, "bbe152", null, "repaired"));
         String report = EvidencePackage.report(labels, SESSION, "video", "2026-10-19 19:09:06 CEST", "0:15",
-                "present, timestamped", "", rows);
+                "present, timestamped", "", "Checked on this phone: NOT VERIFIED\n  - chunk 2 is missing", rows);
         assertTrue(report, report.startsWith("SafeRec session " + SESSION + "\n"));
         assertTrue(report, report.contains("Chunks: 2\n"));
-        assertTrue(report, report.contains("Gaps: none\n"));
+        assertTrue(report, report.contains("Gaps: none\nChecked on this phone: NOT VERIFIED\n  - chunk 2 is missing\n\ncolumns\n"));
         assertTrue(report, report.contains("   0  1792429747336.0.mp4       1140800  da36fd  2026-10-19 17:09:17 UTC\n"));
         assertTrue(report, report.contains("   1  1792429758115.1.mp4        465349  bbe152  no timestamp  (repaired)\n"));
         assertTrue(report, report.endsWith("footer\n"));

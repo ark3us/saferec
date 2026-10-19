@@ -56,7 +56,11 @@ public class DriveRecordings {
     }
 
     private static String groupKey(MediaFile file) {
-        return file.sessionId + "|" + file.dataType;
+        return groupKey(file.sessionId, file.dataType);
+    }
+
+    private static String groupKey(String sessionId, String dataType) {
+        return sessionId + "|" + dataType;
     }
 
     /**
@@ -97,6 +101,12 @@ public class DriveRecordings {
     }
 
     /** Sequence numbers of the chunks waiting on this phone, by session and type. */
+    /** The chunks of one session still on this phone (outbox, recording or repair): not on Drive yet. */
+    public Set<Integer> chunksOnThisPhone(String sessionId, String dataType) {
+        Set<Integer> chunks = chunksOnThisPhone().get(groupKey(sessionId, dataType));
+        return chunks != null ? chunks : new HashSet<>();
+    }
+
     private Map<String, Set<Integer>> chunksOnThisPhone() {
         Map<String, Set<Integer>> chunks = new HashMap<>();
         for (File dir : new File[]{GoogleDriveFileUploader.outboxDir(context), WorkDir.dir(context), WorkDir.repairDir(context)}) {

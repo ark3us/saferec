@@ -129,7 +129,7 @@
     <string name="exporting_evidence">Preparazione del pacchetto prove…</string>
     <string name="export_failed">Pacchetto prove non riuscito: %s</string>
     <string name="share_evidence">Condividi il pacchetto prove</string>
-    <string name="evidence_readme">"Pacchetto prove SafeRec, sessione %2$s\nInizio della registrazione: %1$s\n\nCosa contiene\n- merged.mp4: l\'intera registrazione in un solo video, da guardare. È ricomposto dai frammenti qui sotto: le prove sono i frammenti.\n- evidence/: i file della sessione esattamente come sono stati caricati su Google Drive durante la registrazione:\n  - i frammenti video (.mp4), di circa 10 secondi ciascuno;\n  - le loro marche temporali RFC 3161 (.tsa), rilasciate da Sectigo, un ente pubblico di marcatura temporale: ognuna prova che il suo frammento esisteva, immutato, in quel momento;\n  - per un frammento riparato dopo un crash o un\'interruzione di corrente, l\'originale intatto (.cut) e la sua marca temporale (.cut.tsa);\n  - il manifesto della sessione (.manifest), che elenca ogni frammento con la sua impronta SHA-256, e la sua marca temporale (.manifest.tsa).\n- report.txt: la sessione in sintesi.\n- verify_session.py: verifica che le prove siano complete e immutate.\n\nCome verificarle\n1. Installare uv (https://docs.astral.sh/uv/) e assicurarsi che il comando openssl sia disponibile (lo è su Linux e macOS).\n2. Estrarre questo pacchetto, aprire un terminale nella sua cartella ed eseguire:\n   uv run verify_session.py evidence\n3. Il risultato è COMPLETE se ogni frammento elencato nel manifesto è presente e immutato e ogni marca temporale è valida. Altrimenti è NOT VERIFIED, con il motivo.\n\nLe marche temporali esistono solo se nell\'app era attiva la marcatura temporale."</string>
+    <string name="evidence_readme">"Pacchetto prove SafeRec, sessione %2$s\nInizio della registrazione: %1$s\n\nCosa contiene\n- merged.mp4: l\'intera registrazione in un solo video, da guardare. È ricomposto dai frammenti qui sotto: le prove sono i frammenti.\n- evidence/: i file della sessione esattamente come sono stati caricati su Google Drive durante la registrazione:\n  - i frammenti video (.mp4), di circa 10 secondi ciascuno;\n  - le loro marche temporali RFC 3161 (.tsa), rilasciate da Sectigo, un ente pubblico di marcatura temporale: ognuna prova che il suo frammento esisteva, immutato, in quel momento;\n  - per un frammento riparato dopo un crash o un\'interruzione di corrente, l\'originale intatto (.cut) e la sua marca temporale (.cut.tsa);\n  - il manifesto della sessione (.manifest), che elenca ogni frammento con la sua impronta SHA-256, e la sua marca temporale (.manifest.tsa).\n- report.txt: la sessione in sintesi.\n- verify_session.py: verifica che le prove siano complete e immutate.\n\nCome verificarle\n1. Installare uv (https://docs.astral.sh/uv/) e assicurarsi che il comando openssl sia disponibile (lo è su Linux e macOS).\n2. Estrarre questo pacchetto, aprire un terminale nella sua cartella ed eseguire:\n   uv run verify_session.py evidence\n3. Il risultato è COMPLETE se ogni frammento elencato nel manifesto è presente e immutato e ogni marca temporale è valida. Altrimenti è NOT VERIFIED, con il motivo.\n\nQuesto telefono ha eseguito gli stessi controlli quando ha creato il pacchetto: il risultato è in report.txt.\n\nLe marche temporali esistono solo se nell\'app era attiva la marcatura temporale."</string>
     <string name="report_title">Sessione SafeRec %s</string>
     <string name="report_started">Inizio della registrazione</string>
     <string name="report_type">Tipo</string>
@@ -140,7 +140,7 @@
     <string name="report_none">nessuna</string>
     <string name="report_columns">"   #  file                        byte  SHA-256                                                           marca temporale (UTC)"</string>
     <string name="report_no_timestamp">senza marca temporale</string>
-    <string name="report_footer">Le ore delle marche temporali sono lette dai file. Firme e catene di certificati sono verificate da verify_session.py.</string>
+    <string name="report_footer">Le ore delle marche temporali sono lette dai file. Questo telefono ha verificato la sessione quando ha creato il pacchetto (sopra): verify_session.py la verifica di nuovo.</string>
     <string name="report_manifest_timestamped">presente, marca temporale %s</string>
     <string name="report_manifest_later">presente, marca temporale %s; le righe aggiunte dopo non sono coperte da quella marca</string>
     <string name="report_manifest_untimestamped">presente, senza marca temporale</string>
@@ -149,4 +149,27 @@
     <string name="report_gaps_on_phone">frammento %s non ancora su Drive, ancora sul telefono che registrava</string>
     <string name="report_note_repaired">riparato dopo un\'interruzione; originale intatto %s</string>
     <string name="report_note_mismatch">la sua marca temporale non corrisponde al file</string>
+    <string name="report_manifest_invalid">presente, ma la sua marca temporale non lo certifica</string>
+    <string name="report_check">Verificato su questo telefono alla creazione del pacchetto</string>
+    <string name="report_check_complete">COMPLETO: ogni file elencato nel manifesto è presente e immutato (verificati: %1$d), e ogni marca temporale è valida, firma e catena di certificati (verificate: %2$d)</string>
+    <string name="report_check_failed">NON VERIFICATO</string>
+    <string name="report_check_note">nota</string>
+    <string name="check_no_manifest">il manifesto della sessione non è su Drive: non si può verificare quali frammenti sono stati registrati</string>
+    <string name="check_empty_manifest">il manifesto della sessione non elenca alcun frammento</string>
+    <string name="check_never_closed">il frammento %s è stato registrato ma mai chiuso né recuperato</string>
+    <string name="check_missing">%1$s (frammento %2$d) manca</string>
+    <string name="check_altered">%1$s (frammento %2$d) non corrisponde al manifesto: dimensione o SHA-256</string>
+    <string name="check_timestamp_invalid">la marca temporale %s non certifica il suo file, oppure la firma o la catena di certificati non sono valide</string>
+    <string name="check_manifest_edited">il manifesto della sessione è stato modificato dopo la sua marca temporale</string>
+    <string name="check_manifest_untimestamped">il manifesto della sessione non ha marca temporale</string>
+    <string name="check_added_later">il frammento %s è stato aggiunto al manifesto dopo la sua marca temporale, che non lo copre</string>
+    <string name="check_cut">il frammento %s è stato interrotto e non si è potuto riparare: si riproduce solo con strumenti di riparazione</string>
+    <string name="check_not_in_manifest">%s non è nel manifesto</string>
+    <string name="check_still_on_phone">(ancora su questo telefono, non ancora caricato)</string>
+    <string name="check_verified">Verificato su questo telefono: completo</string>
+    <string name="check_dialog_title">Non verificato su questo telefono</string>
+    <string name="check_dialog_on_phone">Alcuni file sono ancora su questo telefono. Caricali, attendi, aggiorna l\'elenco ed esporta di nuovo.</string>
+    <string name="check_dialog_refresh">Se un file mancante è stato caricato dopo l\'apertura dell\'elenco, aggiorna l\'elenco ed esporta di nuovo.</string>
+    <string name="check_share_anyway">Condividi comunque</string>
+    <string name="check_upload_now">Carica ora</string>
 </resources>

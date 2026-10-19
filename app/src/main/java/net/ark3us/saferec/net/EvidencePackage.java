@@ -108,8 +108,9 @@ public final class EvidencePackage {
         }
     }
 
+    /** check: what the phone found when it checked the session (SessionCheck), or null. */
     public static String report(Labels labels, String sessionId, String dataType, String started,
-            String duration, String manifest, String gaps, List<Row> rows) {
+            String duration, String manifest, String gaps, String check, List<Row> rows) {
         StringBuilder text = new StringBuilder();
         text.append(String.format(labels.title, sessionId)).append("\n\n");
         text.append(labels.started).append(": ").append(started).append('\n');
@@ -117,7 +118,11 @@ public final class EvidencePackage {
         text.append(labels.chunks).append(": ").append(rows.size()).append('\n');
         text.append(labels.duration).append(": ").append(duration).append('\n');
         text.append(labels.manifest).append(": ").append(manifest).append('\n');
-        text.append(labels.gaps).append(": ").append(gaps == null || gaps.isEmpty() ? labels.none : gaps).append("\n\n");
+        text.append(labels.gaps).append(": ").append(gaps == null || gaps.isEmpty() ? labels.none : gaps).append('\n');
+        if (check != null && !check.isEmpty()) {
+            text.append(check).append('\n');
+        }
+        text.append('\n');
         text.append(labels.columns).append('\n');
         for (Row row : rows) {
             text.append(String.format(Locale.ROOT, "%4d  %-22s %10d  %s  %s", row.seq, row.name, row.size,

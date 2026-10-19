@@ -123,7 +123,7 @@
     <string name="exporting_evidence">Preparing the evidence package…</string>
     <string name="export_failed">Evidence package failed: %s</string>
     <string name="share_evidence">Share evidence package</string>
-    <string name="evidence_readme">"SafeRec evidence package, session %2$s\nRecording started: %1$s\n\nWhat is inside\n- merged.mp4: the whole recording in one video, to watch. It is put together from the chunks below: the chunks are the evidence.\n- evidence/: the session\'s files exactly as they were uploaded to Google Drive while recording:\n  - video chunks (.mp4), about 10 seconds each;\n  - their RFC 3161 timestamps (.tsa), issued by Sectigo, a public Time Stamping Authority: each proves its chunk existed, unchanged, at that time;\n  - for a chunk repaired after a crash or a power cut, the untouched original (.cut) and its timestamp (.cut.tsa);\n  - the session manifest (.manifest), listing every chunk with its SHA-256 fingerprint, and its timestamp (.manifest.tsa).\n- report.txt: the session at a glance.\n- verify_session.py: checks that the evidence is complete and unchanged.\n\nHow to check it\n1. Install uv (https://docs.astral.sh/uv/) and make sure the openssl command is available (it is on Linux and macOS).\n2. Unzip this package, open a terminal in its folder and run:\n   uv run verify_session.py evidence\n3. It ends with COMPLETE when every chunk listed in the manifest is present and unchanged and every timestamp is valid. Otherwise it says NOT VERIFIED, and why.\n\nTimestamps exist only if timestamping was turned on in the app."</string>
+    <string name="evidence_readme">"SafeRec evidence package, session %2$s\nRecording started: %1$s\n\nWhat is inside\n- merged.mp4: the whole recording in one video, to watch. It is put together from the chunks below: the chunks are the evidence.\n- evidence/: the session\'s files exactly as they were uploaded to Google Drive while recording:\n  - video chunks (.mp4), about 10 seconds each;\n  - their RFC 3161 timestamps (.tsa), issued by Sectigo, a public Time Stamping Authority: each proves its chunk existed, unchanged, at that time;\n  - for a chunk repaired after a crash or a power cut, the untouched original (.cut) and its timestamp (.cut.tsa);\n  - the session manifest (.manifest), listing every chunk with its SHA-256 fingerprint, and its timestamp (.manifest.tsa).\n- report.txt: the session at a glance.\n- verify_session.py: checks that the evidence is complete and unchanged.\n\nHow to check it\n1. Install uv (https://docs.astral.sh/uv/) and make sure the openssl command is available (it is on Linux and macOS).\n2. Unzip this package, open a terminal in its folder and run:\n   uv run verify_session.py evidence\n3. It ends with COMPLETE when every chunk listed in the manifest is present and unchanged and every timestamp is valid. Otherwise it says NOT VERIFIED, and why.\n\nThis phone ran the same checks when it made this package: their result is in report.txt.\n\nTimestamps exist only if timestamping was turned on in the app."</string>
     <string name="report_title">SafeRec session %s</string>
     <string name="report_started">Recording started</string>
     <string name="report_type">Type</string>
@@ -134,7 +134,7 @@
     <string name="report_none">none</string>
     <string name="report_columns">"   #  file                        bytes  SHA-256                                                           timestamp (UTC)"</string>
     <string name="report_no_timestamp">no timestamp</string>
-    <string name="report_footer">Timestamp times are read from the files. Their signatures and certificate chains are checked by verify_session.py.</string>
+    <string name="report_footer">Timestamp times are read from the files. This phone checked the session when it made the package (above): run verify_session.py to check it again.</string>
     <string name="report_manifest_timestamped">present, timestamped %s</string>
     <string name="report_manifest_later">present, timestamped %s; lines added later are not covered by that timestamp</string>
     <string name="report_manifest_untimestamped">present, not timestamped</string>
@@ -143,4 +143,27 @@
     <string name="report_gaps_on_phone">chunk %s not on Drive yet, still on the recording phone</string>
     <string name="report_note_repaired">repaired after a cut; untouched original %s</string>
     <string name="report_note_mismatch">its timestamp does not match the file</string>
+    <string name="report_manifest_invalid">present, but its timestamp does not certify it</string>
+    <string name="report_check">Checked on this phone when the package was made</string>
+    <string name="report_check_complete">COMPLETE: every file the manifest lists is present and unchanged (checked: %1$d), and every timestamp is valid, signature and certificate chain (checked: %2$d)</string>
+    <string name="report_check_failed">NOT VERIFIED</string>
+    <string name="report_check_note">note</string>
+    <string name="check_no_manifest">the session manifest is not on Drive: which chunks were recorded cannot be checked</string>
+    <string name="check_empty_manifest">the session manifest lists no chunk</string>
+    <string name="check_never_closed">chunk %s was recorded but never closed nor recovered</string>
+    <string name="check_missing">%1$s (chunk %2$d) is missing</string>
+    <string name="check_altered">%1$s (chunk %2$d) differs from the manifest: size or SHA-256</string>
+    <string name="check_timestamp_invalid">the timestamp %s does not certify its file, or its signature or certificate chain is not valid</string>
+    <string name="check_manifest_edited">the session manifest was edited after its timestamp</string>
+    <string name="check_manifest_untimestamped">the session manifest has no timestamp</string>
+    <string name="check_added_later">chunk %s was added to the manifest after its timestamp, which does not cover it</string>
+    <string name="check_cut">chunk %s was cut and could not be repaired: it plays only with repair tools</string>
+    <string name="check_not_in_manifest">%s is not in the manifest</string>
+    <string name="check_still_on_phone">(still on this phone, not uploaded yet)</string>
+    <string name="check_verified">Verified on this phone: complete</string>
+    <string name="check_dialog_title">Not verified on this phone</string>
+    <string name="check_dialog_on_phone">Some files are still on this phone. Upload them, wait, refresh the list and export again.</string>
+    <string name="check_dialog_refresh">If a missing file was uploaded after the list was loaded, refresh the list and export again.</string>
+    <string name="check_share_anyway">Share anyway</string>
+    <string name="check_upload_now">Upload now</string>
 </resources>

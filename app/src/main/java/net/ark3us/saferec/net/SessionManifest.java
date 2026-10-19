@@ -59,29 +59,81 @@ public final class SessionManifest {
                 + " sha256=" + hex(originalSha256);
     }
 
+    /** The last state of one chunk in the manifest. Sizes and hashes are only known once it closed. */
+    public static final class Entry {
+        public final int seq;
+        public final String state;
+        public final String name;
+        public long size = -1;
+        public String sha256;
+        public String original; // a repaired chunk's untouched original (.cut)
+        public long originalSize = -1;
+        public String originalSha256;
+        public final int line; // 1-based line of the manifest that gave this state
+
+        Entry(int seq, String state, String name, int line) {
+            this.seq = seq;
+            this.state = state;
+            this.name = name;
+            this.line = line;
+        }
+    }
+
     /**
-     * What the manifest says about each sequence number: the last state of each chunk
-     * ("started" when it never closed). Unknown lines are skipped.
+     * The last state of each chunk, by sequence number ("started" when it never closed).
+     * Unknown or incomplete lines are skipped. Same rules as parse_manifest in
+     * scripts/verify_session.py: keep the two in step.
      */
-    public static Map<Integer, String> parse(String text) {
-        Map<Integer, String> states = new TreeMap<>();
-        for (String line : text.split("\n")) {
-            String[] fields = line.trim().split(" ");
-            if (fields.length < 3 || line.startsWith("#")) {
+    public static Map<Integer, Entry> entries(String text) {
+        Map<Integer, Entry> entries = new TreeMap<>();
+        String[] lines = text.split("\n");
+        for (int i = 0; i < lines.length; i++) {
+            String line = lines[i];
+            String[] fields = line.trim().split("\\s+");
+            if (line.startsWith("#") || fields.length < 3) {
                 continue;
             }
             String state = fields[0];
-            if (!state.equals(STARTED) && !state.equals(CHUNK) && !state.equals(REPAIRED) && !state.equals(CUT)) {
+            boolean closed = state.equals(CHUNK) || state.equals(REPAIRED) || state.equals(CUT);
+            if (!closed && !state.equals(STARTED)) {
                 continue;
             }
+            Entry entry;
             try {
-                int seq = Integer.parseInt(fields[1]);
-                // A late "started" (a repeated recovery) never hides how the chunk ended
-                if (!state.equals(STARTED) || !states.containsKey(seq)) {
-                    states.put(seq, state);
+                entry = new Entry(Integer.parseInt(fields[1]), state, fields[2], i + 1);
+                if (closed) {
+                    entry.size = Long.parseLong(fields[3]);
+                    entry.sha256 = hashField(fields[4]);
                 }
-            } catch (NumberFormatException ignored) {
+                if (state.equals(REPAIRED)) {
+                    entry.original = fields[6];
+                    entry.originalSize = Long.parseLong(fields[7]);
+                    entry.originalSha256 = hashField(fields[8]);
+                }
+            } catch (NumberFormatException | IndexOutOfBoundsException e) {
+                continue;
             }
+            // A late "started" (a repeated recovery) never hides how the chunk ended
+            if (!state.equals(STARTED) || !entries.containsKey(entry.seq)) {
+                entries.put(entry.seq, entry);
+            }
+        }
+        return entries;
+    }
+
+    private static String hashField(String field) {
+        int equals = field.indexOf('=');
+        if (equals < 0) {
+            throw new IndexOutOfBoundsException(field);
+        }
+        return field.substring(equals + 1);
+    }
+
+    /** What the manifest says about each sequence number: the last state of each chunk. */
+    public static Map<Integer, String> parse(String text) {
+        Map<Integer, String> states = new TreeMap<>();
+        for (Entry entry : entries(text).values()) {
+            states.put(entry.seq, entry.state);
         }
         return states;
     }

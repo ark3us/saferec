@@ -17,6 +17,7 @@ import android.widget.Toast;
 
 import androidx.activity.EdgeToEdge;
 import androidx.annotation.NonNull;
+import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.appcompat.widget.Toolbar;
 import androidx.core.content.FileProvider;
@@ -33,6 +34,7 @@ import java.util.HashMap;
 import net.ark3us.saferec.net.TsaClient;
 import net.ark3us.saferec.net.SessionManifest;
 import net.ark3us.saferec.net.EvidencePackage;
+import net.ark3us.saferec.net.SessionCheck;
 import net.ark3us.saferec.misc.Settings;
 import net.ark3us.saferec.net.DriveRecordings;
 import net.ark3us.saferec.services.SafeRecService;
@@ -440,7 +442,13 @@ public class RecordingsActivity extends AppCompatActivity {
                                 merged = null;
                             }
                         }
-                        String report = evidenceReport(sessionId, dataType, chunks, byName, gaps, duration);
+                        // The verifier's checks, now: a chunk missing on Drive may still be on this phone
+                        SessionCheck check = SessionCheck.run(sessionId, byName, SessionCheck.systemRoots());
+                        Set<Integer> onPhone = drive.chunksOnThisPhone(sessionId, dataType);
+                        Log.i(TAG, "Session check of " + sessionId + ": " + (check.ok() ? "COMPLETE" : "NOT VERIFIED") + ", "
+                                + check.checkedFiles + " files and " + check.checkedTimestamps + " timestamps valid"
+                                + (check.findings.isEmpty() ? "" : ", " + check.findings));
+                        String report = evidenceReport(sessionId, dataType, chunks, byName, gaps, duration, check, onPhone);
                         byte[] verifier;
                         try (java.io.InputStream in = getAssets().open("verify_session.py")) {
                             verifier = readAllBytes(in);
@@ -455,11 +463,7 @@ public class RecordingsActivity extends AppCompatActivity {
                                 getPackageName() + ".fileprovider", zip);
                         mainHandler.post(() -> {
                             progressBar.setVisibility(View.GONE);
-                            Intent intent = new Intent(Intent.ACTION_SEND);
-                            intent.setType("application/zip");
-                            intent.putExtra(Intent.EXTRA_STREAM, contentUri);
-                            intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-                            startActivity(Intent.createChooser(intent, getString(R.string.share_evidence)));
+                            offerEvidence(check, onPhone, zip, contentUri);
                         });
                     } catch (Exception e) {
                         Log.e(TAG, "Evidence package failed", e);
@@ -491,13 +495,120 @@ public class RecordingsActivity extends AppCompatActivity {
         });
     }
 
+    /**
+     * Shares a verified package at once. Otherwise says what is wrong first, while it may still
+     * be fixed: a chunk still on this phone can be uploaded, and the package made again.
+     */
+    private void offerEvidence(SessionCheck check, Set<Integer> onPhone, File zip, Uri contentUri) {
+        if (isFinishing() || isDestroyed()) {
+            return;
+        }
+        if (check.ok()) {
+            Toast.makeText(this, R.string.check_verified, Toast.LENGTH_SHORT).show();
+            shareEvidence(contentUri);
+            return;
+        }
+        StringBuilder message = new StringBuilder();
+        boolean missing = false;
+        boolean stillHere = false;
+        for (SessionCheck.Finding problem : check.problems()) {
+            message.append("• ").append(describe(problem, onPhone)).append('\n');
+            if (problem.kind == SessionCheck.Kind.MISSING || problem.kind == SessionCheck.Kind.NEVER_CLOSED) {
+                missing = true;
+                stillHere |= onPhone.contains(problem.seq);
+            }
+        }
+        if (stillHere) {
+            message.append('\n').append(getString(R.string.check_dialog_on_phone));
+        } else if (missing) {
+            message.append('\n').append(getString(R.string.check_dialog_refresh));
+        }
+        AlertDialog.Builder dialog = new AlertDialog.Builder(this)
+                .setTitle(R.string.check_dialog_title)
+                .setMessage(message.toString().trim())
+                .setPositiveButton(R.string.check_share_anyway, (d, which) -> shareEvidence(contentUri))
+                .setNegativeButton(android.R.string.cancel, (d, which) -> zip.delete())
+                .setOnCancelListener(d -> zip.delete());
+        if (stillHere) {
+            dialog.setNeutralButton(R.string.check_upload_now, (d, which) -> {
+                zip.delete();
+                startService(SafeRecService.createCommandIntent(this, SafeRecService.CMD_UPLOAD_PENDING));
+            });
+        }
+        dialog.show();
+    }
+
+    private void shareEvidence(Uri contentUri) {
+        Intent intent = new Intent(Intent.ACTION_SEND);
+        intent.setType("application/zip");
+        intent.putExtra(Intent.EXTRA_STREAM, contentUri);
+        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        startActivity(Intent.createChooser(intent, getString(R.string.share_evidence)));
+    }
+
+    /** One finding of the check, in the app's language. */
+    private String describe(SessionCheck.Finding finding, Set<Integer> onPhone) {
+        String text;
+        switch (finding.kind) {
+            case NO_MANIFEST:
+                text = getString(R.string.check_no_manifest);
+                break;
+            case EMPTY_MANIFEST:
+                text = getString(R.string.check_empty_manifest);
+                break;
+            case NEVER_CLOSED:
+                text = getString(R.string.check_never_closed, String.valueOf(finding.seq));
+                break;
+            case MISSING:
+                text = getString(R.string.check_missing, finding.file, finding.seq);
+                break;
+            case ALTERED:
+                text = getString(R.string.check_altered, finding.file, finding.seq);
+                break;
+            case TIMESTAMP_INVALID:
+                text = getString(R.string.check_timestamp_invalid, finding.file);
+                break;
+            case MANIFEST_EDITED:
+                text = getString(R.string.check_manifest_edited);
+                break;
+            case MANIFEST_UNTIMESTAMPED:
+                text = getString(R.string.check_manifest_untimestamped);
+                break;
+            case ADDED_AFTER_TIMESTAMP:
+                text = getString(R.string.check_added_later, String.valueOf(finding.seq));
+                break;
+            case CUT:
+                text = getString(R.string.check_cut, String.valueOf(finding.seq));
+                break;
+            default:
+                text = getString(R.string.check_not_in_manifest, finding.file);
+                break;
+        }
+        boolean gap = finding.kind == SessionCheck.Kind.MISSING || finding.kind == SessionCheck.Kind.NEVER_CLOSED;
+        return gap && onPhone.contains(finding.seq) ? text + " " + getString(R.string.check_still_on_phone) : text;
+    }
+
+    /** The check's verdict for the report: what this phone found when it made the package. */
+    private String checkSummary(SessionCheck check, Set<Integer> onPhone) {
+        StringBuilder text = new StringBuilder(getString(R.string.report_check)).append(": ");
+        text.append(check.ok() ? getString(R.string.report_check_complete, check.checkedFiles, check.checkedTimestamps)
+                : getString(R.string.report_check_failed));
+        for (SessionCheck.Finding problem : check.problems()) {
+            text.append("\n  - ").append(describe(problem, onPhone));
+        }
+        for (SessionCheck.Finding note : check.notes()) {
+            text.append("\n  - ").append(getString(R.string.report_check_note)).append(": ").append(describe(note, onPhone));
+        }
+        return text.toString();
+    }
+
     private String evidenceReport(String sessionId, String dataType, List<DriveRecordings.RecordingItem> chunks,
-            Map<String, File> byName, SessionManifest.Gaps gaps, String duration) {
+            Map<String, File> byName, SessionManifest.Gaps gaps, String duration, SessionCheck check, Set<Integer> onPhone) {
         List<EvidencePackage.Row> rows = new ArrayList<>();
         for (DriveRecordings.RecordingItem chunk : chunks) {
             String name = chunk.driveFile.getName();
             File file = byName.get(name);
-            byte[] hash = TsaClient.sha256(file);
+            byte[] hash = check.sha256(name);
             String base = name.substring(0, name.lastIndexOf('.'));
             File token = byName.get(base + ".tsa");
             TsaClient.Info stamp = token != null ? TsaClient.read(token) : null;
@@ -510,21 +621,19 @@ public class RecordingsActivity extends AppCompatActivity {
             rows.add(new EvidencePackage.Row(chunk.mediaFile.sequenceNumber, name, file.length(),
                     SessionManifest.hex(hash), stamp != null ? formatUtc(stamp.time.getTime()) : null, note));
         }
-        String manifestName = sessionId + ".0." + SessionManifest.EXTENSION;
-        File manifest = byName.get(manifestName);
         String manifestState;
-        if (manifest == null) {
+        if (check.has(SessionCheck.Kind.NO_MANIFEST)) {
             manifestState = getString(R.string.report_manifest_missing);
+        } else if (check.has(SessionCheck.Kind.EMPTY_MANIFEST)) {
+            manifestState = getString(R.string.check_empty_manifest);
+        } else if (check.has(SessionCheck.Kind.MANIFEST_UNTIMESTAMPED)) {
+            manifestState = getString(R.string.report_manifest_untimestamped);
+        } else if (check.manifestTime == null) {
+            manifestState = getString(R.string.report_manifest_invalid);
+        } else if (check.has(SessionCheck.Kind.ADDED_AFTER_TIMESTAMP)) {
+            manifestState = getString(R.string.report_manifest_later, formatUtc(check.manifestTime.getTime()));
         } else {
-            File token = byName.get(manifestName + ".tsa");
-            TsaClient.Info stamp = token != null ? TsaClient.read(token) : null;
-            if (stamp == null) {
-                manifestState = getString(R.string.report_manifest_untimestamped);
-            } else if (java.util.Arrays.equals(stamp.imprint, TsaClient.sha256(manifest))) {
-                manifestState = getString(R.string.report_manifest_timestamped, formatUtc(stamp.time.getTime()));
-            } else {
-                manifestState = getString(R.string.report_manifest_later, formatUtc(stamp.time.getTime()));
-            }
+            manifestState = getString(R.string.report_manifest_timestamped, formatUtc(check.manifestTime.getTime()));
         }
         List<String> gapLines = new ArrayList<>();
         if (gaps != null) {
@@ -548,7 +657,7 @@ public class RecordingsActivity extends AppCompatActivity {
         labels.noTimestamp = getString(R.string.report_no_timestamp);
         labels.footer = getString(R.string.report_footer);
         return EvidencePackage.report(labels, sessionId, dataType, formatTime(Long.parseLong(sessionId)),
-                duration, manifestState, String.join("; ", gapLines), rows);
+                duration, manifestState, String.join("; ", gapLines), checkSummary(check, onPhone), rows);
     }
 
     /** Local time with its zone, and UTC: "2026-10-19 19:09:06 CEST (17:09:06 UTC)". */
