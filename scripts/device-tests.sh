@@ -28,10 +28,10 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 APK="${APK:-$ROOT/app/build/outputs/apk/debug/app-debug.apk}"
 OUT="${OUT:-$ROOT/tmp/device-tests/$(date +%Y%m%d-%H%M%S)}"
 TAGS=(SafeRecService MuxerSink VideoStreamRecorder AudioStreamRecorder GoogleDriveFileUploader
-      GoogleDriveClient TsaClient MainActivity AndroidRuntime)
+      GoogleDriveClient TsaClient OutboxWorker MainActivity AndroidRuntime)
 CHUNK_MIN=8.5   # seconds, expected chunk duration window (target 10 s)
 CHUNK_MAX=12.5
-ALL_SCENARIOS=(offline_start audio_only camera_stolen replay errors_dont_stop network_drop retry_after_outage tsa av_sync)
+ALL_SCENARIOS=(offline_start audio_only camera_stolen replay errors_dont_stop network_drop retry_after_outage outbox_job tsa av_sync)
 
 RESULTS=()
 LOGCAT_PID=""
@@ -40,6 +40,7 @@ INITIAL_AIRPLANE=0
 INITIAL_WIFI=1
 INITIAL_CHAIN3=""
 APP_BLOCK=0 # 1 when the device can block the network of SafeRec alone
+FGS_TIMEOUT_SET=0 # 1 while outbox_job shortens the dataSync time limit
 
 # --- Output -----------------------------------------------------------------
 
@@ -443,6 +444,56 @@ scenario_retry_after_outage() {
     fi
 }
 
+scenario_outbox_job() {
+    say "outbox_job: chunks left offline go out through the background job, with the service and the process gone"
+    write_prefs false false
+    clear_store
+    go_online || { record outbox_job FAIL "could not go online"; return; }
+    if [[ $(token_fingerprint) == none ]]; then
+        record outbox_job SKIP "needs a Drive token: give the Google consent in the app first"
+        return
+    fi
+    go_offline || note "warning: still online after enabling airplane mode"
+    start_recording || { record outbox_job FAIL "recording did not start"; return; }
+    sleep 14
+    stop_recording
+    local waiting
+    waiting=$(list_store | wc -l)
+    # The service stays in the foreground (dataSync) for the waiting chunks. A short time
+    # limit ends it like the Android 15 daily cap, then the cached process is killed too.
+    adb shell device_config put activity_manager data_sync_fgs_timeout_duration 20000
+    FGS_TIMEOUT_SET=1
+    wait_log "Foreground time limit reached" 60 || note "warning: the service did not reach its time limit"
+    sleep 3
+    adb shell am kill "$PKG"
+    sleep 2
+    local pid gone_line
+    pid=$(adb shell pidof "$PKG" | tr -d '\r')
+    gone_line=$(wc -l <"$OUT/full.log")
+    adb shell device_config delete activity_manager data_sync_fgs_timeout_duration >/dev/null
+    FGS_TIMEOUT_SET=0
+    go_online || note "warning: network did not come back"
+    # The job runs 5 min after the first chunk was queued, once there is a network
+    local back=$SECONDS
+    wait_log "Outbox job done" 420
+    local took=$((SECONDS - back)) left started restarted uploaded dups ok=1
+    left=$(list_store | wc -l)
+    started=$(count_log "Outbox job started")
+    restarted=$(tail -n +"$gone_line" "$OUT/full.log" | grep -cE " SafeRecService *: SafeRecService started")
+    uploaded=$(tail -n +"$gone_line" "$OUT/full.log" | grep -cE "uploaded successfully|Retry successful")
+    dups=$(duplicate_uploads)
+    logs >"$OUT/outbox_job.log"
+    adb shell dumpsys jobscheduler 2>/dev/null | grep -A3 "$PKG" >"$OUT/outbox_job-jobs.txt"
+    note "waiting after the stop $waiting, process after the kill '${pid:-gone}', job runs $started"
+    note "uploaded by the job $uploaded, left $left, ${took}s after the network came back, service restarts $restarted, duplicates $dups"
+    ((waiting >= 1 && ${#pid} == 0 && started >= 1 && restarted == 0 && left == 0 && uploaded >= waiting && dups == 0)) || ok=0
+    if ((ok)); then
+        record outbox_job PASS "$uploaded/$waiting files uploaded by the job ${took}s after the network returned, with no service and a new process"
+    else
+        record outbox_job FAIL "waiting=$waiting pid='$pid' started=$started restarted=$restarted uploaded=$uploaded left=$left dups=$dups"
+    fi
+}
+
 now_ms() { echo $(($(date +%s%N) / 1000000)); }
 wait_until_ms() { while (($(now_ms) < $1)); do sleep 0.02; done; }
 # Short pulses: with a long one, dim light (long exposures) shows motion mostly when the
@@ -572,6 +623,7 @@ cleanup() {
         set_app_network true
         [[ $INITIAL_CHAIN3 == chain:disabled ]] && adb shell cmd connectivity set-chain3-enabled false
     fi
+    ((FGS_TIMEOUT_SET)) && adb shell device_config delete activity_manager data_sync_fgs_timeout_duration
     adb shell input keyevent KEYCODE_HOME
     note "network, settings and chunk store restored"
 }
