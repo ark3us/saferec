@@ -28,7 +28,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 APK="${APK:-$ROOT/app/build/outputs/apk/debug/app-debug.apk}"
 OUT="${OUT:-$ROOT/tmp/device-tests/$(date +%Y%m%d-%H%M%S)}"
 TAGS=(SafeRecService MuxerSink VideoStreamRecorder AudioStreamRecorder GoogleDriveFileUploader
-      GoogleDriveClient FreeTSAClient MainActivity AndroidRuntime)
+      GoogleDriveClient TsaClient MainActivity AndroidRuntime)
 CHUNK_MIN=8.5   # seconds, expected chunk duration window (target 10 s)
 CHUNK_MAX=12.5
 ALL_SCENARIOS=(offline_start audio_only camera_stolen replay errors_dont_stop network_drop retry_after_outage tsa av_sync)
