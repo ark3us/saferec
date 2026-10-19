@@ -38,7 +38,7 @@ import androidx.core.graphics.Insets;
 import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowInsetsCompat;
 
-import net.ark3us.saferec.data.LiveData;
+import net.ark3us.saferec.data.ServiceState;
 import net.ark3us.saferec.ui.TutorialOverlayView;
 
 import net.ark3us.saferec.media.VideoStreamRecorder;
@@ -149,19 +149,19 @@ public class MainActivity extends AppCompatActivity {
         recordRing = findViewById(R.id.record_ring);
         recordingLabel = findViewById(R.id.recording_label);
 
-        LiveData.getInstance().getStatus().observe(this, status -> {
+        ServiceState.getInstance().getStatus().observe(this, status -> {
             Log.i(TAG, "Service status changed: " + status);
             updateStartButtonState(isStarted(status));
             if (isStopped(status) || isStarted(status)) {
                 tryStartPreview();
             }
         });
-        LiveData.getInstance().getError().observe(this, error -> {
+        ServiceState.getInstance().getError().observe(this, error -> {
             if (error == null) {
                 return;
             }
             showError(error);
-            LiveData.getInstance().clearError();
+            ServiceState.getInstance().clearError();
         });
 
         videoPreview = findViewById(R.id.video_preview);
@@ -198,7 +198,7 @@ public class MainActivity extends AppCompatActivity {
 
         checkPermissionsAndDrive(!Settings.isTutorialShown(this));
 
-        updateStartButtonState(isStarted(LiveData.getInstance().getStatus().getValue()));
+        updateStartButtonState(isStarted(ServiceState.getInstance().getStatus().getValue()));
 
         btnSwitchCamera = findViewById(R.id.btn_switch_camera);
         btnSwitchCamera.setOnClickListener(v -> {
@@ -207,7 +207,7 @@ public class MainActivity extends AppCompatActivity {
             Settings.setUseFrontCamera(this, newValue);
             Log.i(TAG, "Switching camera. New useFrontCamera=" + newValue);
 
-            if (isStarted(LiveData.getInstance().getStatus().getValue())) {
+            if (isStarted(ServiceState.getInstance().getStatus().getValue())) {
                 Log.i(TAG, "Recording in progress, restarting service to switch camera");
                 startSafeRecService(SafeRecService.CMD_START);
             } else {
@@ -584,7 +584,7 @@ public class MainActivity extends AppCompatActivity {
                 command = null;
             }
         } else if (fromNotification && autoStart) {
-            if (!isStarted(LiveData.getInstance().getStatus().getValue())) {
+            if (!isStarted(ServiceState.getInstance().getStatus().getValue())) {
                 Log.i(TAG, "Auto-starting recording from notification launch");
                 command = SafeRecService.CMD_START;
             } else {
@@ -603,7 +603,7 @@ public class MainActivity extends AppCompatActivity {
             return;
         }
         previewRecorder = VideoStreamRecorder.getInstance();
-        if (isStarted(LiveData.getInstance().getStatus().getValue())) {
+        if (isStarted(ServiceState.getInstance().getStatus().getValue())) {
             // Recording in progress: attach preview to the existing session
             Log.i(TAG, "Attaching preview to ongoing recording session");
             previewRecorder.attachPreview(videoPreview.getSurfaceTexture());
@@ -620,7 +620,7 @@ public class MainActivity extends AppCompatActivity {
 
     private void stopPreview(boolean clearSurface) {
         if (previewRecorder != null) {
-            if (isStarted(LiveData.getInstance().getStatus().getValue())) {
+            if (isStarted(ServiceState.getInstance().getStatus().getValue())) {
                 // Recording in progress: detach the preview surface from the
                 // capture session so it won't crash when the SurfaceTexture is
                 // released, but keep the camera/encoder running for the service.
@@ -698,10 +698,10 @@ public class MainActivity extends AppCompatActivity {
     /** Shows an error reported by the service. Never stops the recording: losing Drive must not lose evidence. */
     private void showError(String error) {
         Log.e(TAG, "Recording service reported an error: " + error);
-        if (LiveData.ERROR_AUTH.equals(error)) {
+        if (ServiceState.ERROR_AUTH.equals(error)) {
             errorContainer.setVisibility(View.VISIBLE);
             errorMessageText.setText(R.string.google_drive_failed);
-        } else if (LiveData.ERROR_CAMERA.equals(error)) {
+        } else if (ServiceState.ERROR_CAMERA.equals(error)) {
             Toast.makeText(this, R.string.error_camera_lost, Toast.LENGTH_LONG).show();
         } else {
             Toast.makeText(this, R.string.error_recording_failed, Toast.LENGTH_LONG).show();

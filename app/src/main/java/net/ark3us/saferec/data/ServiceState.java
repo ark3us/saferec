@@ -2,22 +2,26 @@ package net.ark3us.saferec.data;
 
 import androidx.lifecycle.MutableLiveData;
 
-public class LiveData {
+/**
+ * Recording status and one-shot errors of SafeRecService, observed by the UI. Holds androidx
+ * MutableLiveData, but it is not one: the old name "LiveData" hid that.
+ */
+public class ServiceState {
     public static final String ERROR_AUTH = "AUTH";
     public static final String ERROR_CAMERA = "CAMERA";
     public static final String ERROR_RECORDING = "RECORDING";
 
-    private static LiveData instance;
+    private static ServiceState instance;
     private final MutableLiveData<String> statusData = new MutableLiveData<>();
     // Errors are one-shot events kept apart from the status, so that an upload
     // failure is never mistaken for "recording stopped".
     private final MutableLiveData<String> errorData = new MutableLiveData<>();
 
-    private LiveData() { }
+    private ServiceState() { }
 
-    public static synchronized LiveData getInstance() {
+    public static synchronized ServiceState getInstance() {
         if (instance == null) {
-            instance = new LiveData();
+            instance = new ServiceState();
         }
         return instance;
     }

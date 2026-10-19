@@ -18,7 +18,7 @@ import android.util.Log;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
-import net.ark3us.saferec.data.LiveData;
+import net.ark3us.saferec.data.ServiceState;
 import net.ark3us.saferec.media.AudioStreamRecorder;
 import net.ark3us.saferec.media.MuxerSink;
 import net.ark3us.saferec.media.VideoStreamRecorder;
@@ -225,7 +225,7 @@ public class SafeRecService extends Service {
         String command = intent != null ? intent.getStringExtra(EXTRA_COMMAND) : null;
         if (command == null) {
             if (!isRecording) {
-                LiveData.getInstance().updateStatus(STATUS_READY);
+                ServiceState.getInstance().updateStatus(STATUS_READY);
             }
             // Sticky restart after the process was killed. The app is not in front, so Android
             // forbids the foreground (and the camera and microphone): only resume the outbox,
@@ -285,7 +285,7 @@ public class SafeRecService extends Service {
             Log.w(TAG, "Recording without access token: chunks are kept until Drive is reachable");
         }
         isRecording = true;
-        LiveData.getInstance().updateStatus(STATUS_STARTED);
+        ServiceState.getInstance().updateStatus(STATUS_STARTED);
         if (currentSessionId == null) {
             currentSessionId = String.valueOf(System.currentTimeMillis());
             currentSequenceNumber = 0;
@@ -351,7 +351,7 @@ public class SafeRecService extends Service {
                 sink.setExpectedAudio(false);
             } else {
                 Log.e(TAG, "Audio-only mode failed, stopping");
-                LiveData.getInstance().reportError(LiveData.ERROR_RECORDING);
+                ServiceState.getInstance().reportError(ServiceState.ERROR_RECORDING);
                 stopRecording();
             }
         }
@@ -374,10 +374,10 @@ public class SafeRecService extends Service {
             videoRecorder.stop();
             videoRecorder = null;
             sink.setExpectedVideo(false);
-            LiveData.getInstance().reportError(LiveData.ERROR_CAMERA);
+            ServiceState.getInstance().reportError(ServiceState.ERROR_CAMERA);
         } else {
             Log.e(TAG, "Video recorder failed and no audio is recording, stopping");
-            LiveData.getInstance().reportError(LiveData.ERROR_RECORDING);
+            ServiceState.getInstance().reportError(ServiceState.ERROR_RECORDING);
             stopRecording();
         }
     }
@@ -404,7 +404,7 @@ public class SafeRecService extends Service {
             return;
         }
         isRecording = false;
-        LiveData.getInstance().updateStatus(STATUS_STOPPED);
+        ServiceState.getInstance().updateStatus(STATUS_STOPPED);
         if (videoRecorder != null) {
             videoRecorder.stopRecording();
             videoRecorder = null;

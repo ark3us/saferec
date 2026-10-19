@@ -12,7 +12,7 @@ import java.io.IOException;
 import java.util.concurrent.ConcurrentHashMap;
 import android.content.Context;
 
-import net.ark3us.saferec.data.LiveData;
+import net.ark3us.saferec.data.ServiceState;
 import net.ark3us.saferec.misc.Settings;
 
 import com.google.android.gms.auth.api.identity.AuthorizationRequest;
@@ -190,13 +190,13 @@ public class GoogleDriveFileUploader extends FileUploader {
             // (pending scans skip without one) until the user reopened the app.
             if (authResult.hasResolution()) {
                 Log.e(TAG, "Silent refresh requires user interaction (resolution), keeping files");
-                LiveData.getInstance().reportError(LiveData.ERROR_AUTH);
+                ServiceState.getInstance().reportError(ServiceState.ERROR_AUTH);
                 return false;
             }
             String newToken = authResult.getAccessToken();
             if (newToken == null) {
                 Log.e(TAG, "Silent refresh returned null token, keeping files");
-                LiveData.getInstance().reportError(LiveData.ERROR_AUTH);
+                ServiceState.getInstance().reportError(ServiceState.ERROR_AUTH);
                 return false;
             }
             Log.i(TAG, "Silent refresh succeeded! Updating token and retrying upload.");
