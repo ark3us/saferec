@@ -26,6 +26,7 @@ import net.ark3us.saferec.media.AudioStreamRecorder;
 import net.ark3us.saferec.media.ChunkPolicy;
 import net.ark3us.saferec.media.MuxerSink;
 import net.ark3us.saferec.media.VideoStreamRecorder;
+import net.ark3us.saferec.media.WorkDir;
 import net.ark3us.saferec.misc.Settings;
 import net.ark3us.saferec.net.DriveRecordings;
 import net.ark3us.saferec.net.TsaClient;
@@ -40,6 +41,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
 
 public class SafeRecService extends Service {
@@ -56,8 +58,6 @@ public class SafeRecService extends Service {
     public static final String STATUS_STARTED = "STARTED";
     public static final String STATUS_STOPPED = "STOPPED";
     private static final String TAG = "SafeRecService";
-    // Chunks being written live in WORK_DIR; complete ones wait in the uploader's outbox
-    private static final String WORK_DIR = "recording";
     private VideoStreamRecorder videoRecorder;
     private AudioStreamRecorder audioRecorder;
     private MuxerSink sink;
@@ -104,7 +104,8 @@ public class SafeRecService extends Service {
     public void onCreate() {
         super.onCreate();
         NotificationHelper.createNotificationChannel(this);
-        recoverInterruptedChunks();
+        // Chunks left by a crash; skipped while a previous instance still post-processes
+        WorkDir.get().recover(workDir(), outboxDir());
         // Shared with the outbox job. While the service lives it retries on its own; once
         // it is gone, the job takes over.
         uploader = GoogleDriveFileUploader.getInstance(this);
@@ -146,39 +147,13 @@ public class SafeRecService extends Service {
     }
 
     private File workDir() {
-        return new File(getFilesDir(), WORK_DIR);
+        return WorkDir.dir(this);
     }
 
     private File outboxDir() {
         return GoogleDriveFileUploader.outboxDir(this);
     }
 
-    /**
-     * A crash leaves the open chunk in the work dir, and maybe a closed one not moved yet.
-     * The open one has no MP4 index, but it is still evidence (recoverable with repair
-     * tools), so both go to the outbox. Safe here: no recording can be running before the
-     * service is created.
-     */
-    private void recoverInterruptedChunks() {
-        File[] orphans = workDir().listFiles();
-        if (orphans == null || orphans.length == 0) {
-            return;
-        }
-        File outbox = outboxDir();
-        if (!outbox.exists() && !outbox.mkdirs()) {
-            Log.e(TAG, "Cannot create outbox: " + outbox.getAbsolutePath());
-            return;
-        }
-        for (File orphan : orphans) {
-            if (orphan.length() == 0) {
-                orphan.delete();
-            } else if (orphan.renameTo(new File(outbox, orphan.getName()))) {
-                Log.w(TAG, "Recovered interrupted chunk: " + orphan.getName());
-            } else {
-                Log.e(TAG, "Failed to recover interrupted chunk: " + orphan.getName());
-            }
-        }
-    }
 
     private int pendingFiles() {
         String[] names = outboxDir().list();
@@ -336,6 +311,10 @@ public class SafeRecService extends Service {
             Log.w(TAG, "Recording without access token: chunks are kept until Drive is reachable");
         }
         isRecording = true;
+        // The outbox job adopts chunks a power cut leaves in the work dir, but only when no
+        // recording uses it. Queued from the start, so one is there after a cut.
+        WorkDir.get().acquire();
+        OutboxWorker.schedule(this);
         ServiceState.getInstance().updateStatus(STATUS_STARTED);
         if (currentSessionId == null) {
             currentSessionId = String.valueOf(System.currentTimeMillis());
@@ -470,6 +449,12 @@ public class SafeRecService extends Service {
             // Sync currentSequenceNumber from sink before nulling it out
             currentSequenceNumber = sink.getSequenceNumber();
             sink = null;
+        }
+        // After the last chunk's post-processing, queued by sink.stop(), has moved it
+        try {
+            postProcessExecutor.execute(WorkDir.get()::release);
+        } catch (RejectedExecutionException e) {
+            WorkDir.get().release();
         }
         updateNotification();
     }

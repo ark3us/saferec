@@ -15,6 +15,7 @@ import androidx.work.WorkManager;
 import androidx.work.Worker;
 import androidx.work.WorkerParameters;
 
+import net.ark3us.saferec.media.WorkDir;
 import net.ark3us.saferec.misc.Settings;
 
 import java.util.concurrent.TimeUnit;
@@ -44,6 +45,11 @@ public class OutboxWorker extends Worker {
      */
     @Nullable
     public static Operation schedule(Context context) {
+        return enqueue(context, ExistingWorkPolicy.KEEP);
+    }
+
+    @Nullable
+    private static Operation enqueue(Context context, ExistingWorkPolicy policy) {
         try {
             Constraints constraints = new Constraints.Builder()
                     .setRequiredNetworkType(NetworkType.CONNECTED)
@@ -53,7 +59,7 @@ public class OutboxWorker extends Worker {
                     .setInitialDelay(START_DELAY_MIN, TimeUnit.MINUTES)
                     .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, BACKOFF_MIN, TimeUnit.MINUTES)
                     .build();
-            return WorkManager.getInstance(context).enqueueUniqueWork(WORK_NAME, ExistingWorkPolicy.KEEP, request);
+            return WorkManager.getInstance(context).enqueueUniqueWork(WORK_NAME, policy, request);
         } catch (RuntimeException e) {
             // The safety net must never break an upload
             Log.e(TAG, "Cannot schedule the outbox job", e);
@@ -84,6 +90,23 @@ public class OutboxWorker extends Worker {
     @Override
     public Result doWork() {
         Context context = getApplicationContext();
+        int adopted = WorkDir.get().recover(WorkDir.dir(context), GoogleDriveFileUploader.outboxDir(context));
+        if (adopted > 0) {
+            Log.w(TAG, "Adopted " + adopted + " chunks a dead process left in the work dir");
+        }
+        try {
+            return upload(context);
+        } finally {
+            if (WorkDir.get().inUse()) {
+                // A recording runs: a power cut now would leave its open chunk in the work dir.
+                // A job queued after this one adopts it after the boot. Scheduling with KEEP
+                // would do nothing while this one runs.
+                enqueue(context, ExistingWorkPolicy.APPEND_OR_REPLACE);
+            }
+        }
+    }
+
+    private Result upload(Context context) {
         String token = Settings.getAccessToken(context);
         if (token == null || token.isEmpty()) {
             Log.w(TAG, "No Drive access: files wait until the user connects Drive in the app");
