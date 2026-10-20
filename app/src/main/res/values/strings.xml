@@ -174,4 +174,18 @@
         <item quantity="one">%d piece safe on Drive</item>
         <item quantity="other">%d pieces safe on Drive</item>
     </plurals>
+    <!-- Quick start and power key settings -->
+    <string name="quick_start_records">Quick start records</string>
+    <string name="quick_start_camera">Quick start camera</string>
+    <string name="quick_start_video">Video</string>
+    <string name="quick_start_audio_only">Audio only</string>
+    <string name="quick_start_camera_back">Back</string>
+    <string name="quick_start_camera_front">Front</string>
+    <string name="vibrations">Vibrations</string>
+    <string name="power_gesture">Three presses of the power key</string>
+    <string name="power_gesture_off">Off</string>
+    <string name="power_gesture_needs_overlay">Needs \"display over other apps\"</string>
+    <string name="power_gesture_needs_battery">Needs battery exemption</string>
+    <string name="power_gesture_stopped">Stopped</string>
+    <string name="power_gesture_active">Active</string>
 </resources>

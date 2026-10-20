@@ -181,4 +181,18 @@
         <item quantity="many">%d pezzi al sicuro su Drive</item>
         <item quantity="other">%d pezzi al sicuro su Drive</item>
     </plurals>
+    <!-- Quick start and power key settings -->
+    <string name="quick_start_records">Avvio rapido registra</string>
+    <string name="quick_start_camera">Fotocamera avvio rapido</string>
+    <string name="quick_start_video">Video</string>
+    <string name="quick_start_audio_only">Solo audio</string>
+    <string name="quick_start_camera_back">Posteriore</string>
+    <string name="quick_start_camera_front">Anteriore</string>
+    <string name="vibrations">Vibrazioni</string>
+    <string name="power_gesture">Tre pressioni del tasto di accensione</string>
+    <string name="power_gesture_off">Spento</string>
+    <string name="power_gesture_needs_overlay">Serve \"mostra sopra le altre app\"</string>
+    <string name="power_gesture_needs_battery">Serve l\'esenzione batteria</string>
+    <string name="power_gesture_stopped">Fermo</string>
+    <string name="power_gesture_active">Attivo</string>
 </resources>

@@ -71,6 +71,8 @@ public class MainActivity extends AppCompatActivity {
     private TextView errorMessageText;
     private PermissionsManager permissionsManager;
     private boolean launchCommandHandled = false;
+    /** The user turned the three presses on and may be on the way through the setup pages. */
+    private boolean guardSetupPending = false;
     private final ExecutorService backgroundExecutor = Executors.newSingleThreadExecutor();
 
     private static boolean isStarted(@Nullable String status) {
@@ -281,6 +283,67 @@ public class MainActivity extends AppCompatActivity {
         addToggleRow(container, getString(R.string.enable_timestamping), Settings.isTimestampingEnabled(this), (btn, isChecked) -> {
             Settings.setTimestampingEnabled(this, isChecked);
         });
+
+        // Quick start
+        addSettingRow(container, getString(R.string.quick_start_records),
+            getString(Settings.isQuickStartAudioOnly(this) ? R.string.quick_start_audio_only : R.string.quick_start_video),
+            null, v -> showQuickStartRecordsDialog(container, dialog));
+        addSettingRow(container, getString(R.string.quick_start_camera),
+            getString(Settings.isQuickStartFrontCamera(this) ? R.string.quick_start_camera_front : R.string.quick_start_camera_back),
+            null, v -> showQuickStartCameraDialog(container, dialog));
+
+        // Vibrations
+        addToggleRow(container, getString(R.string.vibrations), Settings.isVibrationsEnabled(this), (btn, isChecked) -> {
+            Settings.setVibrationsEnabled(this, isChecked);
+        });
+
+        // Three presses of the power key (only when the guard module is built in)
+        if (BuildConfig.POWER_GESTURE) {
+            addSettingRow(container, getString(R.string.power_gesture), guardStatusLabel(), null, v -> {
+                boolean enable = !net.ark3us.saferec.guard.Guard.isEnabled(this);
+                net.ark3us.saferec.guard.Guard.setEnabled(this, enable);
+                guardSetupPending = enable;
+                if (enable && net.ark3us.saferec.guard.Guard.status(this) == net.ark3us.saferec.guard.Guard.Status.NEEDS_OVERLAY) {
+                    startActivity(net.ark3us.saferec.guard.Guard.overlaySettingsIntent(this));
+                }
+                populateSettings(container, dialog);
+            });
+        }
+    }
+
+    private String guardStatusLabel() {
+        if (!BuildConfig.POWER_GESTURE) return "";
+        switch (net.ark3us.saferec.guard.Guard.status(this)) {
+            case NEEDS_OVERLAY: return getString(R.string.power_gesture_needs_overlay);
+            case NEEDS_BATTERY_EXEMPTION: return getString(R.string.power_gesture_needs_battery);
+            case STOPPED: return getString(R.string.power_gesture_stopped);
+            case ACTIVE: return getString(R.string.power_gesture_active);
+            default: return getString(R.string.power_gesture_off);
+        }
+    }
+
+    private void showQuickStartRecordsDialog(LinearLayout container, BottomSheetDialog parent) {
+        String[] items = {getString(R.string.quick_start_video), getString(R.string.quick_start_audio_only)};
+        new AlertDialog.Builder(this)
+            .setTitle(R.string.quick_start_records)
+            .setSingleChoiceItems(items, Settings.isQuickStartAudioOnly(this) ? 1 : 0, (d, which) -> {
+                Settings.setQuickStartAudioOnly(this, which == 1);
+                d.dismiss();
+                populateSettings(container, parent);
+            })
+            .show();
+    }
+
+    private void showQuickStartCameraDialog(LinearLayout container, BottomSheetDialog parent) {
+        String[] items = {getString(R.string.quick_start_camera_back), getString(R.string.quick_start_camera_front)};
+        new AlertDialog.Builder(this)
+            .setTitle(R.string.quick_start_camera)
+            .setSingleChoiceItems(items, Settings.isQuickStartFrontCamera(this) ? 1 : 0, (d, which) -> {
+                Settings.setQuickStartFrontCamera(this, which == 1);
+                d.dismiss();
+                populateSettings(container, parent);
+            })
+            .show();
     }
 
     private void addSettingRow(LinearLayout container, String title, @Nullable String value, @Nullable Integer iconRes, View.OnClickListener listener) {
@@ -629,6 +692,19 @@ public class MainActivity extends AppCompatActivity {
     protected void onResume() {
         super.onResume();
         videoPreview.post(this::tryStartPreview);
+        if (BuildConfig.POWER_GESTURE && net.ark3us.saferec.guard.Guard.isEnabled(this)) {
+            // The app is in the foreground, so the guard's foreground service may start now.
+            net.ark3us.saferec.guard.Guard.ensureRunning(this);
+            if (guardSetupPending) {
+                net.ark3us.saferec.guard.Guard.Status status = net.ark3us.saferec.guard.Guard.status(this);
+                if (status == net.ark3us.saferec.guard.Guard.Status.NEEDS_BATTERY_EXEMPTION) {
+                    guardSetupPending = false;
+                    startActivity(net.ark3us.saferec.guard.Guard.batterySettingsIntent());
+                } else if (status != net.ark3us.saferec.guard.Guard.Status.NEEDS_OVERLAY) {
+                    guardSetupPending = false;
+                }
+            }
+        }
     }
 
     @Override
