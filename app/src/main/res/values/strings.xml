@@ -181,8 +181,11 @@
     <string name="quick_start_camera_back">Back</string>
     <string name="quick_start_camera_front">Front</string>
     <string name="vibrations">Vibrations</string>
-    <string name="camera_gesture">Camera double press opens SafeRec</string>
+    <string name="camera_gesture">Double press of the power key opens SafeRec</string>
     <string name="camera_gesture_choose">When Android asks which app to use, choose SafeRec and Always.</string>
+    <string name="camera_gesture_tries">It takes two tries: one for the unlocked phone, then one for the locked phone. Each try starts a short recording, which you can then stop.</string>
+    <string name="camera_gesture_lock_screen">The camera shortcut on the lock screen may start SafeRec too.</string>
+    <string name="camera_gesture_try_locked">Now once more, for the locked phone: when Android asks, choose SafeRec and Always again.</string>
     <string name="camera_gesture_undo">To undo: Settings → Apps → SafeRec → Open by default.</string>
     <string name="camera_gesture_try">Try it now</string>
     <string name="camera_gesture_no_app">No app can open the camera</string>

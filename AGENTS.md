@@ -635,8 +635,11 @@ On the S10+ the low-memory killer killed the app twice in a minute, with 0.5 GB 
 The double press of the power key opens the default camera app with `STILL_IMAGE_CAMERA` (unlocked) or `STILL_IMAGE_CAMERA_SECURE` (locked).
 
 - `CameraGestureAlias` is an activity alias for `QuickStartActivity` with both filters, **disabled** in the manifest. `CameraGesture.setEnabled()` turns it on when the user chooses so. A permanent declaration would show a chooser on phones with a second camera app, and on the lock screen that choice needs an unlock first.
-- Once the user picks SafeRec as "Always", the double press records, locked or not. Undo: Settings, Apps, SafeRec, Open by default.
-- It is offered only when SystemUI's `config_cameraGesturePackage` does not pin another camera app (`CameraGesture.isAvailable()`, `allowsOtherApps()`). If SystemUI cannot be read, it is offered, and "try it now" (`tryIntent()`) shows whether it works.
+- Android stores the "Always" choice per action, so each intent needs its own. "Try it now" therefore goes in two steps (`CameraGesture.tryIntents()`): `STILL_IMAGE_CAMERA` first, then, when the user comes back to `MainActivity`, a second dialog sends `STILL_IMAGE_CAMERA_SECURE`. With the first try only, the setup covered the unlocked phone, and the double press of a locked phone still opened the other camera app. The next step is a static field (`cameraGestureNextTry`): a try that reaches SafeRec recreates `MainActivity` (`QuickStartActivity` opens it with `CLEAR_TOP`).
+- Once the user picks SafeRec as "Always" for both, the double press records, locked or not. Undo: Settings, Apps, SafeRec, Open by default.
+- The dialog says that trying it starts a short recording, which the user then stops (a second try while it runs is an ignored quick start), and that the lock screen's camera shortcut may start SafeRec too: it sends the same intents.
+- The option reads "Double press of the power key opens SafeRec": "camera double press" did not say which key.
+- It is offered only when SystemUI's `config_cameraGesturePackage` does not pin another camera app (`CameraGesture.isAvailable()`, `allowsOtherApps()`). If SystemUI cannot be read, it is offered, and "try it now" shows whether it works.
 - To be verified on a device (plan Task 12): the double press itself, and the Pixel's camera gesture setting.
 
 ### Google Play declaration

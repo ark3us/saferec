@@ -51,9 +51,16 @@ public final class CameraGesture {
             PackageManager.DONT_KILL_APP);
     }
 
-    /** The intent the double press sends, to try it without the key. */
-    public static Intent tryIntent() {
-        return new Intent(MediaStore.INTENT_ACTION_STILL_IMAGE_CAMERA);
+    /**
+     * The intents the double press sends, to try them without the key: unlocked, then locked.
+     * Android stores the "Always" choice per action, so each one needs its own try: with only
+     * the first, the double press of a locked phone still opened the other camera app.
+     */
+    public static Intent[] tryIntents() {
+        return new Intent[] {
+            new Intent(MediaStore.INTENT_ACTION_STILL_IMAGE_CAMERA),
+            new Intent(MediaStore.INTENT_ACTION_STILL_IMAGE_CAMERA_SECURE),
+        };
     }
 
     private static ComponentName alias(Context context) {
