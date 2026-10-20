@@ -49,6 +49,34 @@ public class Settings {
         return getPrefs(context).getBoolean("useFrontCamera", false);
     }
 
+    /** Quick starts (locked phone) record with their own defaults, not the viewfinder's last choice. */
+    public static boolean isQuickStartAudioOnly(Context context) {
+        return getPrefs(context).getBoolean("quickStartAudioOnly", false);
+    }
+
+    public static void setQuickStartAudioOnly(Context context, boolean audioOnly) {
+        Log.i(TAG, "Setting quickStartAudioOnly to: " + audioOnly);
+        getPrefs(context).edit().putBoolean("quickStartAudioOnly", audioOnly).apply();
+    }
+
+    public static boolean isQuickStartFrontCamera(Context context) {
+        return getPrefs(context).getBoolean("quickStartFrontCamera", false);
+    }
+
+    public static void setQuickStartFrontCamera(Context context, boolean front) {
+        Log.i(TAG, "Setting quickStartFrontCamera to: " + front);
+        getPrefs(context).edit().putBoolean("quickStartFrontCamera", front).apply();
+    }
+
+    public static boolean isVibrationsEnabled(Context context) {
+        return getPrefs(context).getBoolean("vibrations", true);
+    }
+
+    public static void setVibrationsEnabled(Context context, boolean enabled) {
+        Log.i(TAG, "Setting vibrations to: " + enabled);
+        getPrefs(context).edit().putBoolean("vibrations", enabled).apply();
+    }
+
     public static String getVideoQuality(Context context) {
         return getPrefs(context).getString("videoQuality", "LOW");
     }

@@ -53,6 +53,8 @@ public class SafeRecService extends Service {
     public static final String CMD_DELETE = "DELETE";
     public static final String CMD_UPLOAD_PENDING = "UPLOAD_PENDING";
     public static final String EXTRA_COMMAND = "command";
+    /** Boolean extra on CMD_START: record with the quick-start defaults, not the viewfinder's choices. */
+    public static final String EXTRA_QUICK_START = "quick_start";
     public static final String EXTRA_FROM_TILE = "from_tile";
     public static final String EXTRA_FROM_NOTIFICATION = "from_notification";
     public static final String EXTRA_FILE_IDS = "file_ids";
@@ -175,12 +177,12 @@ public class SafeRecService extends Service {
                 activeTimestamping, pendingFiles());
     }
 
-    private int recordingForegroundType() {
+    private int recordingForegroundType(boolean includeVideo) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
             return 0;
         }
         int type = ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE;
-        return Settings.onlyAudio(this) ? type : type | ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA;
+        return includeVideo ? type | ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA : type;
     }
 
     private static int dataSyncForegroundType() {
@@ -233,7 +235,7 @@ public class SafeRecService extends Service {
             return;
         }
         Notification notification = buildNotification(isRecording);
-        int type = isRecording ? recordingForegroundType() : dataSyncForegroundType();
+        int type = isRecording ? recordingForegroundType(MuxerSink.DATA_TYPE_VIDEO.equals(currentDataType)) : dataSyncForegroundType();
         if (type == foregroundType) {
             NotificationManager manager = getSystemService(NotificationManager.class);
             if (manager != null) {
@@ -277,18 +279,22 @@ public class SafeRecService extends Service {
             case CMD_SWITCH_CAMERA:
                 // CMD_START is sent with startForegroundService(): the service must enter the
                 // foreground whatever happens next, or Android kills the app
+                boolean quick = CMD_START.equals(command) && intent.getBooleanExtra(EXTRA_QUICK_START, false);
+                boolean includeVideo = quick ? !Settings.isQuickStartAudioOnly(this) : !Settings.onlyAudio(this);
+                boolean useFront = quick ? Settings.isQuickStartFrontCamera(this) : Settings.getUseFrontCamera(this);
                 Notification notification = buildNotification(true);
-                if (!enterForeground(recordingForegroundType(), notification)) {
+                if (!enterForeground(recordingForegroundType(includeVideo), notification)) {
                     enterForeground(dataSyncForegroundType(), notification);
                 }
                 switch (StartPolicy.forCommand(command, isRecording)) {
                     case START:
-                        startRecording();
+                        startRecording(includeVideo, useFront);
+                        Haptics.started(this);
                         break;
                     case RESTART:
                         Log.i(TAG, "Stopping ongoing recording before restart (camera switch)");
                         stopRecording();
-                        startRecording();
+                        startRecording(includeVideo, useFront);
                         break;
                     case IGNORE:
                         Log.i(TAG, "Already recording: " + command + " ignored");
@@ -297,6 +303,7 @@ public class SafeRecService extends Service {
                 break;
             case CMD_STOP:
                 stopRecording();
+                Haptics.stopped(this);
                 currentSessionId = null;
                 currentSequenceNumber = 0;
                 break;
@@ -318,7 +325,7 @@ public class SafeRecService extends Service {
         Log.i(TAG, "Task removed from recents, service continues running (recording=" + isRecording + ")");
     }
 
-    private void startRecording() {
+    private void startRecording(boolean includeVideo, boolean useFront) {
         if (isRecording) {
             Log.w(TAG, "Recording is already in progress");
             return;
@@ -342,7 +349,6 @@ public class SafeRecService extends Service {
         String sessionId = currentSessionId;
         Log.i(TAG, "Starting recording session id=" + sessionId + " sequence=" + currentSequenceNumber);
 
-        boolean includeVideo = !Settings.onlyAudio(this);
         String dataType = includeVideo ? MuxerSink.DATA_TYPE_VIDEO : MuxerSink.DATA_TYPE_AUDIO;
         ChunkPolicy chunkPolicy = ChunkPolicy.fromSetting(Settings.getChunkSizeMB(this));
         Log.i(TAG, "Chunk policy: " + chunkPolicy);
@@ -365,7 +371,6 @@ public class SafeRecService extends Service {
         audioRecorder = new AudioStreamRecorder(this);
         if (includeVideo) {
             videoRecorder = VideoStreamRecorder.getInstance();
-            boolean useFront = Settings.getUseFrontCamera(this);
             MuxerSink sessionSink = sink;
             // Camera callbacks arrive on other threads: handle them on the main thread, like commands
             boolean started = videoRecorder.start(this, sink, useFront, null,
