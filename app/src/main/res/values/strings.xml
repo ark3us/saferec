@@ -195,4 +195,15 @@
     <string name="power_gesture_needs_battery">Needs battery exemption</string>
     <string name="power_gesture_stopped">Stopped</string>
     <string name="power_gesture_active">Active</string>
+    <string name="status_drive_ok">Drive connected</string>
+    <plurals name="status_waiting">
+        <item quantity="one">%d piece waiting on this phone</item>
+        <item quantity="other">%d pieces waiting on this phone</item>
+    </plurals>
+    <string name="status_offline">Offline</string>
+    <string name="status_connect_drive">Connect Drive</string>
+    <string name="status_reconnect_drive">Reconnect Drive</string>
+    <string name="status_three_presses_off">Three presses off</string>
+    <string name="status_waiting_explained">Recordings wait on this phone and go to Drive as soon as there is a network.</string>
+    <string name="status_audio_only">Audio only</string>
 </resources>
