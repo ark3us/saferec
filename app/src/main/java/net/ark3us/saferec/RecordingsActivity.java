@@ -112,7 +112,6 @@ public class RecordingsActivity extends AppCompatActivity {
         swipeRefreshLayout.setOnRefreshListener(this::loadSessions);
         swipeRefreshLayout.setColorSchemeResources(R.color.on_glass);
         swipeRefreshLayout.setProgressBackgroundColorSchemeResource(R.color.surface_card);
-        emptyStateAction.setOnClickListener(v -> connectDrive());
 
         pendingPieces = countPendingPieces();
         ServiceState.getInstance().getPendingPieces().observe(this, count -> {
@@ -162,7 +161,7 @@ public class RecordingsActivity extends AppCompatActivity {
         renderBanner();
         if (token == null || token.isEmpty()) {
             adapter.submitList(null);
-            showMessage(R.string.recordings_not_connected, true);
+            showMessage(R.string.recordings_not_connected, R.string.status_connect_drive);
             return;
         }
         if (adapter.getItemCount() == 0) {
@@ -195,7 +194,7 @@ public class RecordingsActivity extends AppCompatActivity {
                     }
                     adapter.submitList(shown);
                     if (shown.isEmpty()) {
-                        showMessage(R.string.recordings_empty, false);
+                        showMessage(R.string.recordings_empty, 0);
                     } else {
                         emptyState.setVisibility(View.GONE);
                     }
@@ -221,7 +220,8 @@ public class RecordingsActivity extends AppCompatActivity {
 
     private void showLoadFailed() {
         adapter.submitList(null);
-        showMessage(R.string.recordings_load_failed, false);
+        // Pull to refresh stays; the button is for whoever cannot pull (a screen reader)
+        showMessage(R.string.recordings_load_failed, R.string.retry_short);
     }
 
     /**
@@ -242,7 +242,7 @@ public class RecordingsActivity extends AppCompatActivity {
             public void onNeedsUser() {
                 if (generation == loadGeneration) {
                     adapter.submitList(null);
-                    showMessage(R.string.recordings_not_connected, true);
+                    showMessage(R.string.recordings_not_connected, R.string.status_connect_drive);
                 }
             }
 
@@ -255,11 +255,24 @@ public class RecordingsActivity extends AppCompatActivity {
         });
     }
 
-    private void showMessage(@StringRes int text, boolean offerConnect) {
+    /** A message in place of the list, with its way forward: Connect Drive, Retry, or none (0). */
+    private void showMessage(@StringRes int text, @StringRes int action) {
         swipeRefreshLayout.setRefreshing(false);
         progress.setVisibility(View.GONE);
         emptyStateText.setText(text);
-        emptyStateAction.setVisibility(offerConnect ? View.VISIBLE : View.GONE);
+        if (action == 0) {
+            emptyStateAction.setVisibility(View.GONE);
+        } else {
+            emptyStateAction.setText(action);
+            emptyStateAction.setOnClickListener(v -> {
+                if (action == R.string.status_connect_drive) {
+                    connectDrive();
+                } else {
+                    loadSessions();
+                }
+            });
+            emptyStateAction.setVisibility(View.VISIBLE);
+        }
         emptyState.setVisibility(View.VISIBLE);
     }
 
