@@ -64,6 +64,7 @@ Keep: the big record button at the bottom center, the dark theme, recording that
 ## Constraints
 
 - minSdk 26, targetSdk 36. Material Components 1.13 (Material 3). XML layouts.
+- SafeRec is published on Google Play. A `specialUse` foreground service needs a declaration in the Play Console and a review. Starting screens from the background with "Display over other apps", and any battery-optimization exemption, may draw scrutiny.
 - The reliability rules in `AGENTS.md` hold (record first, errors never stop a recording, and so on).
 - Strings in English and Italian. Code, comments, commits and docs in English.
 - Any new library, or new code that uses reflection, needs the R8 checks in `AGENTS.md` (Release Build) again.
@@ -106,7 +107,13 @@ Chosen among three mockups (A "calm night" with a big round button and a small p
 | Long press on the app icon | A static app shortcut "Record now" | Always |
 | Record button in the app | As today | Always |
 
-Recording starts **without unlocking**. Only the recording screen may show over the lock screen; recordings, settings and sharing require the unlock.
+Recording starts **without unlocking**.
+
+- **What shows over the lock screen** *(designer's call)*: only the black trigger screen, the same for the three presses, the tile and the camera double press. It starts the recording, vibrates and disappears.
+- `MainActivity` never shows over the lock screen. The viewfinder, stop, camera switch, recordings, settings and sharing all need the unlock, so whoever holds a locked phone sees neither the live camera nor the recordings.
+- When the phone is unlocked, the tile, the shortcut and the double press open the viewfinder, already recording.
+
+**What a quick start records** *(designer's call)*: quick starts use their own defaults in Settings → Quick start: video or audio, back or front camera. The defaults are video and the back camera, since in a pocket with the screen facing the body the back camera faces out. Choices made on the viewfinder affect only recordings started there. A blind start must be predictable, not "whatever was last picked on screen".
 
 #### Three presses of the power key (verified in a spike)
 
@@ -118,6 +125,7 @@ No public API reports power key presses. Each press turns the screen on or off, 
 - Measured on the S10+, locked with a PIN and the screen off: video recording 0.6 s after the third press; trigger activity visible 30-54 ms after the trigger; the phone stayed locked. With the owner's own presses (~0.4 s apart) it triggered every time.
 - Costs, accepted by the owner: a permanent low-importance notification ("SafeRec ready: press the power key three times to record"), the special permission granted once, and a foreground service of type `specialUse` (`FOREGROUND_SERVICE_SPECIAL_USE`, with `PROPERTY_SPECIAL_USE_FGS_SUBTYPE`).
 - **The guard can die.** On the S10+, the low-memory killer killed the app process twice in a minute ("device is not responding", with 0.5 GB of RAM free), and Android postponed the sticky restart by up to 165 s "for mem-pressure-event". The guard is therefore never the only way in: the tile, the shortcut and the app always work. It restarts on `BOOT_COMPLETED` and `MY_PACKAGE_REPLACED`. The builder must check that Android 15+ lets `specialUse` start from `BOOT_COMPLETED`: its restrictions name other types, but it was not tested.
+- **Other screen changes** *(designer's call)*. Nothing is filtered, not even during a phone call: an anti-goal forbids blocking a deliberate start, for example during a threatening call. Proximity screen-off during a call and ambient wake (lift or notification) should not emit `ACTION_SCREEN_ON`/`OFF`, since the device stays interactive or dozing. The builder verifies this on the S10+; if they do emit them, this decision comes back to the owner.
 - The trigger screen is discreet: black, no text beyond a small "Recording" for screen readers, gone after ~1.5 s. Vibration confirms (below). The screen then times out as usual, or the owner presses the power key once more. Recording continues with the screen off, as it already does.
 
 #### Camera double press (optional)
@@ -138,6 +146,10 @@ The double press launches the camera with `STILL_IMAGE_CAMERA` (unlocked) or `ST
 
 - **Screen:** the red pill with the elapsed time since the session started, and "N pieces safe on Drive" (chunks of this session already uploaded).
 - **Notification:** shown at once (`setForegroundServiceBehavior(FOREGROUND_SERVICE_IMMEDIATE)`), with the elapsed time, the safe count, and the authenticated Stop action.
+- **On the lock screen** *(designer's call)*, discretion first:
+  - The guard's notification is hidden there (`VISIBILITY_SECRET`, silent, minimized). A lock screen that says "press the power key three times to record" tells an aggressor about SafeRec.
+  - The recording notification shows a neutral public version ("SafeRec active"), with no elapsed time and no Stop.
+  - Android's own camera and microphone indicator cannot be hidden, and is not hidden.
 - **Vibration:** two short pulses when a recording starts, one long pulse when it stops. A setting turns vibrations off for when even a buzz could be heard. (A fuller "vibration language" is in `IDEAS.md`, out of scope.)
 
 ### Status, never blocking
@@ -158,14 +170,14 @@ Camera lost shows "audio only". Errors appear in the chip or in a slim banner, n
   - ⏳ uploading: chunks still on this phone;
   - ⚠️ incomplete: chunks missing.
 
-  The gap logic already exists (`SessionManifest`, `DriveRecordings`). Tapping a card opens the **session screen**: playback, "Export evidence package" as the primary action, then share and delete. Chunks, timestamps and repaired originals appear under "Technical details". The ✨ merge icon goes: merging happens inside playback and export.
+  The gap logic already exists (`SessionManifest`, `DriveRecordings`). **Sessions only on the phone** *(designer's call)*: they are not listed. Recording offline, or before Drive is connected, shows an explicit banner instead: "N pieces waiting on this phone", plus "Connect Drive" when it is not connected. The latest-session thumbnail shows the same waiting state. Playing local files, which the uploader deletes at any moment, is out of scope. Tapping a card opens the **session screen**: playback, "Export evidence package" as the primary action, then share and delete. Chunks, timestamps and repaired originals appear under "Technical details". The ✨ merge icon goes: merging happens inside playback and export.
 - **Settings**, in plain-language groups:
   - *Quick start*: three presses, camera double press, how the tile works;
-  - *Evidence*: timestamping, **on by default**;
+  - *Evidence*: timestamping, off by default as today *(designer's call)*, now explained in plain words. Turning it on for everyone would send one Sectigo request per 10 s chunk, against Sectigo's request of at least 15 s between automated requests (see "Hash chain for timestamps" in `IDEAS.md`). Also, `privacy_policy.html` does not mention Sectigo at all, which is a gap even today and is fixed outside this redesign;
   - *Video*: quality, default camera;
   - *Drive account*: connected as…, reconnect, share with a person (the share moves here from the main screen);
   - *Advanced*: chunk size;
-  - *Help*: guide, emergency drill.
+  - *Help*: the guide. The emergency drill stays an idea in `IDEAS.md`, out of scope *(designer's call)*.
 
   "Auto-start on Tile/Notification launch" goes away: the tile always records.
 - **First run:** "Record now" works from the first second. Recording needs only the camera and microphone permissions, plus notifications. Drive can be connected later, and chunks wait on the phone. The 8-step tutorial becomes three screens: what SafeRec does, the permissions, and turning on the three presses (with the overlay permission). The guide stays reachable from settings.
