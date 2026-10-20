@@ -20,7 +20,9 @@ public class PermissionsBannerModelTest {
     @Test public void microphoneRefusedInAudioMode() { assertEquals(NEEDS_MICROPHONE, kindOf(true, false, true, true, false)); }
     @Test public void microphoneRefusedInVideoModeAsBefore() {
         assertEquals(NEEDS_CAMERA_AND_MICROPHONE, kindOf(false, false, false, true, true));
-        assertEquals(NEEDS_CAMERA_AND_MICROPHONE, kindOf(false, false, true, true, false));
+    }
+    @Test public void microphoneRefusedInVideoModeWithTheCameraGrantedAsksForTheMicrophoneOnly() {
+        assertEquals(NEEDS_MICROPHONE, kindOf(false, false, true, true, false));
     }
     @Test public void cameraRefusedInVideoModeRecordsSoundOnly() { assertEquals(SOUND_ONLY, kindOf(false, true, false, false, true)); }
     @Test public void cameraRefusedDoesNotMatterInAudioMode() { assertEquals(HIDDEN, kindOf(true, true, false, false, true)); }

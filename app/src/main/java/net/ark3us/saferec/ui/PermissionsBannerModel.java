@@ -30,7 +30,8 @@ public final class PermissionsBannerModel {
                               boolean microphoneRefused, boolean cameraRefused) {
         if (!microphone) {
             if (!microphoneRefused) return Kind.HIDDEN;
-            return audioOnly ? Kind.NEEDS_MICROPHONE : Kind.NEEDS_CAMERA_AND_MICROPHONE;
+            // Only the microphone is missing when the camera is already granted, or not wanted
+            return audioOnly || camera ? Kind.NEEDS_MICROPHONE : Kind.NEEDS_CAMERA_AND_MICROPHONE;
         }
         if (!audioOnly && !camera && cameraRefused) return Kind.SOUND_ONLY;
         return Kind.HIDDEN;
