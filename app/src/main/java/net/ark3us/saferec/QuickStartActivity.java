@@ -87,7 +87,12 @@ public class QuickStartActivity extends Activity {
             // This runs in the recording's own process: a refusal must never crash a recording
             // already in progress
             Log.e(TAG, "Cannot start the recording service", e);
-            Haptics.failed(this);
+            try {
+                Haptics.failed(this);
+            } catch (RuntimeException vibrationError) {
+                // Nothing in this catch may throw: it protects a recording in progress
+                Log.w(TAG, "Cannot vibrate the failure", vibrationError);
+            }
         }
     }
 
