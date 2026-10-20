@@ -112,6 +112,12 @@ public class RecordButton extends View {
         invalidate();
     }
 
+    /** It acts like a button for a screen reader, though it is a custom View. */
+    @Override
+    public CharSequence getAccessibilityClassName() {
+        return android.widget.Button.class.getName();
+    }
+
     private void updateDescription() {
         setContentDescription(getContext().getString(
                 recording ? R.string.record_recording_description : R.string.record_start));

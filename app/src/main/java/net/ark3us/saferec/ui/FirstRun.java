@@ -119,7 +119,7 @@ public class FirstRun {
             lp.setMarginEnd(Math.round(6 * d));
             dots.addView(dot, lp);
         }
-        dots.setContentDescription((index + 1) + " / " + steps.size());
+        dots.setContentDescription(activity.getString(R.string.first_run_step, index + 1, steps.size()));
     }
 
     private void onPrimary() {

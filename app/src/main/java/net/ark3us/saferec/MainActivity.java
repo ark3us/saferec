@@ -83,7 +83,11 @@ public class MainActivity extends AppCompatActivity {
     private View audioOnlySurface;
     private View recordingInfo;
     private Chronometer recordingTime;
-    private View holdHint;
+    private TextView holdHint;
+    // Which of the two spellings of the hint is showing, see pulseHoldHint()
+    private boolean holdHintRepeat;
+    // What the gallery button says without the waiting count
+    private String galleryDescription;
 
     private StatusChipController statusChip;
     private PermissionsBanner permissionsBanner;
@@ -151,6 +155,7 @@ public class MainActivity extends AppCompatActivity {
         recordingInfo = findViewById(R.id.recording_info);
         recordingTime = findViewById(R.id.recording_time);
         holdHint = findViewById(R.id.hold_hint);
+        ViewCompat.setAccessibilityLiveRegion(holdHint, ViewCompat.ACCESSIBILITY_LIVE_REGION_POLITE);
 
         PermissionsManager permissionsManager = new PermissionsManager(this);
         firstRun = new FirstRun(this, findViewById(R.id.first_run_card), permissionsManager);
@@ -384,7 +389,11 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    /** A tap while recording: the hint grows once and is read aloud. */
+    /**
+     * A tap while recording: the hint grows once and is read aloud. The hint is a polite live
+     * region, which speaks only when its text changes, so each tap alternates the text with
+     * an invisible suffix: the same words, but a change.
+     */
     private void pulseHoldHint() {
         holdHint.animate().cancel();
         holdHint.setScaleX(1f);
@@ -392,7 +401,8 @@ public class MainActivity extends AppCompatActivity {
         holdHint.animate().scaleX(1.15f).scaleY(1.15f).setDuration(150)
                 .withEndAction(() -> holdHint.animate().scaleX(1f).scaleY(1f).setDuration(150))
                 .start();
-        holdHint.announceForAccessibility(getString(R.string.record_hold_to_stop));
+        holdHintRepeat = !holdHintRepeat;
+        holdHint.setText(getString(R.string.record_hold_to_stop) + (holdHintRepeat ? "\u200B" : ""));
     }
 
     private void setOnlyAudio(boolean onlyAudio) {
@@ -471,6 +481,7 @@ public class MainActivity extends AppCompatActivity {
     private void renderGalleryBadge() {
         show(galleryBadge, pendingPieces > 0);
         galleryBadge.setText(String.valueOf(pendingPieces));
+        applyGalleryDescription();
     }
 
     /**
@@ -530,9 +541,18 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void describeGallery(SessionSummary latest) {
-        btnGallery.setContentDescription(getString(R.string.gallery_latest,
+        galleryDescription = getString(R.string.gallery_latest,
                 android.text.format.DateFormat.getMediumDateFormat(this)
-                        .format(new java.util.Date(latest.startMillis))));
+                        .format(new java.util.Date(latest.startMillis)));
+        applyGalleryDescription();
+    }
+
+    /** The badge is not read by itself, so the button says how many pieces wait. */
+    private void applyGalleryDescription() {
+        String base = galleryDescription != null ? galleryDescription : getString(R.string.open_recordings);
+        btnGallery.setContentDescription(pendingPieces > 0
+                ? base + ", " + getResources().getQuantityString(R.plurals.status_waiting, pendingPieces, pendingPieces)
+                : base);
     }
 
     private void showGalleryPlaceholder() {
@@ -543,7 +563,8 @@ public class MainActivity extends AppCompatActivity {
         btnGallery.setScaleType(ImageView.ScaleType.FIT_CENTER);
         btnGallery.setTag(null);
         btnGallery.setImageResource(R.drawable.ms_photo_library);
-        btnGallery.setContentDescription(getString(R.string.open_recordings));
+        galleryDescription = null;
+        applyGalleryDescription();
     }
 
     private static void show(View view, boolean visible) {

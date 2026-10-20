@@ -155,7 +155,8 @@ public class SessionActivity extends AppCompatActivity {
         technicalChevron = findViewById(R.id.session_technical_chevron);
         technicalHeader = header;
         header.setOnClickListener(v -> setTechnicalExpanded(technicalBody.getVisibility() != View.VISIBLE));
-        // Screen readers offer the opposite action and announce the new state
+        ViewCompat.setStateDescription(header, getString(R.string.state_collapsed));
+        // Screen readers offer the opposite action; the state is its state description
         ViewCompat.setAccessibilityDelegate(header, new AccessibilityDelegateCompat() {
             @Override
             public void onInitializeAccessibilityNodeInfo(View host, AccessibilityNodeInfoCompat info) {
@@ -319,9 +320,9 @@ public class SessionActivity extends AppCompatActivity {
     private void setTechnicalExpanded(boolean open) {
         technicalBody.setVisibility(open ? View.VISIBLE : View.GONE);
         technicalChevron.setRotation(open ? 180f : 0f);
-        // The content change tells a screen reader the new state
-        technicalHeader.sendAccessibilityEvent(
-                android.view.accessibility.AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED);
+        // The state description is what a screen reader speaks; changing it also notifies it
+        ViewCompat.setStateDescription(technicalHeader,
+                getString(open ? R.string.state_expanded : R.string.state_collapsed));
     }
 
     // ---- Actions ----
@@ -490,6 +491,7 @@ public class SessionActivity extends AppCompatActivity {
             row.findViewById(R.id.piece_shield).setVisibility(piece.timestampFileId != null ? View.VISIBLE : View.INVISIBLE);
             row.findViewById(R.id.piece_repaired).setVisibility(piece.cutFileId != null ? View.VISIBLE : View.GONE);
             row.setOnClickListener(v -> playFrom(piece));
+            describePieceRow(row, piece.timestampFileId != null, piece.cutFileId != null);
             if (piece.timestampFileId != null) {
                 row.setOnLongClickListener(v -> {
                     PopupMenu menu = new PopupMenu(this, v);
@@ -523,7 +525,28 @@ public class SessionActivity extends AppCompatActivity {
         ((TextView) row.findViewById(R.id.piece_title)).setText(R.string.session_manifest_row);
         row.findViewById(R.id.piece_size).setVisibility(View.GONE);
         row.findViewById(R.id.piece_shield).setVisibility(stamped ? View.VISIBLE : View.INVISIBLE);
+        describePieceRow(row, stamped, false);
         list.addView(row);
+    }
+
+    /**
+     * One screen reader stop per row, reading its text: the shield and the repaired note are
+     * parts of it, not stops of their own.
+     */
+    private void describePieceRow(View row, boolean stamped, boolean repaired) {
+        StringBuilder text = new StringBuilder(((TextView) row.findViewById(R.id.piece_title)).getText());
+        TextView size = row.findViewById(R.id.piece_size);
+        if (size.getVisibility() == View.VISIBLE) {
+            text.append(", ").append(size.getText());
+        }
+        if (stamped) {
+            text.append(", ").append(getString(R.string.piece_time_stamped));
+        }
+        if (repaired) {
+            text.append(", ").append(getString(R.string.piece_repaired));
+        }
+        row.setFocusable(true);
+        row.setContentDescription(text);
     }
 
     /** Plays from a piece. Its row maps to the playlist through the file ids: a piece without one is not in it. */

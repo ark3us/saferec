@@ -3,13 +3,16 @@ package net.ark3us.saferec.ui;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.accessibility.AccessibilityEvent;
 import android.widget.CompoundButton;
 import android.widget.ImageView;
 import android.widget.TextView;
 
 import androidx.annotation.DrawableRes;
 import androidx.annotation.Nullable;
+import androidx.core.view.AccessibilityDelegateCompat;
 import androidx.core.view.ViewCompat;
+import androidx.core.view.accessibility.AccessibilityNodeInfoCompat;
 import androidx.core.widget.TextViewCompat;
 
 import com.google.android.material.materialswitch.MaterialSwitch;
@@ -74,10 +77,25 @@ public final class SettingsRows {
         View row = inflate(parent, iconRes, title, summary);
         MaterialSwitch toggle = row.findViewById(R.id.setting_switch);
         toggle.setVisibility(View.VISIBLE);
-        toggle.setContentDescription(title);
         toggle.setChecked(checked);
-        toggle.setOnCheckedChangeListener(listener);
+        toggle.setOnCheckedChangeListener((button, isChecked) -> {
+            listener.onCheckedChanged(button, isChecked);
+            // The row speaks for the switch: tell the screen reader its state changed
+            row.sendAccessibilityEvent(AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED);
+        });
         row.setOnClickListener(v -> toggle.toggle());
+        // One stop: the row reads title and summary and carries the switch's state, and a double
+        // tap on it is the row tap. The switch itself is skipped.
+        toggle.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        ViewCompat.setAccessibilityDelegate(row, new AccessibilityDelegateCompat() {
+            @Override
+            public void onInitializeAccessibilityNodeInfo(View host, AccessibilityNodeInfoCompat info) {
+                super.onInitializeAccessibilityNodeInfo(host, info);
+                info.setClassName("android.widget.Switch");
+                info.setCheckable(true);
+                info.setChecked(toggle.isChecked());
+            }
+        });
         parent.addView(row);
         return row;
     }

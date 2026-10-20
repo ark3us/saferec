@@ -254,6 +254,10 @@
     <string name="session_trash_confirm">Spostare questa registrazione nel cestino di Google Drive? Drive la conserva per 30 giorni.</string>
     <string name="piece_row">Pezzo %1$d · %2$s</string>
     <string name="piece_repaired">Riparato dopo un\'interruzione, originale conservato</string>
+    <string name="piece_time_stamped">con marca temporale</string>
+    <string name="state_expanded">Espanso</string>
+    <string name="state_collapsed">Compresso</string>
+    <string name="first_run_step">Passo %1$d di %2$d</string>
     <string name="session_share_timestamp">Condividi la marca temporale</string>
     <string name="session_manifest_row">Elenco dei pezzi (manifest)</string>
 </resources>
