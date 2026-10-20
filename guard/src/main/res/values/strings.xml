@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="guard_channel_name">SafeRec ready</string>
+    <string name="guard_ready_title">SafeRec ready</string>
+    <string name="guard_ready_text">Press the power key three times to record</string>
+</resources>
