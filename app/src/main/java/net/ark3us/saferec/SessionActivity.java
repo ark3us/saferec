@@ -1,7 +1,6 @@
 package net.ark3us.saferec;
 
 import android.net.Uri;
-import android.text.format.DateFormat;
 import android.text.format.Formatter;
 import android.widget.PopupMenu;
 import android.widget.Toast;
@@ -146,7 +145,12 @@ public class SessionActivity extends AppCompatActivity {
             // The cutout too, as on the viewfinder: in landscape it sits on a side
             Insets bars = insets.getInsets(
                     WindowInsetsCompat.Type.systemBars() | WindowInsetsCompat.Type.displayCutout());
-            v.setPadding(bars.left, bars.top, bars.right, bars.bottom);
+            // Fullscreen fills the screen edge to edge: no strip on the cutout side
+            if (fullscreen) {
+                v.setPadding(0, 0, 0, 0);
+            } else {
+                v.setPadding(bars.left, bars.top, bars.right, bars.bottom);
+            }
             return insets;
         });
 
@@ -435,6 +439,13 @@ public class SessionActivity extends AppCompatActivity {
         CircularProgressIndicatorSpec spec = new CircularProgressIndicatorSpec(this, null, 0,
                 com.google.android.material.R.style.Widget_Material3_CircularProgressIndicator_ExtraSmall);
         spec.indicatorColors = new int[]{button.getTextColors().getDefaultColor()};
+        // Sized by hand: the style's size left a dot nobody saw. The icon takes the same size.
+        int size = Math.round(20 * getResources().getDisplayMetrics().density);
+        spec.indicatorSize = size;
+        spec.indicatorInset = 0;
+        spec.trackThickness = Math.max(2, Math.round(2.5f * getResources().getDisplayMetrics().density));
+        button.setIconSize(size);
+        button.setIconGravity(MaterialButton.ICON_GRAVITY_TEXT_START);
         button.setIcon(IndeterminateDrawable.createCircularDrawable(this, spec));
         button.setIconTint(null);
         updateActions();
@@ -669,7 +680,8 @@ public class SessionActivity extends AppCompatActivity {
         ViewGroup list = findViewById(R.id.session_technical_body);
         list.removeAllViews();
         android.view.LayoutInflater inflater = getLayoutInflater();
-        java.text.DateFormat timeFormat = DateFormat.getTimeFormat(this);
+        // With seconds: the pieces of one minute would all read the same
+        java.text.DateFormat timeFormat = java.text.DateFormat.getTimeInstance(java.text.DateFormat.MEDIUM);
         for (SessionSummary.Piece piece : summary.pieces) {
             View row = inflater.inflate(R.layout.item_session_piece, list, false);
             ((TextView) row.findViewById(R.id.piece_title)).setText(getString(R.string.piece_row,
@@ -857,6 +869,18 @@ public class SessionActivity extends AppCompatActivity {
     }
 
     /** Paused at the given position of the session: a recording is never played by surprise. */
+    /** An audio session has no picture: the player shows this instead of a black box. */
+    private void showAudioArtwork() {
+        android.graphics.drawable.Drawable art = androidx.core.content.ContextCompat.getDrawable(this, R.drawable.ms_graphic_eq);
+        if (art == null) {
+            return;
+        }
+        art = androidx.core.graphics.drawable.DrawableCompat.wrap(art.mutate());
+        androidx.core.graphics.drawable.DrawableCompat.setTint(art, getColor(R.color.on_glass_dim));
+        playerView.setDefaultArtwork(art);
+        playerView.setArtworkDisplayMode(PlayerView.ARTWORK_DISPLAY_MODE_FIT);
+    }
+
     private void buildPlayer(long position) {
         ProgressiveMediaSource.Factory factory = new ProgressiveMediaSource.Factory(streamSource());
         errorBar.setVisibility(View.GONE);
@@ -873,6 +897,7 @@ public class SessionActivity extends AppCompatActivity {
             }
         });
         playerView.setPlayer(player);
+        showAudioArtwork();
         player.setMediaSource(sessionSource(factory), Math.max(0, position));
         player.setPlayWhenReady(false);
         player.prepare();
@@ -1032,6 +1057,8 @@ public class SessionActivity extends AppCompatActivity {
         playerHolder.setLayoutParams(holder);
         playerView.setFullscreenButtonState(on);
         leaveFullscreen.setEnabled(on);
+        // The padding follows the mode, and no insets event comes by itself when only the mode changes
+        ViewCompat.requestApplyInsets(findViewById(R.id.session_root));
 
         WindowInsetsControllerCompat controller =
                 WindowCompat.getInsetsController(getWindow(), getWindow().getDecorView());
