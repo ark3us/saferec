@@ -219,3 +219,36 @@ Camera lost shows "audio only". Errors appear in the chip or in a slim banner, n
   - whether the camera double-press option is possible.
 - R8 (`r8test`) if a library is added.
 - Before/after screenshots of every screen, compared with the review's list above.
+
+## Findings from Plan 1 (input for Plans 2 and 3)
+
+Found while building and checking quick start and safe stop on the S10+ and a Pixel. Each is still open.
+
+**Setup and settings**
+- The guard's row goes stale. It said "Stopped" right after it was turned on, "Needs display over other apps" after the permission was granted, and "Needs battery exemption" after the owner had visited the battery page. Read the status whenever the screen shows and on every return to it.
+- A tap on the row with a step missing turned the guard off. It must lead to the missing step instead. Make it a switch with a status line.
+- The battery page lists every app, and the owner did not find SafeRec's setting. Check which setting maps to `isIgnoringBatteryOptimizations()` on Android 14+ ("Unrestricted"?), and lead the user to it (Settings → Apps → SafeRec → Battery).
+- Camera double press: Android's chooser can make "Always" unreachable. When another app was the last choice, it reads "Complete action using Camera" and a tap on SafeRec opens it just once. The "Always" choices also survive turning the option off. After each try, check `resolveActivity()` against the alias, offer the try again when it was not stored, and skip the tries already stored. The second dialog also shows today even when the first choice was not stored.
+- The help text should say that Android plays its own short vibration for the camera gesture, before SafeRec's two pulses.
+- A readiness list of every way in (tile, three presses, double press, home-screen icon): see "Quick-start readiness at a glance" in `IDEAS.md`.
+
+**Haptics and the quick start screen**
+- A start that `QuickStartActivity` catches as failed gives no vibration: play `Haptics.failed()` there.
+- A replayed "started" within ~1 s of the first can feel like the three-pulse failure: skip the replay then.
+- `CMD_STOP` vibrates even when nothing was recording.
+- `QuickStartActivity`: the delayed `finish()` is not cancelled in `onDestroy()`, the camera actions are string literals (use the `MediaStore` constants), and a missing source logs "null".
+
+**Notification, status and safe count**
+- Chunks uploaded after the stop are not counted, and `ServiceState.safeChunks` keeps the old value until the next session. This matters for a status that shows "N safe" after stopping.
+- Below API 31 the notification's Stop only opens the app but is still labelled Stop. The chronometer falls back to "now" when a session id does not parse.
+- A START whose camera and microphone foreground is refused runs under `dataSync`, retried with stack traces, until Android 15's time limit stops it (pre-existing): check it with the viewfinder.
+- The "Record now" shortcut uses the status-bar icon: give it a proper one.
+
+**Guard and build**
+- The guard's channel name repeats the title: name the category instead.
+- A typo in `saferec.powerGesture` silently means off. `TriggerRuleTest` lacks the exact cooldown boundary (+5000 ms against +4999 ms). There is a theoretical race between `ensureRunning()` re-arming the watchdog and `setEnabled(false)`.
+- The camera option does not re-read the alias state after `setComponentEnabledSetting()`, and `CameraGesture.isAvailable()` fails open without a log line.
+
+**Not verified yet**
+- The guard during a phone call.
+- Three presses by hand on a Pixel (only presses sent over adb were tried there).
