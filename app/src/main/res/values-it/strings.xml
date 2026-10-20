@@ -257,4 +257,12 @@
     <string name="first_run_done">Fatto</string>
     <string name="first_run_continue">Continua</string>
     <string name="piece_size_invalid">Dimensione non valida</string>
+    <string name="session_status_complete">Completa</string>
+    <string name="session_status_uploading">In caricamento</string>
+    <string name="session_status_incomplete">Incompleta</string>
+    <string name="session_status_not_checked">Non verificata</string>
+    <string name="recordings_empty">Ancora nessuna registrazione su Drive.</string>
+    <string name="recordings_not_connected">Collega Google Drive per vedere le tue registrazioni. Quelle fatte nel frattempo aspettano sul telefono.</string>
+    <string name="recordings_load_failed">Impossibile caricare le registrazioni. Trascina in basso per riprovare.</string>
+    <string name="session_card_description">%1$s, %2$s, %3$s, %4$s</string>
 </resources>

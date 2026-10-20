@@ -249,4 +249,12 @@
     <string name="first_run_done">Done</string>
     <string name="first_run_continue">Continue</string>
     <string name="piece_size_invalid">Invalid size</string>
+    <string name="session_status_complete">Complete</string>
+    <string name="session_status_uploading">Uploading</string>
+    <string name="session_status_incomplete">Incomplete</string>
+    <string name="session_status_not_checked">Not checked</string>
+    <string name="recordings_empty">No recordings on Drive yet.</string>
+    <string name="recordings_not_connected">Connect Google Drive to see your recordings. Recordings made meanwhile wait on this phone.</string>
+    <string name="recordings_load_failed">Could not load the recordings. Pull down to try again.</string>
+    <string name="session_card_description">%1$s, %2$s, %3$s, %4$s</string>
 </resources>

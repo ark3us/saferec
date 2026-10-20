@@ -8,75 +8,59 @@
     android:orientation="vertical"
     tools:context=".RecordingsActivity">
 
-    <com.google.android.material.appbar.AppBarLayout
+    <com.google.android.material.appbar.MaterialToolbar
+        android:id="@+id/toolbar"
+        android:layout_width="match_parent"
+        android:layout_height="?attr/actionBarSize"
+        android:background="@android:color/transparent"
+        app:navigationIcon="@drawable/ms_arrow_back"
+        app:navigationIconTint="@color/on_glass"
+        app:title="@string/open_recordings"
+        app:titleTextColor="@color/on_glass" />
+
+    <LinearLayout
+        android:id="@+id/waiting_banner"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:background="@color/surface_elevated"
-        android:elevation="4dp">
+        android:layout_marginHorizontal="@dimen/gutter"
+        android:layout_marginBottom="8dp"
+        android:background="@drawable/glass_bg"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingStart="12dp"
+        android:paddingEnd="4dp"
+        android:visibility="gone">
 
-        <androidx.appcompat.widget.Toolbar
-            android:id="@+id/toolbar"
-            android:layout_width="match_parent"
-            android:layout_height="?attr/actionBarSize"
-            app:title="@string/my_recordings"
-            app:titleTextColor="@color/white"
-            app:navigationIcon="@drawable/baseline_arrow_back_24"
-            app:navigationIconTint="@color/white" />
+        <ImageView
+            android:layout_width="20dp"
+            android:layout_height="20dp"
+            android:importantForAccessibility="no"
+            android:src="@drawable/ms_cloud_upload"
+            app:tint="@color/on_glass" />
 
-        <LinearLayout
-            android:id="@+id/selection_toolbar"
-            android:layout_width="match_parent"
+        <TextView
+            android:id="@+id/waiting_banner_text"
+            android:layout_width="0dp"
             android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:paddingHorizontal="12dp"
-            android:paddingVertical="8dp"
-            android:background="@color/surface_elevated"
-            android:visibility="gone"
-            android:gravity="center_vertical">
+            android:layout_marginStart="10dp"
+            android:layout_weight="1"
+            android:paddingVertical="10dp"
+            android:textColor="@color/on_glass"
+            android:textSize="14sp" />
 
-            <CheckBox
-                android:id="@+id/select_all"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/all_recordings"
-                android:textColor="@color/white" />
-
-            <TextView
-                android:id="@+id/selection_count"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:layout_marginStart="12dp"
-                android:textColor="@color/white"
-                android:textSize="16sp"
-                android:text="@string/no_selection" />
-
-            <ImageButton
-                android:id="@+id/btn_share"
-                android:layout_width="48dp"
-                android:layout_height="48dp"
-                android:background="?attr/selectableItemBackgroundBorderless"
-                android:src="@drawable/baseline_share_24"
-                app:tint="@color/primary"
-                android:contentDescription="@string/share" />
-
-            <ImageButton
-                android:id="@+id/btn_delete"
-                android:layout_width="48dp"
-                android:layout_height="48dp"
-                android:background="?attr/selectableItemBackgroundBorderless"
-                android:src="@drawable/baseline_delete_24"
-                app:tint="@color/record_red"
-                android:contentDescription="@string/delete" />
-
-        </LinearLayout>
-
-    </com.google.android.material.appbar.AppBarLayout>
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/waiting_banner_action"
+            style="@style/Widget.Material3.Button.TextButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textColor="@color/on_glass" />
+    </LinearLayout>
 
     <androidx.swiperefreshlayout.widget.SwipeRefreshLayout
         android:id="@+id/swipe_refresh_layout"
         android:layout_width="match_parent"
-        android:layout_height="match_parent">
+        android:layout_height="0dp"
+        android:layout_weight="1">
 
         <FrameLayout
             android:layout_width="match_parent"
@@ -86,29 +70,47 @@
                 android:id="@+id/recycler_view"
                 android:layout_width="match_parent"
                 android:layout_height="match_parent"
-                android:padding="8dp"
                 android:clipToPadding="false"
-                tools:listitem="@layout/item_recording" />
+                android:paddingBottom="8dp"
+                tools:listitem="@layout/item_session_card" />
 
-            <ProgressBar
+            <com.google.android.material.progressindicator.CircularProgressIndicator
                 android:id="@+id/progress_bar"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_gravity="center"
-                android:visibility="gone"
-                app:indicatorColor="@color/primary" />
-
-            <TextView
-                android:id="@+id/empty_state"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_gravity="center"
-                android:text="@string/no_recordings_found"
-                android:textColor="@color/control_icon"
+                android:indeterminate="true"
                 android:visibility="gone" />
 
+            <LinearLayout
+                android:id="@+id/empty_state"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center"
+                android:gravity="center_horizontal"
+                android:orientation="vertical"
+                android:paddingHorizontal="32dp"
+                android:visibility="gone">
+
+                <TextView
+                    android:id="@+id/empty_state_text"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:gravity="center"
+                    android:textColor="@color/on_glass_dim"
+                    android:textSize="16sp" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/empty_state_action"
+                    style="@style/Widget.Material3.Button.OutlinedButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="16dp"
+                    android:text="@string/status_connect_drive"
+                    android:textColor="@color/on_glass"
+                    android:visibility="gone"
+                    app:strokeColor="@color/glass_stroke" />
+            </LinearLayout>
         </FrameLayout>
-
     </androidx.swiperefreshlayout.widget.SwipeRefreshLayout>
-
 </LinearLayout>
