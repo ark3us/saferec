@@ -45,11 +45,12 @@
         <item name="android:scaleType">fitCenter</item>
     </style>
 
-    <!-- Video|Audio on the viewfinder: icon only, white when selected -->
+    <!-- Video|Audio on the viewfinder: icon only, white when selected. 52dp wide: at 360dp the
+         toggle then stays clear of the record button's 112dp touch box -->
     <style name="Widget.SafeRec.ModeButton" parent="Widget.Material3.Button.IconButton.Outlined">
         <item name="android:insetTop">0dp</item>
         <item name="android:insetBottom">0dp</item>
-        <item name="android:minWidth">56dp</item>
+        <item name="android:minWidth">52dp</item>
         <item name="android:minHeight">48dp</item>
         <item name="iconSize">24dp</item>
         <item name="backgroundTint">@color/mode_button_background</item>
