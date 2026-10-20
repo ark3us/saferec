@@ -272,7 +272,7 @@ public class RecordingsActivity extends AppCompatActivity {
             }
             try {
                 backgroundExecutor.execute(() -> {
-                    DriveConnection.Result result = DriveConnection.accept(getApplicationContext(), token);
+                    DriveConnection.Result result = DriveConnection.accept(getApplicationContext(), token, true);
                     Log.i(TAG, "Drive connection: " + result);
                     mainHandler.post(() -> {
                         connecting = false;

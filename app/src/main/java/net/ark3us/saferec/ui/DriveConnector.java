@@ -94,7 +94,7 @@ public final class DriveConnector {
         Context app = activity.getApplicationContext();
         try {
             executor.execute(() -> {
-                DriveConnection.Result result = DriveConnection.accept(app, token);
+                DriveConnection.Result result = DriveConnection.accept(app, token, asked);
                 Log.i(TAG, (asked ? "Drive connection: " : "Silent Drive check: ") + result);
                 activity.runOnUiThread(() -> {
                     if (asked) {

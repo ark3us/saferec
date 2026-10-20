@@ -282,7 +282,7 @@ public class SessionActivity extends AppCompatActivity {
             Context app = getApplicationContext();
             try {
                 executor.execute(() -> {
-                    DriveConnection.Result result = DriveConnection.accept(app, token);
+                    DriveConnection.Result result = DriveConnection.accept(app, token, true);
                     mainHandler.post(() -> {
                         if (isDestroyed()) {
                             return;

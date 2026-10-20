@@ -21,11 +21,23 @@ public final class DriveConnection {
      * since a network error is not an auth error.
      */
     public static Result accept(Context context, String token) {
+        return accept(context, token, false);
+    }
+
+    /**
+     * As above. With interactive (the user just chose an account) the old account name is
+     * dropped first: the new one may not be readable, and "Connected as" must never name the
+     * previous account. A silent check keeps it.
+     */
+    public static Result accept(Context context, String token, boolean interactive) {
         GoogleDriveClient client = new GoogleDriveClient(token);
         GoogleDriveClient.AuthStatus status = client.checkAuthentication();
         switch (status) {
             case VALID:
             case UNKNOWN:
+                if (interactive) {
+                    Settings.setDriveAccount(context, null);
+                }
                 Settings.setAccessToken(context, token);
                 ServiceState.getInstance().setDriveAuthProblem(false);
                 if (status == GoogleDriveClient.AuthStatus.VALID) {
