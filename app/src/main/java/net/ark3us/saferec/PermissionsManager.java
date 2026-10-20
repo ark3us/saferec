@@ -153,6 +153,16 @@ public class PermissionsManager {
                 });
     }
 
+    /**
+     * After a recreation the dialog of the old screen is still on display and its answer comes to
+     * this instance with nobody waiting. Joins it: onResult runs after that answer, and a request
+     * made meanwhile joins it too, instead of showing a second dialog.
+     */
+    public void awaitPermissionsInFlight(Runnable onResult) {
+        permissionsInFlight = true;
+        pendingPermissions.add(onResult);
+    }
+
     private void notifyPermissionsResult() {
         permissionsInFlight = false;
         List<Runnable> waiting = new ArrayList<>(pendingPermissions);

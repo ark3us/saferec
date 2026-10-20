@@ -78,6 +78,9 @@ public class MainActivity extends AppCompatActivity {
     // The latest session costs several Drive requests and a manifest: at most one load a minute
     private long galleryLoadedAt = 0;
     private static final long GALLERY_RELOAD_MS = 60_000;
+    // The silent Drive check asks Play services: at most once a minute, or when the network returns
+    private long driveCheckedAt = 0;
+    private static final long DRIVE_CHECK_MS = 60_000;
     private MaterialButtonToggleGroup modeToggle;
     private Chip safeChip;
     private View audioOnlySurface;
@@ -168,7 +171,10 @@ public class MainActivity extends AppCompatActivity {
         driveConnector = new DriveConnector(this, permissionsManager, new DriveConnector.Listener() {
             @Override
             public void onDriveReady() {
-                startSafeRecService(SafeRecService.CMD_UPLOAD_PENDING);
+                // Nothing to send when no piece waits on this phone
+                if (countPendingPieces() > 0) {
+                    startSafeRecService(SafeRecService.CMD_UPLOAD_PENDING);
+                }
             }
 
             @Override
@@ -279,8 +285,18 @@ public class MainActivity extends AppCompatActivity {
             showGuideIfRequested(getIntent());
         }
 
-        // Record first, sync later: a launch command waits for neither Drive nor the first run
-        launchWhenPermitted();
+        // A start was waiting for the permission dialog when the screen was recreated: its answer
+        // starts it, and it is the launch command's start too when that one was the waiting one
+        boolean resumed = permissionsBanner.resumeWaitingStart(Settings.onlyAudio(this),
+                () -> startSafeRecService(SafeRecService.CMD_START));
+        if (resumed) {
+            if (SafeRecService.CMD_START.equals(getCommand())) {
+                launchCommandHandled = true;
+            }
+        } else {
+            // Record first, sync later: a launch command waits for neither Drive nor the first run
+            launchWhenPermitted();
+        }
     }
 
     private void observeServiceState() {
@@ -605,6 +621,7 @@ public class MainActivity extends AppCompatActivity {
     private void onOnlineChanged(boolean online) {
         renderStatusChip();
         if (online) {
+            driveCheckedAt = SystemClock.elapsedRealtime();
             driveConnector.silentCheck(true);
         }
     }
@@ -680,7 +697,11 @@ public class MainActivity extends AppCompatActivity {
         refreshGallery();
         permissionsBanner.refresh(Settings.onlyAudio(this));
         render();
-        driveConnector.silentCheck(networkWatcher.isOnline());
+        long now = SystemClock.elapsedRealtime();
+        if (driveCheckedAt == 0 || now - driveCheckedAt >= DRIVE_CHECK_MS) {
+            driveCheckedAt = now;
+            driveConnector.silentCheck(networkWatcher.isOnline());
+        }
     }
 
     @Override

@@ -27,6 +27,7 @@ public final class PermissionsBanner {
     private static final String TAG = PermissionsBanner.class.getSimpleName();
     private static final String STATE_MICROPHONE_REFUSED = "microphone_refused";
     private static final String STATE_CAMERA_REFUSED = "camera_refused";
+    private static final String STATE_START_WAITING = "start_waiting";
 
     private final Activity activity;
     private final PermissionsManager permissions;
@@ -37,6 +38,8 @@ public final class PermissionsBanner {
     private boolean cameraRefused;
     // The mode the banner speaks for
     private boolean audioOnly;
+    // A start waits for the permission dialog: kept across a recreation, cleared by any answer
+    private boolean startWaiting;
 
     public PermissionsBanner(Activity activity, PermissionsManager permissions, View banner, TextView text,
                              View allow, @Nullable Bundle savedState) {
@@ -46,6 +49,7 @@ public final class PermissionsBanner {
         this.text = text;
         microphoneRefused = savedState != null && savedState.getBoolean(STATE_MICROPHONE_REFUSED);
         cameraRefused = savedState != null && savedState.getBoolean(STATE_CAMERA_REFUSED);
+        startWaiting = savedState != null && savedState.getBoolean(STATE_START_WAITING);
         allow.setOnClickListener(v -> onAllow());
     }
 
@@ -65,11 +69,32 @@ public final class PermissionsBanner {
     }
 
     /**
+     * A recreated screen whose start was waiting for the dialog: the dialog is still on display,
+     * so joins its answer and starts as a fresh tap would. A refusal drops the start.
+     *
+     * @return true when a start was waiting, so the caller must not ask again
+     */
+    public boolean resumeWaitingStart(boolean audioOnly, Runnable start) {
+        if (!startWaiting) {
+            return false;
+        }
+        this.audioOnly = audioOnly;
+        permissions.awaitPermissionsInFlight(answered(audioOnly, start));
+        return true;
+    }
+
+    /**
      * Asks for what a recording of this kind asks for, in one request. Runs onCanRecord once the
      * microphone is granted; a refusal shows the banner.
      */
     private void ask(boolean audioOnly, @Nullable Runnable onCanRecord) {
-        permissions.requestRecordingPermissions(audioOnly, () -> {
+        startWaiting = onCanRecord != null;
+        permissions.requestRecordingPermissions(audioOnly, answered(audioOnly, onCanRecord));
+    }
+
+    private Runnable answered(boolean audioOnly, @Nullable Runnable onCanRecord) {
+        return () -> {
+            startWaiting = false;
             boolean microphone = PermissionsManager.canRecord(activity);
             microphoneRefused = !microphone;
             if (!audioOnly) {
@@ -81,7 +106,7 @@ public final class PermissionsBanner {
             if (microphone && onCanRecord != null) {
                 onCanRecord.run();
             }
-        });
+        };
     }
 
     /** The screen came back or the mode changed: what was granted since no longer shows. */
@@ -99,6 +124,7 @@ public final class PermissionsBanner {
     public void save(Bundle outState) {
         outState.putBoolean(STATE_MICROPHONE_REFUSED, microphoneRefused);
         outState.putBoolean(STATE_CAMERA_REFUSED, cameraRefused);
+        outState.putBoolean(STATE_START_WAITING, startWaiting);
     }
 
     private void render() {
