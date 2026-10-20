@@ -73,6 +73,9 @@ Before running, check that the default network is `VALIDATED` and that no global
 ### Unit tests on every push
 The repository is public and now has JVM unit tests that need no phone. A small GitHub Actions workflow running `./gradlew testDebugUnitTest lintDebug` on each push would catch a broken build or a failing outbox test before it reaches `main`, now that changes are merged without a pull request. Secrets are not needed: the tests never touch Drive.
 
+### The Play build checks itself
+The build with `saferec.powerGesture=false` crashed at first launch once, from a reference javac kept in a synthetic class, and only a device test caught it. Make `scripts/check-guard-refs.sh` a Gradle task that `check` and every off build depend on, and add a one-minute device smoke test of the off build (install, first run, record, stop) to the release checklist. The build that goes to Google Play is the one nobody runs day to day.
+
 ### Smoke test the release build in CI
 The `r8test` build can be checked automatically. A GitHub Actions job would build it and start it on an emulator (`reactivecircus/android-emulator-runner`). It would then launch the main screen, the recordings screen and the outbox job, and fail on any `ClassNotFoundException`, `NoSuchFieldException` or crash in logcat. No Google account is needed to catch R8 breaking reflection at startup. It would have caught a missing rule before a release, not on a user's phone.
 
