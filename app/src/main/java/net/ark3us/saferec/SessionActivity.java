@@ -349,15 +349,15 @@ public class SessionActivity extends AppCompatActivity {
     /** The consent screen if Play services need it, then a check with Drive; then the load. */
     private void connectDrive(Button button) {
         button.setEnabled(false);
-        permissionsManager.connectDrive(true, (token, needsUser) -> {
-            if (token == null) {
+        permissionsManager.connectDrive(true, (newToken, needsUser) -> {
+            if (newToken == null) {
                 button.setEnabled(true);
                 return;
             }
             Context app = getApplicationContext();
             try {
                 executor.execute(() -> {
-                    DriveConnection.Result result = DriveConnection.accept(app, token, true);
+                    DriveConnection.Result result = DriveConnection.accept(app, newToken, true);
                     mainHandler.post(() -> {
                         if (isDestroyed()) {
                             return;
