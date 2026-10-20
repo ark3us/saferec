@@ -272,4 +272,5 @@
     <string name="first_run_turn_on">Turn on</string>
     <string name="first_run_skip">Skip</string>
     <string name="first_run_done">Done</string>
+    <string name="first_run_continue">Continue</string>
 </resources>

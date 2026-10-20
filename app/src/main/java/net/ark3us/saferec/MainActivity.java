@@ -242,7 +242,9 @@ public class MainActivity extends AppCompatActivity {
 
         observeServiceState();
 
-        if (!Settings.isFirstRunDone(this)) {
+        if (savedInstanceState != null && firstRun.restore(savedInstanceState)) {
+            // The card is back on its step
+        } else if (!Settings.isFirstRunDone(this)) {
             firstRun.show();
         } else if (savedInstanceState == null) {
             // Once per launch: a recreated activity keeps its intent and must not show the guide again
@@ -532,6 +534,7 @@ public class MainActivity extends AppCompatActivity {
         super.onResume();
         videoPreview.post(this::tryStartPreview);
         CameraGestureSetup.onResume(this);
+        firstRun.onResume();
         if (BuildConfig.POWER_GESTURE) {
             // The app is in the foreground, so the guard's foreground service may start now
             net.ark3us.saferec.guard.Guard.ensureRunning(this);
@@ -560,6 +563,7 @@ public class MainActivity extends AppCompatActivity {
         super.onSaveInstanceState(outState);
         outState.putBoolean(STATE_LAUNCH_COMMAND_HANDLED, launchCommandHandled);
         permissionsBanner.save(outState);
+        firstRun.save(outState);
     }
 
     @Override

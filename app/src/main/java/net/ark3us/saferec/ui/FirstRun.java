@@ -1,5 +1,7 @@
 package net.ark3us.saferec.ui;
 
+import android.os.Build;
+import android.os.Bundle;
 import android.graphics.drawable.GradientDrawable;
 import android.view.View;
 import android.view.ViewGroup;
@@ -92,8 +94,25 @@ public class FirstRun {
                 break;
             case THREE_PRESSES:
                 title.setText(R.string.first_run_three_presses_title);
-                text.setText(R.string.first_run_three_presses_text);
-                actionLabel = R.string.first_run_turn_on;
+                int state = BuildConfig.POWER_GESTURE ? guardState() : GUARD_DISABLED;
+                switch (state) {
+                    case GUARD_NEEDS_PERMISSION:
+                        text.setText(guardStepText());
+                        actionLabel = R.string.first_run_continue;
+                        break;
+                    case GUARD_STOPPED:
+                        text.setText(R.string.three_presses_starting);
+                        actionLabel = R.string.first_run_done;
+                        break;
+                    case GUARD_ACTIVE:
+                        text.setText(R.string.three_presses_on);
+                        actionLabel = R.string.first_run_done;
+                        break;
+                    default:
+                        text.setText(R.string.first_run_three_presses_text);
+                        actionLabel = R.string.first_run_turn_on;
+                        break;
+                }
                 break;
             default:
                 title.setText(R.string.first_run_about_title);
@@ -129,10 +148,11 @@ public class FirstRun {
                 permissions.requestRecordingPermissions(this::next);
                 break;
             case THREE_PRESSES:
+                // The card stays until the three presses work (or Skip): it re-reads the status on resume
                 if (BuildConfig.POWER_GESTURE) {
-                    turnOnThreePresses();
+                    onThreePressesPrimary();
                 }
-                next();
+                render();
                 break;
             default:
                 next();
@@ -140,10 +160,73 @@ public class FirstRun {
         }
     }
 
-    // Guard and GuardSetup are not packaged without the build switch: only called under the check
-    private void turnOnThreePresses() {
-        net.ark3us.saferec.guard.Guard.setEnabled(activity, true);
-        GuardSetup.openNextStep(activity);
+    private static final int GUARD_DISABLED = 0;
+    private static final int GUARD_NEEDS_PERMISSION = 1;
+    private static final int GUARD_STOPPED = 2;
+    private static final int GUARD_ACTIVE = 3;
+
+    // Guard and GuardSetup are not packaged without the build switch: callers check POWER_GESTURE
+    private int guardState() {
+        switch (net.ark3us.saferec.guard.Guard.status(activity)) {
+            case NEEDS_OVERLAY:
+            case NEEDS_BATTERY_EXEMPTION:
+                return GUARD_NEEDS_PERMISSION;
+            case STOPPED:
+                return GUARD_STOPPED;
+            case ACTIVE:
+                return GUARD_ACTIVE;
+            default:
+                return GUARD_DISABLED;
+        }
+    }
+
+    private int guardStepText() {
+        if (net.ark3us.saferec.guard.Guard.status(activity)
+                == net.ark3us.saferec.guard.Guard.Status.NEEDS_OVERLAY) {
+            return R.string.three_presses_step_overlay;
+        }
+        return Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+                ? R.string.three_presses_step_battery : R.string.three_presses_step_battery_legacy;
+    }
+
+    private void onThreePressesPrimary() {
+        switch (guardState()) {
+            case GUARD_STOPPED:
+            case GUARD_ACTIVE:
+                finish();
+                break;
+            case GUARD_DISABLED:
+                net.ark3us.saferec.guard.Guard.setEnabled(activity, true);
+                GuardSetup.openNextStep(activity);
+                break;
+            default:
+                GuardSetup.openNextStep(activity);
+                break;
+        }
+    }
+
+    /** Back from a settings page: the three presses step shows what is still missing. */
+    public void onResume() {
+        if (isShowing() && steps.get(index) == FirstRunSteps.Step.THREE_PRESSES) {
+            render();
+        }
+    }
+
+    private static final String STATE_INDEX = "first_run_index";
+    private static final String STATE_SHOWING = "first_run_showing";
+
+    public void save(@NonNull Bundle out) {
+        out.putBoolean(STATE_SHOWING, isShowing());
+        out.putInt(STATE_INDEX, index);
+    }
+
+    /** After a recreation: the card comes back on the step it was. Returns whether it did. */
+    public boolean restore(@NonNull Bundle in) {
+        if (!in.getBoolean(STATE_SHOWING, false)) return false;
+        show();
+        index = Math.max(0, Math.min(in.getInt(STATE_INDEX, 0), steps.size() - 1));
+        render();
+        return true;
     }
 
     private void next() {

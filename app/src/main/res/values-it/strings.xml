@@ -280,4 +280,5 @@
     <string name="first_run_turn_on">Attiva</string>
     <string name="first_run_skip">Salta</string>
     <string name="first_run_done">Fatto</string>
+    <string name="first_run_continue">Continua</string>
 </resources>
