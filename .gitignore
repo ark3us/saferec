@@ -56,3 +56,6 @@ local.properties
 
 # Python bytecode (scripts/)
 __pycache__/
+
+# Superpowers scratch (brainstorm mockups, plan execution ledgers)
+.superpowers/
