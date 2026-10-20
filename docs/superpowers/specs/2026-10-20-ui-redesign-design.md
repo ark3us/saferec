@@ -154,7 +154,7 @@ The double press launches the camera with `STILL_IMAGE_CAMERA` (unlocked) or `ST
 - **Notification:** shown at once (`setForegroundServiceBehavior(FOREGROUND_SERVICE_IMMEDIATE)`), with the elapsed time, the safe count, and the authenticated Stop action.
 - **On the lock screen** *(designer's call)*, discretion first:
   - The guard's notification is hidden there (`VISIBILITY_SECRET`, silent, minimized). A lock screen that says "press the power key three times to record" tells an aggressor about SafeRec.
-  - The recording notification shows a neutral public version ("SafeRec active"), with no elapsed time and no Stop.
+  - The recording notification is hidden on a secure lock screen (`VISIBILITY_SECRET`). *Changed during implementation:* a neutral public version ("SafeRec active", `VISIBILITY_PRIVATE`) is only shown when the user chose "hide sensitive content"; under Android's common default ("show all content") the full notification, elapsed time and Stop included, appeared on the lock screen. In the unlocked shade it still shows everything.
   - Android's own camera and microphone indicator cannot be hidden, and is not hidden.
 - **Vibration:** two short pulses when a recording starts, one long pulse when it stops. A setting turns vibrations off for when even a buzz could be heard. (A fuller "vibration language" is in `IDEAS.md`, out of scope.)
 
