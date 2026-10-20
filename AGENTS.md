@@ -14,8 +14,11 @@ graph TD
         MA["MainActivity"]
         RA["RecordingsActivity"]
         PA["PlaybackActivity"]
+        SA["SettingsActivity"]
+        QSA["QuickStartActivity"]
         PM["PermissionsManager"]
-        TO["TutorialOverlayView"]
+        UH["ui/ helpers: StatusModel, RecordButton, FirstRun, GuardSetup"]
+        TO["TutorialOverlayView (recordings tutorial)"]
     end
 
     subgraph Services["Service Layer"]
@@ -48,7 +51,8 @@ graph TD
     end
 
     MA -- "startForegroundService(CMD_START), startService(others)" --> SRS
-    SRTS -- "launches MainActivity" --> MA
+    SRTS -- "starts" --> QSA
+    QSA -- "CMD_START + EXTRA_QUICK_START" --> SRS
     SRS --> VSR
     SRS --> ASR
     SRS --> MS
@@ -92,13 +96,14 @@ The app exists to save evidence when things go wrong. Keep these invariants:
 
 ```
 net.ark3us.saferec/
-├── MainActivity.java          # Main UI, preview, start/stop, settings
+├── MainActivity.java          # The viewfinder: preview, status chip, record button, first run
+├── SettingsActivity.java      # Settings in plain-language groups, rebuilt on every resume
 ├── RecordingsActivity.java    # Browse/download/merge/share recordings from Drive
 ├── RecordingsAdapter.java     # RecyclerView adapter for recordings list
 ├── QuickStartActivity.java    # The one entry of every quick start; the only screen over the lock screen
 ├── CameraGesture.java         # The optional camera double press (enables a disabled activity alias)
 ├── PlaybackActivity.java      # Video playback (streaming from Drive)
-├── PermissionsManager.java    # Runtime permissions + Google Drive OAuth
+├── PermissionsManager.java    # Recording permissions, and Google Drive OAuth apart from them
 │
 ├── data/
 │   └── ServiceState.java      # Service status and one-shot errors, observed by the UI
@@ -124,6 +129,7 @@ net.ark3us.saferec/
 │   ├── GoogleDriveFileUploader.java  # Drive upload, folder cache, token refresh (one per process)
 │   ├── OutboxWorker.java         # WorkManager job: uploads the outbox when the service is gone
 │   ├── OutboxBootReceiver.java   # After a boot with files left: the expedited outbox job
+│   ├── DriveConnection.java      # Accepts a Drive authorization result (token, account)
 │   ├── GoogleDriveClient.java    # Low-level Drive API wrapper
 │   ├── DriveRecordings.java      # Recordings on Drive: list, download, share, trash
 │   ├── MediaFile.java            # Chunk filename parser/generator
@@ -142,7 +148,20 @@ net.ark3us.saferec/
 │   └── NotificationHelper.java  # Notification channel + builder
 │
 └── ui/
-    └── TutorialOverlayView.java  # First-run tutorial overlay
+    ├── StatusModel.java          # Which status chip shows (pure Java)
+    ├── StatusChipController.java # Draws the chip
+    ├── RecordButton.java         # The record button; hold 1 s to stop
+    ├── HoldToStop.java           # The hold, decided on the clock (pure Java)
+    ├── RecordGesture.java        # A touch acts on the state it began in (pure Java)
+    ├── NetworkWatcher.java       # Validated default network
+    ├── DriveConnector.java       # Silent Drive check, only online with a token
+    ├── PermissionsBanner.java    # Slim banner when a permission is missing
+    ├── FirstRun.java             # The three first-run cards over the viewfinder
+    ├── FirstRunSteps.java        # Which cards are still due (pure Java)
+    ├── SettingsRows.java         # Row builders of the settings screen
+    ├── GuardSetup.java           # Three-presses setup; the only class that may reference the guard
+    ├── CameraGestureSetup.java   # Camera double press setup and its self-check
+    └── TutorialOverlayView.java  # Tutorial of the recordings screen
 
 guard/                          # Separate Gradle module: the three power-key presses (see Quick Start)
 └── net/ark3us/saferec/guard/
@@ -576,7 +595,9 @@ SharedPreferences wrapper. Keys:
 | `quickStartAudioOnly` | boolean | false (a quick start records video) |
 | `quickStartFrontCamera` | boolean | false (a quick start uses the back camera) |
 | `vibrations` | boolean | true |
-| `tutorialShown` | boolean | false |
+| `tutorialShown` | boolean | false (old; seeds `firstRunDone`) |
+| `firstRunDone` | boolean | the old `tutorialShown` |
+| `driveAccount` | String | null (email of the connected account, on the phone only) |
 | `shareEmail` | String | "" (last address recordings were shared with) |
 | `timestampingEnabled` | boolean | false |
 
@@ -610,6 +631,33 @@ Recording must start with the phone locked, in a pocket, without looking. Every 
   - The notification was posted 0.22 s after the start, hidden on the lock screen, with no sound or vibration of its own.
   - The lock screen's quick settings list "Active apps", but opening it asked for the PIN: nothing there stops a recording.
   - The shrunk release (`r8test`): three presses recorded, the notification showed its chronometer and safe count, and its Stop (phone unlocked) stopped the recording. No crash.
+
+## Viewfinder and settings
+
+`MainActivity` is a camera-style viewfinder. Errors never cover the record button: Snackbars sit above the controls, a slim banner reports missing permissions, and there is no full-screen error.
+
+```
+ [status chip]                [switch camera] [recordings] [settings]
+ (preview)
+ [Video|Audio]      ( record: hold 1 s to stop )      [gallery]
+ recording: red pill with elapsed time, "N pieces safe" chip
+```
+
+- **Status chip** (`StatusModel`): `CONNECT_DRIVE`, `RECONNECT_DRIVE`, `THREE_PRESSES_OFF`, `WAITING`, `OFFLINE`, `DRIVE_OK`, `HIDDEN`. Recording first, sync later: the chip reports, it never blocks.
+- **Stopping** is a 1 s hold on the record button (`HoldToStop`). A touch acts on the state it began in (`RecordGesture`): releasing a hold once restarted the recording.
+- **Drive.** `DriveConnector` checks silently, only online with a token, and never opens the account picker by itself. `ServiceState` publishes the session start, audio only, files waiting and a sticky Drive-auth flag.
+- **Permissions** follow the mode: audio needs the microphone only. Recording permissions are separate from Drive (`requestRecordingPermissions`, `connectDrive(interactive, ...)`).
+- **Settings** live in `SettingsActivity`: Quick start, Evidence, Video, Google Drive, Advanced, Help. The three presses setup (`GuardSetup`) sends the battery step to the app's own page ("App battery usage, Unrestricted" on Android 12+, "Don't optimize" below) and continues by itself after the overlay page. The tile row adds the tile with `StatusBarManager.requestAddTileService` on Android 13+.
+- **First run**: three cards above the controls (what SafeRec does, permissions, three presses). The record button works throughout. The same cards are Settings, Help, Guide (`EXTRA_SHOW_GUIDE`).
+- **Build switch off.** `GuardSetup` is the only class that references the guard; `scripts/check-guard-refs.sh` checks it.
+- **Verified on a Galaxy S10+** (Android 16, debug build):
+  - Ready and recording as specified. A 1.8 s hold stopped once with one long vibration and never restarted. The safe chip appeared at the first piece (~17 s).
+  - Idle offline: "Offline". Recording offline: "N pieces waiting on this phone", the recording went on. Back online, the chip turned "Drive connected" once the outbox was empty.
+  - No Drive token: "Connect Drive", no picker, the recording started at once. The uploader's silent refresh restored a token (the account had authorized SafeRec before).
+  - Camera and microphone revoked: a tap on record showed the system dialogs, and the recording started by itself once allowed.
+  - Three presses while locked, app opened 20 s later: the pill read 00:20 (counted from the session start). An audio-only quick start showed the dark "Audio only" surface and no camera switch.
+  - `-Psaferec.powerGesture=false`: no three presses row or first-run step. It first crashed (`NoClassDefFoundError: Guard$Status`, from the synthetic `FirstRun$1` holding every enum switch map). Fixed, and re-tested with no crash.
+  - Installing the switch-off build over the normal one resets the "Display over other apps" grant (the manifest no longer declares it); the chip then correctly showed "Three presses off".
 
 ### Three presses of the power key
 
@@ -763,7 +811,7 @@ R8 shrinks and optimizes the release (`isMinifyEnabled`, `isShrinkResources` in 
   - the Play services authorization and the Drive token check;
   - a recording uploaded with its TSA timestamps (BouncyCastle);
   - the recordings list, and playback streamed from Drive;
-  - the settings sheet;
+  - the settings screen;
   - the outbox job;
   - an evidence package and its phone check: signatures and certificate chains (BouncyCastle, `CertPathBuilder`) said COMPLETE, as in the debug build.
 
@@ -810,6 +858,13 @@ Unit tests (JVM, no phone, under a second): `./gradlew testDebugUnitTest`. The s
   - timestamps made before the outbox going along with their chunk, an unrepaired chunk timestamped as it is, a timestamp left in `repair/` sent as it is.
 - `StartPolicyTest`: a start while recording is ignored, a camera switch restarts only while recording, unknown commands do nothing.
 - `SafeCountTest`: only the `.mp4` chunks of the current session count as safe.
+- `StatusModelTest`: which chip shows for each mix of Drive, network, permissions and guard state.
+- `HoldToStopTest`: the 1 s hold completes or cancels on the clock.
+- `RecordGestureTest`: a touch acts on the state it began in (releasing a hold never restarts).
+- `CameraGestureSetupTest`: the double press setup steps, including `isStuck`.
+- `FirstRunStepsTest`: which first-run cards show and when they are done.
+- `StartPolicyTest` also covers `replaysStarted` (no replayed "started" within 1 s); `TriggerRuleTest` has more window and cooldown cases.
+- `scripts/check-guard-refs.sh`: compiles the debug classes with `-Psaferec.powerGesture=false` and fails if any class but `ui/GuardSetup` references the guard (a lambda body or an enum switch map loads `Guard$Status` and crashes the off build). Run it after touching code that references the guard.
 - `CameraGestureTest`: the gesture is offered unless another camera app is pinned.
 - Module `guard` (`bash ./gradlew :guard:testDebugUnitTest`): `TriggerRuleTest` (three changes within the window, the cooldown) and `GuardStatusTest` (the order of the statuses).
 - `SampleJournalTest`: round trip, a record cut short, a foreign file.

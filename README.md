@@ -21,6 +21,8 @@ SafeRec solves this fundamental flaw by continuously uploading video and audio c
 
 - **Instant Cloud Backup**: Automatically uploads video/audio chunks directly to Google Drive as they are being recorded.
 - **Background Recording**: Uses an Android Foreground Service, allowing you to seamlessly record even when the screen is locked or while you are using other apps.
+- **Viewfinder**: The main screen works like a camera. A status chip tells whether Drive is connected, offline or waiting, and while recording a red pill shows the elapsed time and how many pieces are already safe. To stop, hold the record button for one second, so a stray touch cannot end a recording. Errors never cover the record button.
+- **First Run and Settings**: Three short cards (what SafeRec does, permissions, the three presses) sit above the controls and never delay a recording; they stay available in Settings, Help, Guide. Settings are grouped in plain language: Quick start, Evidence, Video, Google Drive, Advanced, Help.
 - **Audio-Only Mode**: Easily toggle between Video+Audio and Audio-Only modes for discretion, battery-saving, and reduced bandwidth.
 - **Quick Settings Tile**: Start a recording instantly from the Android Quick Settings drop-down menu, also on the lock screen, without opening the app. The tile only starts recordings: stopping needs the unlocked phone.
 - **Quick Start**: Recording starts without unlocking the phone, from the Quick Settings tile, the "Record now" shortcut, or by pressing the power key three times (optional, can be left out of a build). It vibrates to confirm, and the notification shows the elapsed time and how many pieces are already safe on Drive. Stopping needs the unlocked phone.
