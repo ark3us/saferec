@@ -604,6 +604,12 @@ Recording must start with the phone locked, in a pocket, without looking. Every 
 - **Tile and shortcut.** The tile (`SafeRecTileService`) and the static shortcut "Record now" start `QuickStartActivity` with source `tile` / `shortcut`. The tile works from the lock screen without unlocking. Source `power` comes from the guard and `camera` from the double press.
 - **Stopping is deliberate.** Nobody stops a recording from the lock screen: the notification's Stop needs authentication (see the notification above).
 - **Commands from other apps.** `MainActivity` is exported and runs the `command` extra it is launched with. Release builds accept only `CMD_START` there and log any other command as ignored: any installed app could otherwise stop a recording. Debug builds (`BuildConfig.DEBUG`) accept every command, because `scripts/device-tests.sh` stops recordings that way.
+- **Verified on a Galaxy S10+** (Android 16, locked with a PIN):
+  - The tile from the lock screen recorded without asking for the PIN, video in 0.6 s. A second tap was ignored and vibrated two pulses again.
+  - The shortcut "Record now" (long press on the icon) recorded and opened `MainActivity`.
+  - The notification was posted 0.22 s after the start, hidden on the lock screen, with no sound or vibration of its own.
+  - The lock screen's quick settings list "Active apps", but opening it asked for the PIN: nothing there stops a recording.
+  - The shrunk release (`r8test`): three presses recorded, the notification showed its chronometer and safe count, and its Stop (phone unlocked) stopped the recording. No crash.
 
 ### Three presses of the power key
 
@@ -615,6 +621,7 @@ No public API reports power key presses. Each press turns the screen on or off, 
 - **Why it is allowed.** The user grants "Display over other apps" (`SYSTEM_ALERT_WINDOW`). With it, Android lets the guard start an activity from the background (`BAL_ALLOW_SAW` in the system log). Without it, Android does not throw: the guard logs `trigger refused: no overlay permission`.
 - **Logs.** `Guard running`, `Guard stopped`, `Guard cannot start`.
 - **Measured in a spike** (Galaxy S10+, Android 16, locked with a PIN, screen off): video recording 0.6 s after the third press, the trigger screen visible 30-54 ms after the trigger, the phone stayed locked.
+- **Measured with the app** (same phone, presses by hand): it recorded with the trigger screen 30 ms after the trigger, and a second round during the recording was ignored (two pulses again). Two slow presses did nothing, and a camera double press (two presses 34 ms apart) opened the camera without triggering.
 - **Screen changes that are not presses.** Nothing is filtered, not even during a phone call: a deliberate start must never be blocked. A camera double press (two presses under 300 ms) gives at most two changes and does not trigger the guard.
 - **Costs.** A permanent notification, the overlay permission granted once, and a `specialUse` foreground service.
 
@@ -626,7 +633,11 @@ On the S10+ the low-memory killer killed the app twice in a minute, with 0.5 GB 
 - **Watchdog.** `GuardWatchdog` is a periodic WorkManager job (`guard-watchdog`, 15 minutes, the minimum) that calls `Guard.ensureRunning()`. `ensureRunning()` also re-arms the job, which a restored or reset WorkManager loses.
 - **Boot and update.** `GuardBootReceiver` restarts the guard on `BOOT_COMPLETED` and `MY_PACKAGE_REPLACED`.
 - **Status** (`Guard.status()`): `DISABLED`, `NEEDS_OVERLAY`, `NEEDS_BATTERY_EXEMPTION`, `STOPPED`, `ACTIVE`, in the order the user has to fix them. The app says so when the three presses are off.
-- To be verified on a device (plan Task 12): that `specialUse` starts from `BOOT_COMPLETED` on Android 15+, that the exemption brings a killed guard back, and the behavior of the guard while a call is on.
+- **Verified on a Galaxy S10+** (Android 16, with the battery exemption):
+  - After a clean reboot the guard stayed off until the first unlock. Then `BOOT_COMPLETED` started it as a `specialUse` foreground service, 3.4 s after the unlock.
+  - After an update (`adb install -r`), `MY_PACKAGE_REPLACED` started it in 0.26 s.
+  - After a crash (`am crash`), the sticky restart brought it back in 1.5 s.
+- Not verified: the guard during a phone call.
 
 ### Build switch
 
@@ -642,7 +653,16 @@ The double press of the power key opens the default camera app with `STILL_IMAGE
 - The dialog says that trying it starts a short recording, which the user then stops (a second try while it runs is an ignored quick start), and that the lock screen's camera shortcut may start SafeRec too: it sends the same intents.
 - The option reads "Double press of the power key opens SafeRec": "camera double press" did not say which key.
 - It is offered only when SystemUI's `config_cameraGesturePackage` does not pin another camera app (`CameraGesture.isAvailable()`, `allowsOtherApps()`). If SystemUI cannot be read, it is offered, and "try it now" shows whether it works.
-- To be verified on a device (plan Task 12): the double press itself, and the Pixel's camera gesture setting.
+- **Verified on a Galaxy S10+** (Android 16, camera app Aperture):
+  - Turning the option on enabled the alias. Each try showed Android's chooser, and "SafeRec" + "Always" stored that action.
+  - Locked, screen off, the double press recorded 0.48 s after the press, and the phone stayed locked.
+  - Turned off, both actions went back to the camera app, and the double press opened it.
+  - Android plays its own short vibration for the camera gesture, ~0.45 s before SafeRec's two pulses.
+- **Gaps of the setup** (for the settings screen):
+  - When Android remembers another app as the last choice for an action, its chooser reads "Complete action using Camera" and lists SafeRec under "Use a different app". Tapping SafeRec there opens it just once, with no "Always", so a third try is needed (it then reads "Complete action using SafeRec").
+  - The "Always" choices stay stored while the option is off. Turning it back on works at once, and the two tries only start needless recordings.
+  - Fix: after each try, check whether the action now resolves to SafeRec (`resolveActivity`), offer the try again if not, and skip the tries already stored.
+- Not verified: a Pixel's camera gesture setting (`config_cameraGesturePackage`).
 
 ### Google Play declaration
 
