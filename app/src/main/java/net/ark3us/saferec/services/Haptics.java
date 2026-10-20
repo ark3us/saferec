@@ -7,7 +7,7 @@ import android.os.Vibrator;
 import net.ark3us.saferec.misc.Settings;
 
 /** Vibrations that confirm a start or a stop when the screen is not looked at. */
-final class Haptics {
+public final class Haptics {
     private static final long[] STARTED = {0, 80, 120, 80};
     private static final long[] FAILED = {0, 80, 100, 80, 100, 80};
     private static final long STOPPED_MS = 400;
@@ -15,17 +15,17 @@ final class Haptics {
     private Haptics() {}
 
     /** Two short pulses. */
-    static void started(Context context) {
+    public static void started(Context context) {
         vibrate(context, VibrationEffect.createWaveform(STARTED, -1));
     }
 
     /** Three short pulses: a start that records nothing (no camera, no microphone). */
-    static void failed(Context context) {
+    public static void failed(Context context) {
         vibrate(context, VibrationEffect.createWaveform(FAILED, -1));
     }
 
     /** One long pulse. */
-    static void stopped(Context context) {
+    public static void stopped(Context context) {
         vibrate(context, VibrationEffect.createOneShot(STOPPED_MS, VibrationEffect.DEFAULT_AMPLITUDE));
     }
 

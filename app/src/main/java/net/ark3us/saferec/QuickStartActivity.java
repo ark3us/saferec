@@ -7,12 +7,14 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.provider.MediaStore;
 import android.util.Log;
 import android.view.View;
 import android.view.WindowManager;
 
 import androidx.core.content.ContextCompat;
 
+import net.ark3us.saferec.services.Haptics;
 import net.ark3us.saferec.services.SafeRecService;
 
 /**
@@ -30,6 +32,8 @@ public class QuickStartActivity extends Activity {
     public static final String SOURCE_CAMERA = "camera";
 
     private static final long LOCKED_FINISH_DELAY_MS = 1500;
+
+    private final Handler handler = new Handler(Looper.getMainLooper());
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -60,12 +64,18 @@ public class QuickStartActivity extends Activity {
 
         KeyguardManager keyguard = (KeyguardManager) getSystemService(KEYGUARD_SERVICE);
         if (keyguard != null && keyguard.isKeyguardLocked()) {
-            new Handler(Looper.getMainLooper()).postDelayed(this::finish, LOCKED_FINISH_DELAY_MS);
+            handler.postDelayed(this::finish, LOCKED_FINISH_DELAY_MS);
         } else {
             startActivity(new Intent(this, MainActivity.class)
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP));
             finish();
         }
+    }
+
+    @Override
+    protected void onDestroy() {
+        handler.removeCallbacksAndMessages(null);
+        super.onDestroy();
     }
 
     private void startRecording() {
@@ -77,16 +87,18 @@ public class QuickStartActivity extends Activity {
             // This runs in the recording's own process: a refusal must never crash a recording
             // already in progress
             Log.e(TAG, "Cannot start the recording service", e);
+            Haptics.failed(this);
         }
     }
 
     private String source() {
         Intent intent = getIntent();
         String action = intent.getAction();
-        if ("android.media.action.STILL_IMAGE_CAMERA".equals(action)
-                || "android.media.action.STILL_IMAGE_CAMERA_SECURE".equals(action)) {
+        if (MediaStore.INTENT_ACTION_STILL_IMAGE_CAMERA.equals(action)
+                || MediaStore.INTENT_ACTION_STILL_IMAGE_CAMERA_SECURE.equals(action)) {
             return SOURCE_CAMERA;
         }
-        return intent.getStringExtra(EXTRA_SOURCE);
+        String source = intent.getStringExtra(EXTRA_SOURCE);
+        return source != null ? source : "unknown";
     }
 }
