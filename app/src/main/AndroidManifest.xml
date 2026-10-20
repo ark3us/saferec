@@ -44,6 +44,9 @@
                 android:name="android.app.shortcuts"
                 android:resource="@xml/shortcuts" />
         </activity>
+        <!-- showWhenLocked and turnScreenOn in the manifest, not only at runtime: on Android 14+
+             the tile's PendingIntent asks for the unlock unless the manifest declares them.
+             The camera alias inherits them. -->
         <activity
             android:name=".QuickStartActivity"
             android:exported="false"
@@ -51,7 +54,10 @@
             android:noHistory="true"
             android:launchMode="singleTask"
             android:taskAffinity="net.ark3us.saferec.quickstart"
-            android:theme="@style/Theme.SafeRec.QuickStart" />
+            android:showWhenLocked="true"
+            android:turnScreenOn="true"
+            android:theme="@style/Theme.SafeRec.QuickStart"
+            tools:targetApi="o_mr1" />
         <!-- Off until the owner turns on the camera double press (see CameraGesture) -->
         <activity-alias
             android:name=".CameraGestureAlias"
