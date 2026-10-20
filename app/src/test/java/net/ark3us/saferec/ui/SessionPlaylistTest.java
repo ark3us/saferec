@@ -19,9 +19,16 @@ public class SessionPlaylistTest {
     private static final String SESSION = "1000000";
 
     private static DriveRecordings.RecordingItem item(String id, int seq) {
+        return item(id, seq, null);
+    }
+
+    private static DriveRecordings.RecordingItem item(String id, int seq, Long durationMillis) {
         String name = (seq * 10_000L) + "." + seq + ".mp4";
         File file = new File().setId(id).setName(name).setSize(100L)
                 .setParents(Arrays.asList("folder"));
+        if (durationMillis != null) {
+            file.setVideoMediaMetadata(new File.VideoMediaMetadata().setDurationMillis(durationMillis));
+        }
         return new DriveRecordings.RecordingItem(MediaFile.fromDriveData(SESSION, "video", name), file);
     }
 
@@ -45,6 +52,39 @@ public class SessionPlaylistTest {
     @Test
     public void aSessionWithoutPiecesHasNoPlaylist() {
         assertTrue(SessionPlaylist.fileIds(null).isEmpty());
+    }
+
+    @Test
+    public void placeholdersAreDrivesDurationsElseAUsualChunk() {
+        SessionSummary session = SessionSummary.group(Arrays.asList(
+                item("a0", 0, 9_500L), item("a1", 1, null), item("a2", 2, 0L), item("a3", 3, 4_000L))).get(0);
+        assertEquals(Arrays.asList(9_500L, 10_000L, 10_000L, 4_000L), SessionPlaylist.placeholderDurationsMs(session));
+        assertEquals(SessionPlaylist.fileIds(session).size(), SessionPlaylist.placeholderDurationsMs(session).size());
+        assertTrue(SessionPlaylist.placeholderDurationsMs(null).isEmpty());
+    }
+
+    @Test
+    public void aPieceStartsWhereTheEarlierOnesEnd() {
+        List<Long> durations = Arrays.asList(10_000L, 8_000L, 10_000L);
+        assertEquals(0, SessionPlaylist.startOffsetMs(durations, 0));
+        assertEquals(10_000, SessionPlaylist.startOffsetMs(durations, 1));
+        assertEquals(18_000, SessionPlaylist.startOffsetMs(durations, 2));
+    }
+
+    @Test
+    public void anOffsetOutsideThePlaylistIsClamped() {
+        List<Long> durations = Arrays.asList(10_000L, 8_000L);
+        assertEquals(0, SessionPlaylist.startOffsetMs(durations, -1));
+        assertEquals(18_000, SessionPlaylist.startOffsetMs(durations, 5));
+        assertEquals(0, SessionPlaylist.startOffsetMs(new ArrayList<>(), 0));
+    }
+
+    @Test
+    public void aFailedRequestNamesItsPiece() {
+        List<String> ids = Arrays.asList("a0", "a1", "a2");
+        assertEquals(1, SessionPlaylist.indexOfUrl(ids, SessionPlaylist.url("a1")));
+        assertEquals(-1, SessionPlaylist.indexOfUrl(ids, SessionPlaylist.url("zz")));
+        assertEquals(-1, SessionPlaylist.indexOfUrl(ids, null));
     }
 
     @Test

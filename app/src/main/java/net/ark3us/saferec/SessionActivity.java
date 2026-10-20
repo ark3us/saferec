@@ -43,10 +43,12 @@ import androidx.core.view.WindowInsetsControllerCompat;
 import androidx.media3.common.MediaItem;
 import androidx.media3.common.PlaybackException;
 import androidx.media3.common.Player;
+import androidx.media3.common.Timeline;
 import androidx.media3.common.util.UnstableApi;
 import androidx.media3.datasource.DefaultHttpDataSource;
 import androidx.media3.datasource.HttpDataSource;
 import androidx.media3.exoplayer.ExoPlayer;
+import androidx.media3.exoplayer.source.ConcatenatingMediaSource2;
 import androidx.media3.exoplayer.source.MediaSource;
 import androidx.media3.exoplayer.source.ProgressiveMediaSource;
 import androidx.media3.ui.PlayerView;
@@ -70,9 +72,9 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
 
 /**
- * One session: its pieces played as one video, whether it is whole, and (from the next task)
- * what can be done with it (export, share, trash, technical details). It loads that one session by id, so no list travels with the
- * intent. It never finishes by itself: a session Drive no longer has says so.
+ * One session: its pieces played as one video, whether it is whole, and what can be done with
+ * it (export, share, trash, technical details). It loads that one session by id, so no list
+ * travels with the intent. It never finishes by itself: a session Drive no longer has says so.
  */
 @OptIn(markerClass = UnstableApi.class)
 public class SessionActivity extends AppCompatActivity {
@@ -89,6 +91,8 @@ public class SessionActivity extends AppCompatActivity {
     @Nullable
     private SessionSummary session;
     private List<String> fileIds = new ArrayList<>();
+    // Each piece's length until the player has read it, in the order of fileIds
+    private List<Long> placeholders = new ArrayList<>();
 
     private ExoPlayer player;
     private PlayerView playerView;
@@ -97,8 +101,7 @@ public class SessionActivity extends AppCompatActivity {
     private View body;
     private View errorBar;
     private boolean started;
-    // Where the player was when onStop released it
-    private int savedItem;
+    // Where the player was in the session when onStop released it
     private long savedPosition;
     // A 401 asks Play services for a new token once per screen
     private boolean refreshTried;
@@ -309,9 +312,10 @@ public class SessionActivity extends AppCompatActivity {
         ((TextView) findViewById(R.id.session_explain)).setText(explain(summary));
 
         fileIds = SessionPlaylist.fileIds(summary);
+        placeholders = SessionPlaylist.placeholderDurationsMs(summary);
         playerHolder.setVisibility(fileIds.isEmpty() ? View.GONE : View.VISIBLE);
         if (started && player == null && !fileIds.isEmpty()) {
-            buildPlayer(0, 0);
+            buildPlayer(savedPosition);
         }
         updateActions();
         bindTechnical(summary);
@@ -555,16 +559,31 @@ public class SessionActivity extends AppCompatActivity {
         if (index < 0) {
             return;
         }
+        long start = pieceStartMs(index);
         if (player != null) {
-            player.seekTo(index, 0);
+            player.seekTo(start);
         } else {
-            savedItem = index;
-            savedPosition = 0;
+            savedPosition = start;
             if (started && !fileIds.isEmpty()) {
-                buildPlayer(index, 0);
+                buildPlayer(start);
             }
         }
         ((NestedScrollView) findViewById(R.id.session_scroll)).smoothScrollTo(0, 0);
+    }
+
+    /**
+     * Where a piece starts in the session: the sum of the earlier pieces' durations. The
+     * player's timeline holds the real length of each piece it has read and the placeholder of
+     * the others; without a player, the placeholders alone.
+     */
+    private long pieceStartMs(int index) {
+        if (player != null) {
+            Timeline timeline = player.getCurrentTimeline();
+            if (timeline.getPeriodCount() == fileIds.size() && index >= 0 && index < fileIds.size()) {
+                return timeline.getPeriod(index, new Timeline.Period()).getPositionInWindowMs();
+            }
+        }
+        return SessionPlaylist.startOffsetMs(placeholders, index);
     }
 
     private void shareTimestamp(String fileId) {
@@ -631,7 +650,7 @@ public class SessionActivity extends AppCompatActivity {
         super.onStart();
         started = true;
         if (player == null && !fileIds.isEmpty()) {
-            buildPlayer(savedItem, savedPosition);
+            buildPlayer(savedPosition);
         }
     }
 
@@ -642,17 +661,13 @@ public class SessionActivity extends AppCompatActivity {
         releasePlayer();
     }
 
-    /** Paused at the given piece and position: a recording is never played by surprise. */
-    private void buildPlayer(int item, long position) {
+    /** Paused at the given position of the session: a recording is never played by surprise. */
+    private void buildPlayer(long position) {
         String token = Settings.getAccessToken(this);
         Map<String, String> headers = new HashMap<>();
         headers.put("Authorization", "Bearer " + (token != null ? token : ""));
         ProgressiveMediaSource.Factory factory = new ProgressiveMediaSource.Factory(
                 new DefaultHttpDataSource.Factory().setDefaultRequestProperties(headers));
-        List<MediaSource> sources = new ArrayList<>();
-        for (String id : fileIds) {
-            sources.add(factory.createMediaSource(MediaItem.fromUri(SessionPlaylist.url(id))));
-        }
         errorBar.setVisibility(View.GONE);
         player = new ExoPlayer.Builder(this).build();
         player.addListener(new Player.Listener() {
@@ -662,16 +677,30 @@ public class SessionActivity extends AppCompatActivity {
             }
         });
         playerView.setPlayer(player);
-        player.setMediaSources(sources, Math.min(item, sources.size() - 1), position);
+        player.setMediaSource(sessionSource(factory), Math.max(0, position));
         player.setPlayWhenReady(false);
         player.prepare();
+    }
+
+    /**
+     * The whole session as one video: one window, so the time bar and seeking cover every piece.
+     * Each piece stays its own source, so each keeps its own orientation. A piece needs a length
+     * before it is read: the player starts with the placeholders and uses the real lengths as it
+     * reads the pieces.
+     */
+    private MediaSource sessionSource(ProgressiveMediaSource.Factory factory) {
+        ConcatenatingMediaSource2.Builder session = new ConcatenatingMediaSource2.Builder();
+        for (int i = 0; i < fileIds.size(); i++) {
+            session.add(factory.createMediaSource(MediaItem.fromUri(SessionPlaylist.url(fileIds.get(i)))),
+                    placeholders.get(i));
+        }
+        return session.build();
     }
 
     private void releasePlayer() {
         if (player == null) {
             return;
         }
-        savedItem = player.getCurrentMediaItemIndex();
         savedPosition = player.getCurrentPosition();
         playerView.setPlayer(null);
         player.release();
@@ -680,22 +709,49 @@ public class SessionActivity extends AppCompatActivity {
 
     private void onPlaybackError(PlaybackException error) {
         Log.w(TAG, "Playback error", error);
-        if (isUnauthorized(error) && !refreshTried) {
+        HttpDataSource.InvalidResponseCodeException response = invalidResponse(error);
+        int code = response != null ? response.responseCode : 0;
+        if (code == 401 && !refreshTried) {
             refreshTried = true;
             refreshToken();
+            return;
+        }
+        if ((code == 404 || code == 410) && skipPiece(response)) {
             return;
         }
         showPlayerError();
     }
 
-    private static boolean isUnauthorized(Throwable error) {
+    @Nullable
+    private static HttpDataSource.InvalidResponseCodeException invalidResponse(Throwable error) {
         for (Throwable t = error; t != null; t = t.getCause()) {
-            if (t instanceof HttpDataSource.InvalidResponseCodeException
-                    && ((HttpDataSource.InvalidResponseCodeException) t).responseCode == 401) {
-                return true;
+            if (t instanceof HttpDataSource.InvalidResponseCodeException) {
+                return (HttpDataSource.InvalidResponseCodeException) t;
             }
         }
-        return false;
+        return null;
+    }
+
+    /**
+     * A piece trashed on Drive after the screen loaded: playback goes on from the next one.
+     * The failed request names the piece; false when it was the last one, or is unknown.
+     */
+    private boolean skipPiece(HttpDataSource.InvalidResponseCodeException response) {
+        if (player == null) {
+            return false;
+        }
+        int failed = SessionPlaylist.indexOfUrl(fileIds,
+                response.dataSpec != null ? String.valueOf(response.dataSpec.uri) : null);
+        if (failed < 0) {
+            failed = player.getCurrentPeriodIndex();
+        }
+        if (failed < 0 || failed >= fileIds.size() - 1) {
+            return false;
+        }
+        Log.w(TAG, "Piece " + failed + " is gone from Drive: playing on from the next one");
+        player.seekTo(pieceStartMs(failed + 1));
+        player.prepare();
+        return true;
     }
 
     private void showPlayerError() {
@@ -733,7 +789,7 @@ public class SessionActivity extends AppCompatActivity {
                         }
                         if (result == DriveConnection.Result.VALID && player != null) {
                             releasePlayer();
-                            buildPlayer(savedItem, savedPosition);
+                            buildPlayer(savedPosition);
                         } else {
                             showPlayerError();
                         }
