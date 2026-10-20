@@ -606,7 +606,7 @@ public class MainActivity extends AppCompatActivity {
         // Record first, sync later: a launch command never waits for Google Drive.
         // Posted on a view so the service starts only once the activity is visible.
         Runnable launchIfPermitted = () -> {
-            if (hasRecordingPermissions()) {
+            if (PermissionsManager.hasRecordingPermissions(this)) {
                 btnStart.post(this::handleLaunchCommand);
             }
         };
@@ -650,15 +650,6 @@ public class MainActivity extends AppCompatActivity {
                 }
             }
         });
-    }
-
-    /**
-     * Camera is required even in audio-only mode: the service is declared as
-     * camera|microphone, and on Android 14+ startForeground throws without both.
-     */
-    private boolean hasRecordingPermissions() {
-        return checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
-                && checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED;
     }
 
     /** Runs the command the activity was launched with, once per launch. */

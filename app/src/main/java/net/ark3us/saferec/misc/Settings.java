@@ -4,6 +4,8 @@ import android.content.Context;
 import android.content.SharedPreferences;
 import android.util.Log;
 
+import androidx.annotation.Nullable;
+
 public class Settings {
     private static final String TAG = Settings.class.getSimpleName();
 
@@ -20,6 +22,15 @@ public class Settings {
 
     public static String getAccessToken(Context context) {
         return getPrefs(context).getString("accessToken", null);
+    }
+
+    /** Google account the stored token belongs to. Stays on the phone. */
+    public static String getDriveAccount(Context context) {
+        return getPrefs(context).getString("driveAccount", null);
+    }
+
+    public static void setDriveAccount(Context context, @Nullable String email) {
+        getPrefs(context).edit().putString("driveAccount", email).apply();
     }
 
     /** Last address recordings were shared with, offered again next time. */

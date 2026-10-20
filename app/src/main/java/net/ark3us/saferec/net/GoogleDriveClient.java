@@ -290,6 +290,13 @@ public class GoogleDriveClient {
         }
     }
 
+    /** The signed-in account's email, as Drive reports it. */
+    @Nullable
+    public String accountEmail() throws IOException {
+        return driveService.about().get().setFields("user(emailAddress)")
+                .execute().getUser().getEmailAddress();
+    }
+
     public Drive getDriveService() {
         return driveService;
     }

@@ -1,8 +1,8 @@
 package net.ark3us.saferec;
 
-import android.content.pm.PackageInfo;
+import android.Manifest;
+import android.content.Context;
 import android.content.pm.PackageManager;
-import android.content.pm.PermissionInfo;
 import android.os.Build;
 import android.util.Log;
 
@@ -20,21 +20,31 @@ import com.google.android.gms.common.api.Scope;
 import com.google.api.services.drive.DriveScopes;
 
 import java.util.Collections;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.ArrayList;
 
 public class PermissionsManager {
+    /** Old combined result, kept until MainActivity stops using requestAllPermissions. */
     public interface Callback {
         void onFinish(boolean allGranted, @Nullable String accessToken);
+    }
+
+    public interface DriveCallback {
+        /**
+         * @param accessToken the token, or null when there is none
+         * @param needsUser   true when Play services want the user (consent or sign-in)
+         */
+        void onResult(@Nullable String accessToken, boolean needsUser);
     }
 
     private static final String TAG = PermissionsManager.class.getSimpleName();
     private final AppCompatActivity context;
     private ActivityResultLauncher<String[]> requestPermissionsLauncher;
     private ActivityResultLauncher<IntentSenderRequest> startAuthIntent;
-    private Callback callback;
-    // Runs as soon as runtime permissions are settled, before Drive authorization
+    @Nullable
+    private DriveCallback driveCallback;
+    // Runs once the runtime permissions are settled
     @Nullable
     private Runnable onPermissionsResult;
     boolean allGranted = false;
@@ -60,7 +70,6 @@ public class PermissionsManager {
                     }
                     Log.i(TAG, "Permission request completed. allGranted=" + allGranted);
                     notifyPermissionsResult();
-                    requestDriveAuthorization();
                 });
 
         startAuthIntent = context.registerForActivityResult(
@@ -72,106 +81,114 @@ public class PermissionsManager {
                                         .getAuthorizationResultFromIntent(activityResult.getData());
                         String accessToken = result.getAccessToken();
                         Log.i(TAG, "Authorization succeeded; access token received=" + (accessToken != null));
-                        if (callback != null) {
-                            callback.onFinish(allGranted, accessToken);
-                        }
+                        finishDrive(accessToken, false);
                     } catch (ApiException e) {
                         Log.e(TAG, "Authorization failed", e);
-                        if (callback != null) {
-                            // Keep the real permission result: a Drive failure is not a permission failure
-                            callback.onFinish(allGranted, null);
-                        }
+                        finishDrive(null, false);
                     }
                 });
     }
 
-    private void requestDriveAuthorization() {
+    private void finishDrive(@Nullable String accessToken, boolean needsUser) {
+        DriveCallback cb = driveCallback;
+        driveCallback = null;
+        if (cb != null) {
+            cb.onResult(accessToken, needsUser);
+        }
+    }
+
+    /**
+     * Asks Play services for a Drive token. Never touches runtime permissions.
+     *
+     * @param interactive false never launches a UI: it reports needsUser=true when Play
+     *                    services want a resolution. true launches it.
+     */
+    public void connectDrive(boolean interactive, DriveCallback callback) {
+        this.driveCallback = callback;
         AuthorizationRequest req = AuthorizationRequest.builder()
                 .setRequestedScopes(Collections.singletonList(new Scope(DriveScopes.DRIVE_FILE)))
                 .build();
 
-        Log.i(TAG, "Requesting authorization");
+        Log.i(TAG, "Requesting authorization, interactive=" + interactive);
 
         Identity.getAuthorizationClient(context)
                 .authorize(req)
                 .addOnSuccessListener(result -> {
                     Log.i(TAG, "Authorization result: " + result);
                     if (result.hasResolution() && result.getPendingIntent() != null) {
-                        Log.i(TAG, "Authorization requires user resolution");
-                        startAuthIntent.launch(
-                                new IntentSenderRequest.Builder(result.getPendingIntent().getIntentSender()).build()
-                        );
+                        if (interactive) {
+                            Log.i(TAG, "Authorization requires user resolution");
+                            startAuthIntent.launch(
+                                    new IntentSenderRequest.Builder(result.getPendingIntent().getIntentSender()).build()
+                            );
+                        } else {
+                            Log.i(TAG, "Authorization needs the user; not launching");
+                            finishDrive(null, true);
+                        }
                     } else {
-                        // Already granted
                         String accessToken = result.getAccessToken();
                         Log.i(TAG, "Authorization succeeded without resolution; token received=" + (accessToken != null));
-                        if (callback != null) {
-                            callback.onFinish(allGranted, accessToken);
-                        }
+                        finishDrive(accessToken, false);
                     }
                 })
                 .addOnFailureListener(e -> {
                     Log.e(TAG, "Failed to authorize", e);
-                    if (callback != null) {
-                        callback.onFinish(allGranted, null);
-                    }
+                    finishDrive(null, false);
                 });
     }
 
-    private static boolean isDangerousPermission(PermissionInfo permissionInfo) {
-        int protection = Build.VERSION.SDK_INT >= Build.VERSION_CODES.P
-                ? permissionInfo.getProtection()
-                : permissionInfo.protectionLevel;
-        return (protection & PermissionInfo.PROTECTION_MASK_BASE) == PermissionInfo.PROTECTION_DANGEROUS;
-    }
-
     private void notifyPermissionsResult() {
-        if (onPermissionsResult != null) {
-            onPermissionsResult.run();
+        Runnable r = onPermissionsResult;
+        onPermissionsResult = null;
+        if (r != null) {
+            r.run();
         }
     }
 
     /**
-     * Requests runtime permissions, then Drive authorization.
-     * onPermissionsResult runs in between, so callers can act without waiting for Drive.
+     * Camera is required even in audio-only mode: the service is declared as
+     * camera|microphone, and on Android 14+ startForeground throws without both.
+     */
+    public static boolean hasRecordingPermissions(Context context) {
+        return context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+                && context.checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED;
+    }
+
+    /**
+     * Asks for camera, microphone and, on API 33+, notifications. Runs onResult after the
+     * answer, or at once when all are granted. Never asks for Drive.
+     */
+    public void requestRecordingPermissions(@Nullable Runnable onResult) {
+        List<String> missing = new ArrayList<>();
+        missing.add(Manifest.permission.CAMERA);
+        missing.add(Manifest.permission.RECORD_AUDIO);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            missing.add(Manifest.permission.POST_NOTIFICATIONS);
+        }
+        missing.removeIf(p -> context.checkSelfPermission(p) == PackageManager.PERMISSION_GRANTED);
+        if (missing.isEmpty()) {
+            Log.i(TAG, "All recording permissions already granted");
+            allGranted = true;
+            if (onResult != null) {
+                onResult.run();
+            }
+            return;
+        }
+        this.onPermissionsResult = onResult;
+        Log.i(TAG, "Requesting runtime permissions count=" + missing.size());
+        requestPermissionsLauncher.launch(missing.toArray(new String[0]));
+    }
+
+    /**
+     * Temporary wrapper until the UI is rewired: recording permissions, then Drive
+     * authorization. onPermissionsResult runs in between, so callers act without waiting for Drive.
      */
     public void requestAllPermissions(@Nullable Runnable onPermissionsResult, Callback callback) {
-        try {
-            this.callback = callback;
-            this.onPermissionsResult = onPermissionsResult;
-            PackageManager pm = context.getPackageManager();
-            PackageInfo pi = pm.getPackageInfo(context.getPackageName(), PackageManager.GET_PERMISSIONS);
-            String[] requested = pi.requestedPermissions;
-            if (requested == null || requested.length == 0) {
-                notifyPermissionsResult();
-                requestDriveAuthorization();
-                return;
+        requestRecordingPermissions(() -> {
+            if (onPermissionsResult != null) {
+                onPermissionsResult.run();
             }
-            List<String> runtimePermissions = new ArrayList<>();
-            for (String permission : requested) {
-                try {
-                    PermissionInfo permissionInfo = pm.getPermissionInfo(permission, 0);
-                    if (isDangerousPermission(permissionInfo)) {
-                        runtimePermissions.add(permission);
-                    }
-                } catch (PackageManager.NameNotFoundException e) {
-                    Log.w(TAG, "Permission not found in package manager: " + permission, e);
-                }
-            }
-
-            if (runtimePermissions.isEmpty()) {
-                Log.i(TAG, "No runtime permissions to request");
-                notifyPermissionsResult();
-                requestDriveAuthorization();
-                return;
-            }
-            Log.i(TAG, "Requesting runtime permissions count=" + runtimePermissions.size());
-            requestPermissionsLauncher.launch(runtimePermissions.toArray(new String[0]));
-        } catch (PackageManager.NameNotFoundException e) {
-            Log.e(TAG, "Failed to get package info: ", e);
-            if (callback != null) {
-                callback.onFinish(false, null);
-            }
-        }
+            connectDrive(true, (token, needsUser) -> callback.onFinish(allGranted, token));
+        });
     }
 }
