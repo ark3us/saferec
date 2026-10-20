@@ -5,6 +5,10 @@ plugins {
     alias(libs.plugins.android.application)
 }
 
+// The three power-key presses live in :guard. With the switch off the module is compileOnly:
+// its manifest entries never reach the app, and BuildConfig.POWER_GESTURE is false
+val powerGesture = providers.gradleProperty("saferec.powerGesture").map { it.toBoolean() }.getOrElse(true)
+
 android {
     packaging {
         resources {
@@ -39,6 +43,7 @@ android {
         versionName = "1.15"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        buildConfigField("boolean", "POWER_GESTURE", powerGesture.toString())
     }
 
     buildTypes {
@@ -108,6 +113,7 @@ dependencies {
     implementation(libs.constraintlayout)
     implementation(libs.swiperefreshlayout)
     implementation(libs.work.runtime)
+    if (powerGesture) implementation(project(":guard")) else compileOnly(project(":guard"))
 
     implementation(libs.play.services.auth)
 // Google API Client (Android) + Drive v3 generated library

@@ -24,3 +24,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "SafeRec"
 include(":app")
+include(":guard")
