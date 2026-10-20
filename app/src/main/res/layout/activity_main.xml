@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- The viewfinder. Nothing may cover btn_record: banners sit under top_bar, Snackbars are
+     anchored above bottom_controls. Insets pad top_bar and bottom_controls only. -->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
@@ -7,209 +9,254 @@
     android:layout_height="match_parent"
     tools:context=".MainActivity">
 
-    <!-- Camera preview — full screen -->
-    <FrameLayout
-        android:id="@+id/preview_container"
+    <TextureView
+        android:id="@+id/video_preview"
         android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:background="@color/surface_elevated">
+        android:layout_height="match_parent" />
 
-        <TextureView
-            android:id="@+id/video_preview"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:layout_gravity="center" />
-
-    </FrameLayout>
-
-    <!-- Top bar: floating pill with controls -->
+    <!-- Audio only: a dark surface where the image would be -->
     <LinearLayout
-        android:id="@+id/overlay_controls"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:layout_gravity="top|center_horizontal"
-        android:layout_marginTop="24dp"
-        android:background="@drawable/control_pill_bg"
-        android:paddingHorizontal="12dp"
-        android:paddingVertical="4dp"
-        android:elevation="8dp"
-        android:gravity="center_vertical">
-
-        <ImageButton
-            android:id="@+id/btn_switch_camera"
-            android:layout_width="48dp"
-            android:layout_height="48dp"
-            android:padding="10dp"
-            android:background="?attr/selectableItemBackgroundBorderless"
-            android:src="@drawable/baseline_cameraswitch_24"
-            app:tint="@color/control_icon"
-            android:contentDescription="@string/switch_camera" />
-
-        <View
-            android:layout_width="1dp"
-            android:layout_height="24dp"
-            android:layout_marginHorizontal="8dp"
-            android:background="#44FFFFFF" />
-
-        <ImageButton
-            android:id="@+id/btn_toggle_camera"
-            android:layout_width="48dp"
-            android:layout_height="48dp"
-            android:padding="10dp"
-            android:background="?attr/selectableItemBackgroundBorderless"
-            android:src="@drawable/baseline_videocam_off_24"
-            app:tint="@color/control_icon"
-            android:contentDescription="@string/toggle_camera" />
-
-        <View
-            android:layout_width="1dp"
-            android:layout_height="24dp"
-            android:layout_marginHorizontal="8dp"
-            android:background="#44FFFFFF" />
-
-        <ImageButton
-            android:id="@+id/btn_recordings"
-            android:layout_width="48dp"
-            android:layout_height="48dp"
-            android:padding="10dp"
-            android:background="?attr/selectableItemBackgroundBorderless"
-            android:src="@drawable/baseline_view_list_24"
-            app:tint="@color/control_icon"
-            android:contentDescription="@string/view_recordings" />
-
-        <View
-            android:layout_width="1dp"
-            android:layout_height="24dp"
-            android:layout_marginHorizontal="8dp"
-            android:background="#44FFFFFF" />
-
-        <ImageButton
-            android:id="@+id/btn_settings"
-            android:layout_width="48dp"
-            android:layout_height="48dp"
-            android:padding="10dp"
-            android:background="?attr/selectableItemBackgroundBorderless"
-            android:src="@drawable/baseline_settings_24"
-            app:tint="@color/control_icon"
-            android:contentDescription="@string/settings" />
-    </LinearLayout>
-
-    <!-- Recording timer label -->
-    <TextView
-        android:id="@+id/recording_label"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_gravity="top|center_horizontal"
-        android:layout_marginTop="88dp"
-        android:text=""
-        android:textColor="@color/record_red"
-        android:textSize="14sp"
-        android:fontFamily="sans-serif-medium"
-        android:letterSpacing="0.1"
-        android:visibility="gone"
-        android:elevation="8dp" />
-
-    <!-- Bottom bar: record button with ring -->
-    <FrameLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_gravity="bottom"
-        android:paddingBottom="48dp"
-        android:paddingTop="24dp"
-        android:elevation="8dp">
-
-        <!-- Outer ring -->
-        <View
-            android:id="@+id/record_ring"
-            android:layout_width="84dp"
-            android:layout_height="84dp"
-            android:layout_gravity="center"
-            android:layout_margin="12dp"
-            android:background="@drawable/record_button_ring" />
-
-        <!-- Record / stop button -->
-        <ImageButton
-            android:id="@+id/btn_start"
-            android:layout_width="68dp"
-            android:layout_height="68dp"
-            android:layout_gravity="center"
-            android:background="@drawable/record_button_bg"
-            android:src="@drawable/outline_screen_record_24"
-            android:padding="18dp"
-            android:scaleType="fitCenter"
-            app:tint="@color/white"
-            android:enabled="false"
-            android:contentDescription="@string/start_recording" />
-    </FrameLayout>
-
-    <!-- Error view for Google Drive connection issues -->
-    <LinearLayout
-        android:id="@+id/error_container"
+        android:id="@+id/audio_only_surface"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:background="@color/surface_dark"
-        android:orientation="vertical"
         android:gravity="center"
-        android:padding="32dp"
-        android:visibility="gone"
-        android:elevation="10dp">
+        android:orientation="vertical"
+        android:visibility="gone">
 
         <ImageView
-            android:layout_width="64dp"
-            android:layout_height="64dp"
-            android:src="@drawable/baseline_videocam_off_24"
-            app:tint="@color/record_red"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
             android:contentDescription="@null"
-            android:layout_marginBottom="24dp" />
+            android:src="@drawable/ms_graphic_eq"
+            app:tint="@color/on_glass_dim" />
 
         <TextView
+            android:id="@+id/audio_only_label"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="@string/google_drive_required"
-            android:textColor="@color/white"
-            android:textSize="22sp"
-            android:textStyle="bold"
-            android:layout_marginBottom="8dp"
-            android:gravity="center" />
+            android:layout_marginTop="8dp"
+            android:text="@string/status_audio_only"
+            android:textAppearance="?attr/textAppearanceTitleMedium"
+            android:textColor="@color/on_glass_dim" />
+    </LinearLayout>
 
-        <TextView
-            android:id="@+id/error_message"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="@string/google_drive_required_msg"
-            android:textColor="#BBFFFFFF"
-            android:textSize="16sp"
-            android:gravity="center"
-            android:layout_marginBottom="32dp" />
+    <!-- Top: the bar, then what sits under it -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top"
+        android:orientation="vertical">
 
         <LinearLayout
+            android:id="@+id/top_bar"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingHorizontal="@dimen/gutter"
+            android:paddingTop="8dp">
+
+            <!-- Holds the chip at its own width, ellipsized when the buttons need the room -->
+            <FrameLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginEnd="8dp"
+                android:layout_weight="1">
+
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/status_chip"
+                    style="@style/Widget.SafeRec.GlassChip"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:ellipsize="end"
+                    android:maxLines="1"
+                    app:chipIconVisible="true" />
+            </FrameLayout>
+
+            <ImageButton
+                android:id="@+id/btn_switch_camera"
+                style="@style/Widget.SafeRec.GlassButton"
+                android:contentDescription="@string/switch_camera"
+                android:src="@drawable/ms_cameraswitch" />
+
+            <ImageButton
+                android:id="@+id/btn_recordings"
+                style="@style/Widget.SafeRec.GlassButton"
+                android:layout_marginStart="8dp"
+                android:contentDescription="@string/open_recordings"
+                android:src="@drawable/ms_video_library" />
+
+            <ImageButton
+                android:id="@+id/btn_settings"
+                style="@style/Widget.SafeRec.GlassButton"
+                android:layout_marginStart="8dp"
+                android:contentDescription="@string/settings"
+                android:src="@drawable/ms_settings" />
+        </LinearLayout>
+
+        <!-- After a refusal of the camera or the microphone -->
+        <LinearLayout
+            android:id="@+id/permissions_banner"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="@dimen/gutter"
+            android:layout_marginTop="8dp"
+            android:layout_marginEnd="@dimen/gutter"
+            android:accessibilityLiveRegion="polite"
+            android:background="@drawable/glass_bg"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingStart="16dp"
+            android:paddingTop="4dp"
+            android:paddingEnd="4dp"
+            android:paddingBottom="4dp"
+            android:visibility="gone">
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="@string/permissions_banner"
+                android:textAppearance="?attr/textAppearanceBodyMedium"
+                android:textColor="@color/on_glass" />
+
+            <Button
+                android:id="@+id/permissions_allow"
+                style="@style/Widget.Material3.Button.TextButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/permissions_allow" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/recording_info"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            style="?android:attr/buttonBarStyle"
-            android:gravity="center">
+            android:layout_gravity="center_horizontal"
+            android:layout_marginTop="8dp"
+            android:gravity="center_horizontal"
+            android:orientation="vertical"
+            android:visibility="gone">
 
-            <Button
-                android:id="@+id/btn_retry"
+            <LinearLayout
+                android:id="@+id/recording_pill"
+                android:layout_width="wrap_content"
+                android:layout_height="@dimen/chip_height"
+                android:background="@drawable/recording_pill_bg"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:paddingStart="14dp"
+                android:paddingEnd="16dp">
+
+                <View
+                    android:layout_width="8dp"
+                    android:layout_height="8dp"
+                    android:background="@drawable/recording_dot" />
+
+                <Chronometer
+                    android:id="@+id/recording_time"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="8dp"
+                    android:fontFeatureSettings="tnum"
+                    android:textAppearance="?attr/textAppearanceTitleSmall"
+                    android:textColor="@color/on_glass" />
+            </LinearLayout>
+
+            <com.google.android.material.chip.Chip
+                android:id="@+id/safe_chip"
+                style="@style/Widget.SafeRec.GlassChip"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="@string/retry"
-                style="?android:attr/buttonBarButtonStyle"
-                android:backgroundTint="@color/record_red"
-                android:textColor="@color/white"
-                android:layout_marginEnd="8dp"
-                android:paddingHorizontal="24dp" />
-
-            <Button
-                android:id="@+id/btn_close_error"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/close"
-                style="?android:attr/buttonBarButtonStyle"
-                android:textColor="#88FFFFFF"
-                android:paddingHorizontal="24dp" />
+                android:clickable="false"
+                android:focusable="false"
+                app:chipIcon="@drawable/ms_shield_fill"
+                app:chipIconTint="@color/safe_green"
+                app:chipIconVisible="true" />
         </LinearLayout>
+    </LinearLayout>
+
+    <!-- Task 9: first_run_card, above bottom_controls -->
+
+    <View
+        android:id="@+id/bottom_scrim"
+        android:layout_width="match_parent"
+        android:layout_height="@dimen/scrim_height"
+        android:layout_gravity="bottom"
+        android:background="@drawable/bottom_scrim" />
+
+    <LinearLayout
+        android:id="@+id/bottom_controls"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom"
+        android:orientation="vertical"
+        android:paddingHorizontal="@dimen/gutter"
+        android:paddingBottom="16dp">
+
+        <FrameLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content">
+
+            <com.google.android.material.button.MaterialButtonToggleGroup
+                android:id="@+id/mode_toggle"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="start|center_vertical"
+                app:checkedButton="@id/mode_video"
+                app:selectionRequired="true"
+                app:singleSelection="true">
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/mode_video"
+                    style="@style/Widget.SafeRec.ModeButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:contentDescription="@string/mode_video"
+                    android:tooltipText="@string/mode_video"
+                    app:icon="@drawable/ms_videocam" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/mode_audio"
+                    style="@style/Widget.SafeRec.ModeButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:contentDescription="@string/mode_audio"
+                    android:tooltipText="@string/mode_audio"
+                    app:icon="@drawable/ms_mic" />
+            </com.google.android.material.button.MaterialButtonToggleGroup>
+
+            <!-- Measures itself at record_touch -->
+            <net.ark3us.saferec.ui.RecordButton
+                android:id="@+id/btn_record"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center" />
+
+            <ImageButton
+                android:id="@+id/btn_gallery"
+                android:layout_width="56dp"
+                android:layout_height="56dp"
+                android:layout_gravity="end|center_vertical"
+                android:background="@drawable/glass_bg"
+                android:contentDescription="@string/open_recordings"
+                android:padding="16dp"
+                android:scaleType="fitCenter"
+                android:src="@drawable/ms_photo_library"
+                app:tint="@color/on_glass" />
+        </FrameLayout>
+
+        <!-- Invisible, not gone, while ready: the record button never moves -->
+        <TextView
+            android:id="@+id/hold_hint"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center_horizontal"
+            android:text="@string/record_hold_to_stop"
+            android:textAppearance="?attr/textAppearanceLabelLarge"
+            android:textColor="@color/on_glass"
+            android:visibility="invisible" />
     </LinearLayout>
 
 </FrameLayout>

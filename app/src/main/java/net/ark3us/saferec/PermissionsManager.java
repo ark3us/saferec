@@ -25,11 +25,6 @@ import java.util.List;
 import java.util.Map;
 
 public class PermissionsManager {
-    /** Old combined result, kept until MainActivity stops using requestAllPermissions. */
-    public interface Callback {
-        void onFinish(boolean allGranted, @Nullable String accessToken);
-    }
-
     public interface DriveCallback {
         /**
          * @param accessToken the token, or null when there is none
@@ -209,18 +204,5 @@ public class PermissionsManager {
             allGranted = false;
             notifyPermissionsResult();
         }
-    }
-
-    /**
-     * Temporary wrapper until the UI is rewired: recording permissions, then Drive
-     * authorization. onPermissionsResult runs in between, so callers act without waiting for Drive.
-     */
-    public void requestAllPermissions(@Nullable Runnable onPermissionsResult, Callback callback) {
-        requestRecordingPermissions(() -> {
-            if (onPermissionsResult != null) {
-                onPermissionsResult.run();
-            }
-            connectDrive(true, (token, needsUser) -> callback.onFinish(allGranted, token));
-        });
     }
 }

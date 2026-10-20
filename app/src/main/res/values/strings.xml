@@ -213,6 +213,13 @@
     <string name="record_recording_description">Recording. Hold to stop</string>
     <string name="record_hold_to_stop">Hold to stop</string>
     <string name="record_stop_action">Stop recording</string>
+    <!-- Viewfinder -->
+    <string name="mode_video">Video</string>
+    <string name="mode_audio">Audio</string>
+    <string name="open_recordings">Recordings</string>
+    <string name="permissions_banner">Camera and microphone are needed to record.</string>
+    <string name="permissions_allow">Allow</string>
+    <string name="drive_connect_failed">Could not connect Google Drive. Recordings stay on this phone.</string>
     <!-- Settings screen -->
     <string name="settings_group_quick_start">Quick start</string>
     <string name="settings_group_evidence">Evidence</string>

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Video|Audio: the selected mode is white, the other one glass -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:color="@color/on_glass" android:state_checked="true" />
+    <item android:color="@color/glass_bg" />
+</selector>

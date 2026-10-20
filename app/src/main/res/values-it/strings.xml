@@ -208,6 +208,7 @@
     <string name="status_drive_ok">Drive collegato</string>
     <plurals name="status_waiting">
         <item quantity="one">%d pezzo in attesa sul telefono</item>
+        <item quantity="many">%d pezzi in attesa sul telefono</item>
         <item quantity="other">%d pezzi in attesa sul telefono</item>
     </plurals>
     <string name="status_offline">Senza rete</string>
@@ -220,6 +221,13 @@
     <string name="record_recording_description">Registrazione in corso. Tieni premuto per fermare</string>
     <string name="record_hold_to_stop">Tieni premuto per fermare</string>
     <string name="record_stop_action">Ferma la registrazione</string>
+    <!-- Viewfinder -->
+    <string name="mode_video">Video</string>
+    <string name="mode_audio">Audio</string>
+    <string name="open_recordings">Registrazioni</string>
+    <string name="permissions_banner">Per registrare servono fotocamera e microfono.</string>
+    <string name="permissions_allow">Consenti</string>
+    <string name="drive_connect_failed">Impossibile collegare Google Drive. Le registrazioni restano sul telefono.</string>
     <!-- Settings screen -->
     <string name="settings_group_quick_start">Avvio rapido</string>
     <string name="settings_group_evidence">Prove</string>
