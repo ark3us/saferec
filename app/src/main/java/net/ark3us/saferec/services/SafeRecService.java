@@ -80,6 +80,8 @@ public class SafeRecService extends Service {
     private int activeTimestamping = 0;
     private String currentSessionId;
     private int safeChunks; // main thread only
+    // A start waits for its vibration until something records, or nothing can (main thread only)
+    private boolean startToConfirm = false;
     private String currentDataType;
     private String errorMessage;
     private GoogleDriveFileUploader uploader; // set in onCreate, before any other thread uses it
@@ -315,8 +317,8 @@ public class SafeRecService extends Service {
                 }
                 switch (StartPolicy.forCommand(command, isRecording)) {
                     case START:
+                        startToConfirm = true;
                         startRecording(includeVideo, useFront);
-                        Haptics.started(this);
                         break;
                     case RESTART:
                         Log.i(TAG, "Stopping ongoing recording before restart (camera switch)");
@@ -410,6 +412,7 @@ public class SafeRecService extends Service {
         }
         if (audioRecorder.start(sink)) {
             Log.i(TAG, "Audio recorder started successfully");
+            confirmStart(true);
         } else {
             Log.e(TAG, "Audio recorder failed to start");
             if (includeVideo) {
@@ -418,11 +421,28 @@ public class SafeRecService extends Service {
             } else {
                 Log.e(TAG, "Audio-only mode failed, stopping");
                 ServiceState.getInstance().reportError(ServiceState.ERROR_RECORDING);
+                confirmStart(false);
                 stopRecording();
             }
         }
 
         updateNotification();
+    }
+
+    /**
+     * Main thread. Vibrates for the start being confirmed, once: two pulses at the first track
+     * that records, three when nothing can be recorded. A camera switch confirms nothing.
+     */
+    private void confirmStart(boolean recording) {
+        if (!startToConfirm) {
+            return;
+        }
+        startToConfirm = false;
+        if (recording) {
+            Haptics.started(this);
+        } else {
+            Haptics.failed(this);
+        }
     }
 
     /** Losing the camera must not lose the evidence: keep recording audio when possible. */
@@ -432,6 +452,7 @@ public class SafeRecService extends Service {
         }
         if (success) {
             Log.i(TAG, "Video recorder started successfully");
+            confirmStart(true); // nothing left to confirm when the microphone already records
             return;
         }
         if (audioRecorder != null && audioRecorder.isRecording()) {
@@ -444,6 +465,7 @@ public class SafeRecService extends Service {
         } else {
             Log.e(TAG, "Video recorder failed and no audio is recording, stopping");
             ServiceState.getInstance().reportError(ServiceState.ERROR_RECORDING);
+            confirmStart(false);
             stopRecording();
         }
     }
@@ -509,6 +531,7 @@ public class SafeRecService extends Service {
             return;
         }
         isRecording = false;
+        startToConfirm = false; // stopped before anything recorded: the stop vibrates
         ServiceState.getInstance().updateStatus(STATUS_STOPPED);
         if (videoRecorder != null) {
             videoRecorder.stopRecording();

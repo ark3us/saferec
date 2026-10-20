@@ -138,7 +138,7 @@ net.ark3us.saferec/
 │   ├── SafeRecTileService.java   # Quick Settings tile: starts a recording through QuickStartActivity
 │   ├── StartPolicy.java          # What CMD_START and CMD_SWITCH_CAMERA do (pure Java)
 │   ├── SafeCount.java            # Which uploaded files count as "pieces safe"
-│   ├── Haptics.java              # Two short pulses on start, one long on stop
+│   ├── Haptics.java              # Two short pulses on start, one long on stop, three short when nothing records
 │   └── NotificationHelper.java  # Notification channel + builder
 │
 └── ui/
@@ -541,7 +541,9 @@ Camera/encoder callbacks are posted to the main thread (`onVideoResult`) and ign
   - While recording it holds a chronometer counting from the session's start, and the count of safe pieces ("N pieces safe on Drive", a plural string): the chunks of the current session that reached Drive (`SafeCount`, `FileUploader.UploadListener.onFileUploaded`, `ServiceState.getSafeChunks()`).
   - Its Stop action needs the phone unlocked (`setAuthenticationRequired(true)`, API 31+). Below API 31 the action opens the app, which needs the unlock anyway.
   - Visibility is private: the lock screen shows a public version, the app name and "Active".
-- Haptics (`Haptics`): two short pulses when a recording starts, one long pulse when it stops, none on a camera switch. The `vibrations` setting turns them off.
+- Haptics (`Haptics`): two short pulses when a recording starts, one long pulse when it stops, none on a camera switch. The `vibrations` setting turns them all off.
+  - A start vibrates only once something records (`confirmStart()`): when the microphone starts, or, if it failed, when the camera does. It used to vibrate right after the start command, also when nothing could record (an audio-only start without the microphone, or neither microphone nor camera: `QuickStartActivity` does not check the permissions).
+  - A start that records nothing gives three short pulses instead (`Haptics.failed()`), so a blind start never confirms a recording that is not there.
 - Only `CMD_START` is sent with `startForegroundService()`, and the service enters the foreground before anything else. Other commands use `startService()`: with `startForegroundService()` the service would have to enter the foreground even with nothing to do, or crash.
 - Work counters (`activeTimestamping`, `activeDeletions`) go up when the work is submitted, not when its task starts. Otherwise the service could stop in between and drop the work.
 - Sticky restart after the process was killed: Android forbids entering the foreground from the background, so the service never tries. It resumes the outbox as a plain background service for as long as Android lets it run. Verified on a Galaxy S10+: the waiting chunk was uploaded after the kill, with no crash.
