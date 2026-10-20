@@ -799,7 +799,7 @@ Verified on a Galaxy S10+ (Android 16):
   - Technical rows show seconds (the pieces of one minute read the same), in the phone's locale.
   - An audio session showed a black player: it shows the `ms_graphic_eq` artwork, dimmed.
   - The list took 14-20 s with 34 sessions, since `DriveRecordings.markGaps` read the manifests one by one: four threads read them now, with the same results (an unreadable manifest still leaves its session unchecked). The session screen and the gallery share it.
-  - To check again on the phone: the new card appearing at the top after a refresh, the spinner while exporting, landscape fullscreen with a cutout, the seconds in the rows, the audio artwork, and the list time with many sessions.
+  - Checked again on the S10+: a session recorded with three presses while the list was open showed at the top after a refresh; both back arrows read "Back"; the export spinner shows (black on the disabled button, low contrast); landscape fullscreen runs edge to edge; an audio session shows the artwork. Not checked again: the seconds in the rows, and the list time with many sessions (only 7 were left on Drive).
 - **Not verified**: unplugging earphones during playback (cannot be simulated over adb), a rotation in the middle of a recording played upright piece by piece (needs hands), TalkBack's spoken output (content descriptions checked with uiautomator only).
 
 ---
