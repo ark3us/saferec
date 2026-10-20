@@ -131,77 +131,7 @@ public class DriveRecordings {
     public void listRecordings(Callback<List<RecordingItem>> callback) {
         executor.execute(() -> {
             try {
-                List<String> baseFolderIds = driveClient.findBaseFolderIds();
-                if (baseFolderIds.isEmpty()) {
-                    callback.onSuccess(new ArrayList<>());
-                    return;
-                }
-
-                List<RecordingItem> items = new ArrayList<>();
-
-                // 1. Fetch Session Folders, from every base folder: older builds could
-                // create duplicates and split a session between them
-                List<com.google.api.services.drive.model.File> sessionFolders = fetchFilesBatch(baseFolderIds, true);
-                Map<String, String> folderIdToSessionId = new HashMap<>();
-                List<String> sessionFolderIds = new ArrayList<>();
-                for (com.google.api.services.drive.model.File f : sessionFolders) {
-                    folderIdToSessionId.put(f.getId(), f.getName());
-                    sessionFolderIds.add(f.getId());
-                }
-
-                if (sessionFolderIds.isEmpty()) {
-                    callback.onSuccess(items);
-                    return;
-                }
-
-                // 2. Fetch DataType Folders
-                List<com.google.api.services.drive.model.File> dataTypeFolders = fetchFilesBatch(sessionFolderIds,
-                        true);
-                Map<String, String> folderIdToDataType = new HashMap<>();
-                Map<String, String> dataTypeToSessionId = new HashMap<>();
-                List<String> dataTypeFolderIds = new ArrayList<>();
-                for (com.google.api.services.drive.model.File f : dataTypeFolders) {
-                    folderIdToDataType.put(f.getId(), f.getName());
-                    if (f.getParents() != null && !f.getParents().isEmpty()) {
-                        String parentId = f.getParents().get(0);
-                        dataTypeToSessionId.put(f.getId(), folderIdToSessionId.get(parentId));
-                    }
-                    dataTypeFolderIds.add(f.getId());
-                }
-
-                if (dataTypeFolderIds.isEmpty()) {
-                    callback.onSuccess(items);
-                    return;
-                }
-
-                // 3. Fetch Media Files
-                List<com.google.api.services.drive.model.File> mediaFiles = fetchFilesBatch(dataTypeFolderIds, false);
-                for (com.google.api.services.drive.model.File file : mediaFiles) {
-                    if (file.getParents() != null && !file.getParents().isEmpty()) {
-                        String parentId = file.getParents().get(0);
-                        String dataType = folderIdToDataType.get(parentId);
-                        String sessionId = dataTypeToSessionId.get(parentId);
-
-                        if (sessionId != null && dataType != null) {
-                            MediaFile mediaFile = MediaFile.fromDriveData(sessionId, dataType, file.getName());
-                            if (mediaFile != null) {
-                                items.add(new RecordingItem(mediaFile, file));
-                            }
-                        }
-                    }
-                }
-
-                markGaps(items);
-
-                // Sort by sessionId (descending) and then by timestamp
-                items.sort((a, b) -> {
-                    int sessionComp = b.mediaFile.sessionId.compareTo(a.mediaFile.sessionId);
-                    if (sessionComp != 0)
-                        return sessionComp;
-                    return Long.compare(a.mediaFile.timestamp, b.mediaFile.timestamp);
-                });
-
-                callback.onSuccess(items);
+                callback.onSuccess(collectItems(null, null));
             } catch (Exception e) {
                 Log.e(TAG, "Failed to list recordings (optimized)", e);
                 callback.onError(e);
@@ -209,7 +139,114 @@ public class DriveRecordings {
         });
     }
 
-    private List<com.google.api.services.drive.model.File> fetchFilesBatch(List<String> parentIds, boolean isFolder)
+    /** Every session on Drive, newest first, each with its status, pieces and files. */
+    public void listSessions(Callback<List<SessionSummary>> callback) {
+        listRecordings(new Callback<List<RecordingItem>>() {
+            @Override
+            public void onSuccess(List<RecordingItem> items) {
+                callback.onSuccess(SessionSummary.group(items));
+            }
+
+            @Override
+            public void onError(Exception e) {
+                callback.onError(e);
+            }
+        });
+    }
+
+    /**
+     * One session only: its folders and files are asked for by name, so a screen about one
+     * session never lists every recording. Calls back with null when Drive has no such session.
+     */
+    public void session(String sessionId, String dataType, Callback<SessionSummary> callback) {
+        executor.execute(() -> {
+            try {
+                List<SessionSummary> found = SessionSummary.group(collectItems(sessionId, dataType));
+                callback.onSuccess(found.isEmpty() ? null : found.get(0));
+            } catch (Exception e) {
+                Log.e(TAG, "Failed to read session " + sessionId, e);
+                callback.onError(e);
+            }
+        });
+    }
+
+    /**
+     * The files of every session, or of one when {@code onlySession} and {@code onlyType} are
+     * set (the folders are then matched by name), with the gaps read from the manifests.
+     * Newest session first, then by time.
+     */
+    private List<RecordingItem> collectItems(String onlySession, String onlyType) throws Exception {
+        List<String> baseFolderIds = driveClient.findBaseFolderIds();
+        if (baseFolderIds.isEmpty()) {
+            return new ArrayList<>();
+        }
+
+        List<RecordingItem> items = new ArrayList<>();
+
+        // 1. Fetch Session Folders, from every base folder: older builds could
+        // create duplicates and split a session between them
+        List<com.google.api.services.drive.model.File> sessionFolders = fetchFilesBatch(baseFolderIds, true, onlySession);
+        Map<String, String> folderIdToSessionId = new HashMap<>();
+        List<String> sessionFolderIds = new ArrayList<>();
+        for (com.google.api.services.drive.model.File f : sessionFolders) {
+            folderIdToSessionId.put(f.getId(), f.getName());
+            sessionFolderIds.add(f.getId());
+        }
+
+        if (sessionFolderIds.isEmpty()) {
+            return items;
+        }
+
+        // 2. Fetch DataType Folders
+        List<com.google.api.services.drive.model.File> dataTypeFolders = fetchFilesBatch(sessionFolderIds,
+                true, onlyType);
+        Map<String, String> folderIdToDataType = new HashMap<>();
+        Map<String, String> dataTypeToSessionId = new HashMap<>();
+        List<String> dataTypeFolderIds = new ArrayList<>();
+        for (com.google.api.services.drive.model.File f : dataTypeFolders) {
+            folderIdToDataType.put(f.getId(), f.getName());
+            if (f.getParents() != null && !f.getParents().isEmpty()) {
+                String parentId = f.getParents().get(0);
+                dataTypeToSessionId.put(f.getId(), folderIdToSessionId.get(parentId));
+            }
+            dataTypeFolderIds.add(f.getId());
+        }
+
+        if (dataTypeFolderIds.isEmpty()) {
+            return items;
+        }
+
+        // 3. Fetch Media Files
+        List<com.google.api.services.drive.model.File> mediaFiles = fetchFilesBatch(dataTypeFolderIds, false, null);
+        for (com.google.api.services.drive.model.File file : mediaFiles) {
+            if (file.getParents() != null && !file.getParents().isEmpty()) {
+                String parentId = file.getParents().get(0);
+                String dataType = folderIdToDataType.get(parentId);
+                String sessionId = dataTypeToSessionId.get(parentId);
+
+                if (sessionId != null && dataType != null) {
+                    MediaFile mediaFile = MediaFile.fromDriveData(sessionId, dataType, file.getName());
+                    if (mediaFile != null) {
+                        items.add(new RecordingItem(mediaFile, file));
+                    }
+                }
+            }
+        }
+
+        markGaps(items);
+
+        // Sort by sessionId (descending) and then by timestamp
+        items.sort((a, b) -> {
+            int sessionComp = b.mediaFile.sessionId.compareTo(a.mediaFile.sessionId);
+            if (sessionComp != 0)
+                return sessionComp;
+            return Long.compare(a.mediaFile.timestamp, b.mediaFile.timestamp);
+        });
+
+        return items;
+    }
+
+    private List<com.google.api.services.drive.model.File> fetchFilesBatch(List<String> parentIds, boolean isFolder, String name)
             throws Exception {
         List<com.google.api.services.drive.model.File> allResults = new ArrayList<>();
         Log.d(TAG, "Fetching " + (isFolder ? "folders" : "files") + " for parent count=" + parentIds.size());
@@ -228,9 +265,12 @@ public class DriveRecordings {
                 q.append("'").append(batch.get(k)).append("' in parents");
             }
             q.append(")");
+            if (name != null) {
+                q.append(" and name='").append(name.replace("\\", "\\\\").replace("'", "\\'")).append("'");
+            }
 
             String fields = isFolder ? "files(id, name, parents)"
-                    : "files(id, name, parents, size, createdTime, webViewLink, thumbnailLink)";
+                    : "files(id, name, parents, size, createdTime, webViewLink, thumbnailLink, videoMediaMetadata(durationMillis))";
             String pageToken = null;
             do {
                 FileList list = driveClient.getDriveService().files().list()
