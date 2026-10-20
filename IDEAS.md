@@ -19,6 +19,9 @@ Android revokes permissions of apps unused for months, which is exactly how an e
 ### Emergency drill
 A settings button that records 15 s, checks the chunk exists, uploads it and shows ✅/❌ for each step (permissions, network, Drive, TSA). Better to find a broken setup during a drill than during an emergency.
 
+### Quick-start readiness at a glance
+One list of every way to start a recording, each with ✅/❌ and a one-tap fix. The tile: is it in quick settings? `StatusBarManager.requestAddTileService()` (Android 13+) adds it with one system dialog, no dragging. The three presses: `Guard.status()`. The camera double press: do both camera actions resolve to SafeRec (`resolveActivity`)? A test found that Android's chooser can make "Always" unreachable on the first try. A "Record now" icon on the home screen: `ShortcutManager.requestPinShortcut()`. The owner finds a broken path before the day it is needed, and the drill above can run each path once.
+
 ## Evidence integrity
 
 ### Hash chain for timestamps
