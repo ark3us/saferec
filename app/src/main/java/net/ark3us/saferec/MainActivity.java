@@ -546,6 +546,8 @@ public class MainActivity extends AppCompatActivity {
     protected void onPause() {
         super.onPause();
         stopPreview(false);
+        // The guard is read again at the next resume
+        statusChip.release();
     }
 
     @Override

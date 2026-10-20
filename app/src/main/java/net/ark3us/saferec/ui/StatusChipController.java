@@ -29,18 +29,22 @@ public final class StatusChipController {
         void explainWaiting();
     }
 
-    /** GuardService reports running only once it has started: read it again after this. */
+    /**
+     * GuardService reports running only once it has started: while it starts, it is read again
+     * after this delay, a few times at most, as Settings does. A single 1 s window showed "Three
+     * presses off" for a guard that took longer, until something else drew the chip again.
+     */
     private static final long GUARD_RECHECK_MS = 1000;
+    private static final int GUARD_RECHECK_MAX = 5;
 
     private final Chip chip;
     private final Actions actions;
     private final Handler handler = new Handler(Looper.getMainLooper());
-    private final Runnable guardRecheck = () -> {
-        guardStarting = false;
-        render();
-    };
+    // A method reference, not a lambda: its body may name the guard (see threePressesOff())
+    private final Runnable guardRecheck = this::recheckGuard;
     private StatusModel.Kind kind = StatusModel.Kind.HIDDEN;
-    private boolean guardStarting = false;
+    // Re-checks left while the guard starts; a stopped guard is not reported meanwhile
+    private int guardRechecksLeft = 0;
     private boolean recording = false;
     private boolean online = false;
     private int pendingPieces = 0;
@@ -60,17 +64,40 @@ public final class StatusChipController {
     }
 
     /**
-     * Call after Guard.ensureRunning(): a stopped guard is not reported for a second, or the chip
-     * would flash "Three presses off" at every launch.
+     * Call after Guard.ensureRunning(): a stopped guard is read again every second, up to five
+     * times, before the chip says "Three presses off", or it would flash at every launch. The
+     * checks end as soon as the guard runs.
      */
     public void guardStarting() {
-        guardStarting = true;
+        guardRechecksLeft = GUARD_RECHECK_MAX;
         handler.removeCallbacks(guardRecheck);
         handler.postDelayed(guardRecheck, GUARD_RECHECK_MS);
     }
 
+    /** On pause or destroy: no more re-checks. The next guardStarting() begins again. */
     public void release() {
+        guardRechecksLeft = 0;
         handler.removeCallbacks(guardRecheck);
+    }
+
+    /** One re-check: another one follows while the guard is still stopped and checks are left. */
+    private void recheckGuard() {
+        guardRechecksLeft--;
+        if (guardRechecksLeft > 0 && guardStopped()) {
+            if (BuildConfig.POWER_GESTURE) {
+                // The screen is still in the foreground, so the guard's service may start now
+                net.ark3us.saferec.guard.Guard.ensureRunning(chip.getContext());
+            }
+            handler.postDelayed(guardRecheck, GUARD_RECHECK_MS);
+        } else {
+            guardRechecksLeft = 0;
+        }
+        render();
+    }
+
+    /** The guard is on, with every step done, but its service does not run (yet). */
+    private boolean guardStopped() {
+        return BuildConfig.POWER_GESTURE && GuardSetup.state(chip.getContext()) == GuardSetup.STATE_STOPPED;
     }
 
     private void render() {
@@ -83,15 +110,15 @@ public final class StatusChipController {
     }
 
     /**
-     * The guard is on but not running. The body sits inside the constant check, so a build
-     * without the guard module never reaches its classes.
+     * The guard is on but not running, or a step is missing. A stopped guard is not reported while
+     * it starts. Through GuardSetup's int states: no guard type is named here, and the guard
+     * calls sit inside the constant check, so a build without the guard module never reaches them.
      */
     private boolean threePressesOff(Context context) {
         if (BuildConfig.POWER_GESTURE) {
-            net.ark3us.saferec.guard.Guard.Status status = net.ark3us.saferec.guard.Guard.status(context);
-            return net.ark3us.saferec.guard.Guard.isEnabled(context)
-                    && status != net.ark3us.saferec.guard.Guard.Status.ACTIVE
-                    && !(guardStarting && status == net.ark3us.saferec.guard.Guard.Status.STOPPED);
+            int state = GuardSetup.state(context);
+            return state != GuardSetup.STATE_OFF && state != GuardSetup.STATE_ACTIVE
+                    && !(guardRechecksLeft > 0 && state == GuardSetup.STATE_STOPPED);
         }
         return false;
     }
