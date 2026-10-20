@@ -94,6 +94,7 @@
             android:theme="@style/Theme.SafeRec.Surface" />
         <activity
             android:name=".SettingsActivity"
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden"
             android:exported="false"
             android:label="@string/settings"
             android:theme="@style/Theme.SafeRec.Surface" />

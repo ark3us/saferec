@@ -339,16 +339,12 @@ public class SettingsActivity extends AppCompatActivity {
             case StatusBarManager.TILE_ADD_REQUEST_RESULT_TILE_ALREADY_ADDED:
                 Toast.makeText(this, R.string.tile_added, Toast.LENGTH_SHORT).show();
                 break;
-            case StatusBarManager.TILE_ADD_REQUEST_ERROR_APP_NOT_IN_FOREGROUND:
-            case StatusBarManager.TILE_ADD_REQUEST_ERROR_BAD_COMPONENT:
-            case StatusBarManager.TILE_ADD_REQUEST_ERROR_MISMATCHED_PACKAGE:
-            case StatusBarManager.TILE_ADD_REQUEST_ERROR_NOT_CURRENT_USER:
-            case StatusBarManager.TILE_ADD_REQUEST_ERROR_NO_STATUS_BAR_SERVICE:
-            case StatusBarManager.TILE_ADD_REQUEST_ERROR_REQUEST_IN_PROGRESS:
-                showTileSteps();
+            case StatusBarManager.TILE_ADD_REQUEST_RESULT_TILE_NOT_ADDED:
+                // The user said no
                 break;
             default:
-                // TILE_ADD_REQUEST_RESULT_TILE_NOT_ADDED: the user said no
+                // Any error code, known or added by a later Android: the steps by hand
+                showTileSteps();
                 break;
         }
     }
@@ -452,7 +448,7 @@ public class SettingsActivity extends AppCompatActivity {
                 return;
             }
             runInBackground(() -> {
-                DriveConnection.Result result = DriveConnection.accept(getApplicationContext(), token);
+                DriveConnection.Result result = DriveConnection.accept(getApplicationContext(), token, true);
                 Log.i(TAG, "Drive connection: " + result);
                 runOnUiThread(() -> {
                     driveConnecting = false;
