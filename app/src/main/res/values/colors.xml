@@ -23,7 +23,5 @@
     <color name="primary">#FF00BFA5</color>
     <color name="surface_elevated">#FF1E1E1E</color>
     <color name="record_red">#FFEF5350</color>
-    <color name="overlay_bg">#99000000</color>
     <color name="control_icon">#E0FFFFFF</color>
-    <color name="control_icon_active">#FF00BFA5</color>
 </resources>

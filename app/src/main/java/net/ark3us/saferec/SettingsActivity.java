@@ -571,7 +571,7 @@ public class SettingsActivity extends AppCompatActivity {
                     Settings.setChunkSizeMB(this, Math.max(0, Integer.parseInt(value)));
                     render();
                 } catch (NumberFormatException e) {
-                    Toast.makeText(this, R.string.chunk_invalid_input, Toast.LENGTH_SHORT).show();
+                    Toast.makeText(this, R.string.piece_size_invalid, Toast.LENGTH_SHORT).show();
                 }
             })
             .setNegativeButton(android.R.string.cancel, null)
