@@ -95,7 +95,7 @@
                 android:src="@drawable/ms_settings" />
         </LinearLayout>
 
-        <!-- After a refusal of the camera or the microphone -->
+        <!-- After a refusal of what the mode records with -->
         <LinearLayout
             android:id="@+id/permissions_banner"
             android:layout_width="match_parent"
@@ -114,6 +114,7 @@
             android:visibility="gone">
 
             <TextView
+                android:id="@+id/permissions_banner_text"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"

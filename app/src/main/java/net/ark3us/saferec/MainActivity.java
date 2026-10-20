@@ -134,7 +134,7 @@ public class MainActivity extends AppCompatActivity {
 
         PermissionsManager permissionsManager = new PermissionsManager(this);
         permissionsBanner = new PermissionsBanner(this, permissionsManager, findViewById(R.id.permissions_banner),
-                findViewById(R.id.permissions_allow), savedInstanceState);
+                findViewById(R.id.permissions_banner_text), findViewById(R.id.permissions_allow), savedInstanceState);
         driveConnector = new DriveConnector(this, permissionsManager, new DriveConnector.Listener() {
             @Override
             public void onDriveReady() {
@@ -368,13 +368,18 @@ public class MainActivity extends AppCompatActivity {
         overlay.setTarget(target, title, message, () -> showTutorialOverlay(nextStep));
     }
 
-    /** Runs the launch command once the camera and microphone are granted, asking first if needed. */
+    /**
+     * Runs the launch command. Only a start records, with the viewfinder's mode: it waits for what
+     * that mode needs, asked first if missing. Other commands, and no command, need nothing.
+     */
     private void launchWhenPermitted() {
-        if (PermissionsManager.hasRecordingPermissions(this)) {
+        boolean audioOnly = Settings.onlyAudio(this);
+        if (launchCommandHandled || !SafeRecService.CMD_START.equals(getCommand())
+                || PermissionsManager.hasRecordingPermissions(this, audioOnly)) {
             // Posted on a view so the service starts only once the activity is visible
             btnRecord.post(this::handleLaunchCommand);
         } else {
-            permissionsBanner.ask(() -> btnRecord.post(this::handleLaunchCommand));
+            permissionsBanner.ask(audioOnly, () -> btnRecord.post(this::handleLaunchCommand));
         }
     }
 
@@ -403,12 +408,16 @@ public class MainActivity extends AppCompatActivity {
 
     // ---- Recording and permissions ----
 
-    /** Waits only for the camera and microphone, never for Drive, the network or the first run. */
+    /**
+     * Waits only for what the mode records with (the microphone, plus the camera for video), never
+     * for Drive, the network or the first run.
+     */
     private void startRecording() {
-        if (PermissionsManager.hasRecordingPermissions(this)) {
+        boolean audioOnly = Settings.onlyAudio(this);
+        if (PermissionsManager.hasRecordingPermissions(this, audioOnly)) {
             startSafeRecService(SafeRecService.CMD_START);
         } else {
-            permissionsBanner.ask(() -> startSafeRecService(SafeRecService.CMD_START));
+            permissionsBanner.ask(audioOnly, () -> startSafeRecService(SafeRecService.CMD_START));
         }
     }
 
@@ -438,6 +447,7 @@ public class MainActivity extends AppCompatActivity {
         }
         Log.i(TAG, "Viewfinder mode: onlyAudio=" + onlyAudio);
         Settings.setOnlyAudio(this, onlyAudio);
+        permissionsBanner.refresh(onlyAudio);
         if (onlyAudio) {
             stopPreview(true);
         } else {
@@ -589,7 +599,7 @@ public class MainActivity extends AppCompatActivity {
             statusChip.guardStarting();
         }
         pendingFiles = countOutbox();
-        permissionsBanner.refresh();
+        permissionsBanner.refresh(Settings.onlyAudio(this));
         render();
         driveConnector.silentCheck(networkWatcher.isOnline());
     }

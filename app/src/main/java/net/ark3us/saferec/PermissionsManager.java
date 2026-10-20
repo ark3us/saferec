@@ -21,6 +21,7 @@ import com.google.api.services.drive.DriveScopes;
 
 import java.util.Collections;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 
@@ -158,12 +159,29 @@ public class PermissionsManager {
     }
 
     /**
-     * Camera is required even in audio-only mode: the service is declared as
-     * camera|microphone, and on Android 14+ startForeground throws without both.
+     * What a recording needs: the microphone always, the camera only for video. The one list
+     * behind every recording gate. An audio-only recording enters the foreground as microphone
+     * only, so it needs no camera.
      */
+    public static String[] recordingPermissions(boolean audioOnly) {
+        return audioOnly
+                ? new String[]{Manifest.permission.RECORD_AUDIO}
+                : new String[]{Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO};
+    }
+
+    /** Camera and microphone: what a video recording needs. */
     public static boolean hasRecordingPermissions(Context context) {
-        return context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
-                && context.checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED;
+        return hasRecordingPermissions(context, false);
+    }
+
+    /** Whether a recording of this kind may start: microphone, plus the camera for video. */
+    public static boolean hasRecordingPermissions(Context context, boolean audioOnly) {
+        for (String permission : recordingPermissions(audioOnly)) {
+            if (context.checkSelfPermission(permission) != PackageManager.PERMISSION_GRANTED) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /**
@@ -171,15 +189,23 @@ public class PermissionsManager {
      * answer, or at once when all are granted. Never asks for Drive.
      */
     public void requestRecordingPermissions(@Nullable Runnable onResult) {
+        requestRecordingPermissions(false, onResult);
+    }
+
+    /**
+     * Asks for what a recording of this kind needs and, on API 33+, notifications: an audio-only
+     * recording never asks for the camera. Runs onResult after the answer, or at once when all are
+     * granted. A request already on screen is joined: onResult then runs after that answer, and
+     * should check what it needs itself. Never asks for Drive.
+     */
+    public void requestRecordingPermissions(boolean audioOnly, @Nullable Runnable onResult) {
         if (permissionsInFlight) {
             if (onResult != null) {
                 pendingPermissions.add(onResult);
             }
             return;
         }
-        List<String> missing = new ArrayList<>();
-        missing.add(Manifest.permission.CAMERA);
-        missing.add(Manifest.permission.RECORD_AUDIO);
+        List<String> missing = new ArrayList<>(Arrays.asList(recordingPermissions(audioOnly)));
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             missing.add(Manifest.permission.POST_NOTIFICATIONS);
         }

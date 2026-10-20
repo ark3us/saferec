@@ -226,6 +226,7 @@
     <string name="mode_audio">Audio</string>
     <string name="open_recordings">Registrazioni</string>
     <string name="permissions_banner">Per registrare servono fotocamera e microfono.</string>
+    <string name="permissions_banner_audio">Per registrare serve il microfono.</string>
     <string name="permissions_allow">Consenti</string>
     <string name="drive_connect_failed">Impossibile collegare Google Drive. Le registrazioni restano sul telefono.</string>
     <!-- Settings screen -->
