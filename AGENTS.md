@@ -644,6 +644,9 @@ On the S10+ the low-memory killer killed the app twice in a minute, with 0.5 GB 
 
 `saferec.powerGesture` in `gradle.properties` (default `true`). With `-Psaferec.powerGesture=false` the `guard` module is `compileOnly`: nothing of it is packaged, so the APK has no guard manifest entries (the `specialUse` service and its permission, the overlay permission, the boot receiver), and the app shows no setting or first-run step for it (`BuildConfig.POWER_GESTURE`). This is the build for Google Play if the `specialUse` declaration is refused.
 
+- App code touches the guard only inside `if (BuildConfig.POWER_GESTURE)`, which javac drops in that build. Two things leak out anyway: a lambda's body, and enum switch maps. One synthetic class (`FirstRun$1`) builds the maps of every enum switch of its class, so any of them loads `Guard.Status`: the first launch of the off build crashed with `NoClassDefFoundError`.
+- So every switch over a guard enum lives in `ui/GuardSetup` (`GuardSetup.state()` gives ints to switch on), the only class allowed to name the guard. `scripts/check-guard-refs.sh` compiles the off build and fails on any other class that references the guard.
+
 ### Camera double press (optional)
 
 The double press of the power key opens the default camera app with `STILL_IMAGE_CAMERA` (unlocked) or `STILL_IMAGE_CAMERA_SECURE` (locked).
