@@ -83,6 +83,7 @@ public class SafeRecService extends Service {
     // A start waits for its vibration until something records, or nothing can (main thread only)
     private boolean startToConfirm = false;
     private String currentDataType;
+    private boolean recordingFront; // main thread only, the camera of the running recording
     private String errorMessage;
     private GoogleDriveFileUploader uploader; // set in onCreate, before any other thread uses it
     private ConnectivityManager.NetworkCallback networkCallback;
@@ -264,7 +265,7 @@ public class SafeRecService extends Service {
             return;
         }
         Notification notification = buildNotification(isRecording);
-        int type = isRecording ? recordingForegroundType(MuxerSink.DATA_TYPE_VIDEO.equals(currentDataType)) : dataSyncForegroundType();
+        int type = isRecording ? recordingForegroundType(isRecordingVideo()) : dataSyncForegroundType();
         if (type == foregroundType) {
             NotificationManager manager = getSystemService(NotificationManager.class);
             if (manager != null) {
@@ -306,29 +307,7 @@ public class SafeRecService extends Service {
         switch (command) {
             case CMD_START:
             case CMD_SWITCH_CAMERA:
-                // CMD_START is sent with startForegroundService(): the service must enter the
-                // foreground whatever happens next, or Android kills the app
-                boolean quick = CMD_START.equals(command) && intent.getBooleanExtra(EXTRA_QUICK_START, false);
-                boolean includeVideo = quick ? !Settings.isQuickStartAudioOnly(this) : !Settings.onlyAudio(this);
-                boolean useFront = quick ? Settings.isQuickStartFrontCamera(this) : Settings.getUseFrontCamera(this);
-                Notification notification = buildNotification(true);
-                if (!enterForeground(recordingForegroundType(includeVideo), notification)) {
-                    enterForeground(dataSyncForegroundType(), notification);
-                }
-                switch (StartPolicy.forCommand(command, isRecording)) {
-                    case START:
-                        startToConfirm = true;
-                        startRecording(includeVideo, useFront);
-                        break;
-                    case RESTART:
-                        Log.i(TAG, "Stopping ongoing recording before restart (camera switch)");
-                        stopRecording();
-                        startRecording(includeVideo, useFront);
-                        break;
-                    case IGNORE:
-                        Log.i(TAG, "Already recording: " + command + " ignored");
-                        break;
-                }
+                startOrSwitch(command, CMD_START.equals(command) && intent.getBooleanExtra(EXTRA_QUICK_START, false));
                 break;
             case CMD_STOP:
                 stopRecording();
@@ -346,6 +325,54 @@ public class SafeRecService extends Service {
         }
         updateNotification();
         return START_STICKY;
+    }
+
+    /**
+     * A start records with the quick-start settings or the viewfinder's. A camera switch keeps
+     * what the running recording records, which may come from a quick start with settings of
+     * its own, and changes only its camera.
+     */
+    private void startOrSwitch(String command, boolean quick) {
+        boolean includeVideo = quick ? !Settings.isQuickStartAudioOnly(this) : !Settings.onlyAudio(this);
+        boolean useFront = quick ? Settings.isQuickStartFrontCamera(this) : Settings.getUseFrontCamera(this);
+        if (CMD_START.equals(command)) {
+            // Sent with startForegroundService(): the service must enter the foreground whatever
+            // happens next, or Android kills the app. While recording, with the running
+            // recording's type: a start that is ignored must not drop the camera type. A switch
+            // needs none of this: while recording the service is in the foreground already, and
+            // while idle it records nothing.
+            Notification notification = buildNotification(true);
+            int type = recordingForegroundType(isRecording ? isRecordingVideo() : includeVideo);
+            if (!enterForeground(type, notification)) {
+                enterForeground(dataSyncForegroundType(), notification);
+            }
+        }
+        switch (StartPolicy.forCommand(command, isRecording)) {
+            case START:
+                startToConfirm = true;
+                startRecording(includeVideo, useFront);
+                break;
+            case RESTART:
+                if (!isRecordingVideo()) {
+                    Log.i(TAG, "Recording audio only: camera switch ignored");
+                    break;
+                }
+                boolean front = !recordingFront;
+                Log.i(TAG, "Stopping ongoing recording before restart (camera switch, front=" + front + ")");
+                // The viewfinder shows the camera the recording switched to
+                Settings.setUseFrontCamera(this, front);
+                stopRecording();
+                startRecording(true, front);
+                break;
+            case IGNORE:
+                Log.i(TAG, command + " ignored (recording " + isRecording + ")");
+                break;
+        }
+    }
+
+    /** What the running recording records, video or audio only (the camera may be lost since). */
+    private boolean isRecordingVideo() {
+        return MuxerSink.DATA_TYPE_VIDEO.equals(currentDataType);
     }
 
     @Override
@@ -396,6 +423,7 @@ public class SafeRecService extends Service {
             }
         };
         currentDataType = dataType;
+        recordingFront = useFront;
 
         sink = new MuxerSink(workDir(), callback, dataType, sessionId, chunkPolicy);
         sink.setSequenceNumber(currentSequenceNumber);

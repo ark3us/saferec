@@ -204,15 +204,15 @@ public class MainActivity extends AppCompatActivity {
 
         btnSwitchCamera = findViewById(R.id.btn_switch_camera);
         btnSwitchCamera.setOnClickListener(v -> {
-            boolean useFrontCamera = Settings.getUseFrontCamera(this);
-            boolean newValue = !useFrontCamera;
-            Settings.setUseFrontCamera(this, newValue);
-            Log.i(TAG, "Switching camera. New useFrontCamera=" + newValue);
-
             if (isStarted(ServiceState.getInstance().getStatus().getValue())) {
-                Log.i(TAG, "Recording in progress, restarting service to switch camera");
+                // The service switches from the camera the recording uses, which a quick start
+                // may have picked, and stores the new one as the viewfinder's camera
+                Log.i(TAG, "Recording in progress, asking the service to switch camera");
                 startSafeRecService(SafeRecService.CMD_SWITCH_CAMERA);
             } else {
+                boolean newValue = !Settings.getUseFrontCamera(this);
+                Settings.setUseFrontCamera(this, newValue);
+                Log.i(TAG, "Switching camera. New useFrontCamera=" + newValue);
                 tryStartPreview();
             }
         });

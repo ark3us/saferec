@@ -385,8 +385,10 @@ sequenceDiagram
 When the user switches front↔back during recording, [SafeRecService](app/src/main/java/net/ark3us/saferec/services/SafeRecService.java) receives `CMD_SWITCH_CAMERA` (a `CMD_START` while recording is ignored):
 
 1. [stopRecording()](app/src/main/java/net/ark3us/saferec/MainActivity.java) — tears down audio, video, and muxer (uploads final chunk)
-2. [startRecording()](app/src/main/java/net/ark3us/saferec/services/SafeRecService.java) — creates a **new session/muxer**, re-opens camera with new ID
+2. [startRecording()](app/src/main/java/net/ark3us/saferec/services/SafeRecService.java) — creates a **new muxer** in the same session, re-opens the **other camera** than the running recording's, with the **same type** (video)
 3. This is a full restart, not a hot swap — there's a brief gap in the recording
+
+The service remembers the running recording's type (`currentDataType`) and camera (`recordingFront`), because a quick start records with its own settings, not the viewfinder's. Taking them from the viewfinder turned an audio-only quick start into video (in another folder of the session, with its own manifest) and could leave the camera unchanged. The service also stores the new camera as the viewfinder's (`useFrontCamera`), so the viewfinder shows what is recorded; `MainActivity` only sends the command while recording, and switches its own preview otherwise. An audio-only recording has no camera to switch: the command is ignored and logged.
 
 ### 5. Preview Lifecycle (Independent of Recording)
 
@@ -515,8 +517,8 @@ Foreground service orchestrating the recording. Commands via `Intent` extras:
 
 | Command | Action |
 |---------|--------|
-| `CMD_START` | (`startForegroundService`) Starts a recording. **Ignored while recording**, so a second quick start never cuts the session (`StartPolicy`). With `EXTRA_QUICK_START` (set by `QuickStartActivity`) it records with the quick-start settings, not the viewfinder's choices |
-| `CMD_SWITCH_CAMERA` | While recording: stop + restart with the other camera (a new session, see Camera Switch). Ignored when not recording |
+| `CMD_START` | (`startForegroundService`) Starts a recording. **Ignored while recording**, so a second quick start never cuts the session (`StartPolicy`). With `EXTRA_QUICK_START` (set by `QuickStartActivity`) it records with the quick-start settings, not the viewfinder's choices. It always enters the foreground; while recording, with the running recording's type, so an ignored start never drops the camera type |
+| `CMD_SWITCH_CAMERA` | (`startService`) While recording video: stop + restart with the other camera and the same type (a new muxer, see Camera Switch). Ignored when not recording, or when recording audio only. It never enters the foreground on its own |
 | `CMD_STOP` | Stop recording, reset session |
 | `CMD_UPLOAD_PENDING` | Upload the outbox now (safe while recording) |
 | `CMD_DELETE` | Move Drive files (`EXTRA_FILE_IDS`) to the Drive trash, never delete them for good. Folders (`EXTRA_FOLDER_IDS`) are trashed only when they hold nothing, not even trashed files. Deleting a folder for good would also delete the trashed files in it, and keeping it lets Drive's "Restore" put files back where they were. |
