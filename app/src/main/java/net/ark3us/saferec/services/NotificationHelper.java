@@ -104,12 +104,10 @@ public class NotificationHelper {
                 .setContentIntent(pendingIntent)
                 .setOngoing(isRecording || activeUploads > 0 || activeDeletions > 0 || activeTimestamping > 0 || pendingFiles > 0)
                 .setOnlyAlertOnce(true)
-                .setVisibility(Notification.VISIBILITY_PRIVATE)
-                .setPublicVersion(new Notification.Builder(context, CHANNEL_ID)
-                        .setContentTitle(context.getString(R.string.app_name))
-                        .setContentText(context.getString(R.string.notif_public_active))
-                        .setSmallIcon(R.drawable.ic_stat_shield_record)
-                        .build());
+                // Hidden on a secure lock screen, whatever the user's setting. A private one
+                // shows in full under Android's default "show all content", and is redacted only
+                // when the user chose "hide sensitive content".
+                .setVisibility(Notification.VISIBILITY_SECRET);
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             builder.setForegroundServiceBehavior(Notification.FOREGROUND_SERVICE_IMMEDIATE);
