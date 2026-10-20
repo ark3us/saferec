@@ -70,7 +70,9 @@ public final class CameraGesture {
     /** Whether Android now opens the alias, without asking, for this intent ("Always" was stored). */
     public static boolean isDefaultFor(Context context, Intent intent) {
         ResolveInfo info = context.getPackageManager().resolveActivity(intent, PackageManager.MATCH_DEFAULT_ONLY);
-        return info != null && info.activityInfo != null && ALIAS.equals(info.activityInfo.name);
+        return info != null && info.activityInfo != null
+                && context.getPackageName().equals(info.activityInfo.packageName)
+                && ALIAS.equals(info.activityInfo.name);
     }
 
     /** {@link #isDefaultFor} for each of {@link #tryIntents()}. */

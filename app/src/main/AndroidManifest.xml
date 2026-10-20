@@ -20,6 +20,14 @@
 
     <queries>
         <package android:name="com.android.systemui" />
+        <!-- The camera double press setup checks itself with resolveActivity: it must
+             see the other camera apps, or the answer is always SafeRec's own alias. -->
+        <intent>
+            <action android:name="android.media.action.STILL_IMAGE_CAMERA" />
+        </intent>
+        <intent>
+            <action android:name="android.media.action.STILL_IMAGE_CAMERA_SECURE" />
+        </intent>
     </queries>
 
     <application
