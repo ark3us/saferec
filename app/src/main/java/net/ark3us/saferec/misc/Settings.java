@@ -105,6 +105,15 @@ public class Settings {
         getPrefs(context).edit().putBoolean("tutorialShown", shown).apply();
     }
 
+    /** Defaults to the old tutorial's flag: users who saw it never get the cards. */
+    public static boolean isFirstRunDone(Context context) {
+        return getPrefs(context).getBoolean("firstRunDone", isTutorialShown(context));
+    }
+
+    public static void setFirstRunDone(Context context, boolean done) {
+        getPrefs(context).edit().putBoolean("firstRunDone", done).apply();
+    }
+
     public static boolean isRecordingsTutorialShown(Context context) {
         return getPrefs(context).getBoolean("recordingsTutorialShown", false);
     }

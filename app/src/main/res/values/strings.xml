@@ -260,4 +260,16 @@
     <string name="piece_size_dialog">Size of each piece (MB)</string>
     <string name="piece_size_custom">Choose a size…</string>
     <string name="guide_title">Guide</string>
+
+    <string name="first_run_about_title">Evidence that survives</string>
+    <string name="first_run_about_text">SafeRec records video and sound and sends it to your Google Drive in 10-second pieces, so what you recorded is safe even if the phone is broken or taken. It records without a network too: pieces wait on the phone.</string>
+    <string name="first_run_permissions_title">Camera and microphone</string>
+    <string name="first_run_permissions_text">SafeRec needs them to record, and notifications to show that it is recording.</string>
+    <string name="first_run_three_presses_title">Record without unlocking</string>
+    <string name="first_run_three_presses_text">Press the power key three times, even with the phone locked in a pocket. Two short vibrations confirm. It needs two permissions, asked next.</string>
+    <string name="first_run_next">Next</string>
+    <string name="first_run_allow">Allow</string>
+    <string name="first_run_turn_on">Turn on</string>
+    <string name="first_run_skip">Skip</string>
+    <string name="first_run_done">Done</string>
 </resources>

@@ -37,7 +37,7 @@ import net.ark3us.saferec.ui.NetworkWatcher;
 import net.ark3us.saferec.ui.PermissionsBanner;
 import net.ark3us.saferec.ui.RecordButton;
 import net.ark3us.saferec.ui.StatusChipController;
-import net.ark3us.saferec.ui.TutorialOverlayView;
+import net.ark3us.saferec.ui.FirstRun;
 
 /**
  * The viewfinder. Nothing covers or disables the record button: not Drive, the network, an
@@ -57,6 +57,7 @@ public class MainActivity extends AppCompatActivity {
     private VideoStreamRecorder previewRecorder;
     private boolean previewSurfaceAvailable = false;
 
+    private FirstRun firstRun;
     private RecordButton btnRecord;
     private View btnSwitchCamera;
     private View btnRecordings;
@@ -133,6 +134,7 @@ public class MainActivity extends AppCompatActivity {
         holdHint = findViewById(R.id.hold_hint);
 
         PermissionsManager permissionsManager = new PermissionsManager(this);
+        firstRun = new FirstRun(this, findViewById(R.id.first_run_card), permissionsManager);
         permissionsBanner = new PermissionsBanner(this, permissionsManager, findViewById(R.id.permissions_banner),
                 findViewById(R.id.permissions_banner_text), findViewById(R.id.permissions_allow), savedInstanceState);
         driveConnector = new DriveConnector(this, permissionsManager, new DriveConnector.Listener() {
@@ -240,15 +242,14 @@ public class MainActivity extends AppCompatActivity {
 
         observeServiceState();
 
-        if (!Settings.isTutorialShown(this)) {
-            // Wait for layout to be ready to get view positions. Task 9 replaces the tutorial.
-            btnRecord.post(() -> showTutorialOverlay(-1));
+        if (!Settings.isFirstRunDone(this)) {
+            firstRun.show();
         } else if (savedInstanceState == null) {
             // Once per launch: a recreated activity keeps its intent and must not show the guide again
             showGuideIfRequested(getIntent());
         }
 
-        // Record first, sync later: a launch command waits for neither Drive nor the tutorial
+        // Record first, sync later: a launch command waits for neither Drive nor the first run
         launchWhenPermitted();
     }
 
@@ -295,77 +296,13 @@ public class MainActivity extends AppCompatActivity {
         showGuideIfRequested(intent);
     }
 
-    /** Settings → Help → Guide. Until the first run is done, the tutorial shows anyway. */
+    /** Settings → Help → Guide. The cards also show on a first run. */
     private void showGuideIfRequested(@Nullable Intent intent) {
         if (intent == null || !intent.getBooleanExtra(EXTRA_SHOW_GUIDE, false)) {
             return;
         }
         intent.removeExtra(EXTRA_SHOW_GUIDE);
-        btnRecord.post(() -> showTutorialOverlay(-1));
-    }
-
-    private void showTutorialOverlay(int step) {
-        View target = null;
-        CharSequence title = null;
-        CharSequence message = "";
-
-        switch (step) {
-            case -1:
-                title = getText(R.string.tutorial_general_title);
-                message = getText(R.string.tutorial_general_message);
-                break;
-            case 0:
-                target = btnRecord;
-                message = getText(R.string.tutorial_step_start);
-                break;
-            case 1:
-                target = btnSwitchCamera;
-                message = getText(R.string.tutorial_step_camera);
-                break;
-            case 2:
-                target = modeToggle;
-                message = getText(R.string.tutorial_step_mode);
-                break;
-            case 3:
-                // The share button moved to settings: skip its step
-                showTutorialOverlay(step + 1);
-                return;
-            case 4:
-                target = btnRecordings;
-                message = getText(R.string.tutorial_step_list);
-                break;
-            case 5:
-                target = btnSettings;
-                title = getText(R.string.tutorial_step_settings_title);
-                message = getText(R.string.tutorial_step_settings_message);
-                break;
-            case 6:
-                // Tile tutorial step
-                title = getText(R.string.tile_name_start);
-                message = getText(R.string.tutorial_step_tile);
-                // No specific target view for tile since it's outside the app
-                break;
-            default:
-                // End of tutorial. The permissions were asked at launch: no Drive request here.
-                View overlay = findViewById(R.id.tutorial_overlay);
-                if (overlay != null) {
-                    ((ViewGroup) overlay.getParent()).removeView(overlay);
-                }
-                Settings.setTutorialShown(this, true);
-                return;
-        }
-
-        TutorialOverlayView overlay = findViewById(R.id.tutorial_overlay);
-        if (overlay == null) {
-            overlay = new TutorialOverlayView(this);
-            overlay.setId(R.id.tutorial_overlay);
-            addContentView(overlay, new ViewGroup.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.MATCH_PARENT));
-        }
-
-        final int nextStep = step + 1;
-        overlay.setTarget(target, title, message, () -> showTutorialOverlay(nextStep));
+        firstRun.show();
     }
 
     /**

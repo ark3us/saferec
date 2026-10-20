@@ -178,7 +178,15 @@
         </LinearLayout>
     </LinearLayout>
 
-    <!-- Task 9: first_run_card, above bottom_controls -->
+    <!-- Above bottom_controls: FirstRun sets the bottom margin to the height of bottom_controls
+         (inset included), so the card never covers the record button -->
+    <include
+        android:id="@+id/first_run_card"
+        layout="@layout/card_first_run"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom"
+        android:layout_marginHorizontal="@dimen/gutter" />
 
     <View
         android:id="@+id/bottom_scrim"
