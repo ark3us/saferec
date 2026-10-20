@@ -97,10 +97,6 @@
             android:exported="false"
             android:label="@string/settings"
             android:theme="@style/Theme.SafeRec.Surface" />
-        <activity
-            android:name=".PlaybackActivity"
-            android:theme="@style/Theme.SafeRec.Playback"
-            android:configChanges="orientation|screenSize|layoutDirection" />
         <service
             android:name=".services.SafeRecTileService"
             android:label="@string/tile_name_start"

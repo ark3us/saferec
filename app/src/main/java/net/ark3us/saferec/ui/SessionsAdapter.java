@@ -45,7 +45,7 @@ public final class SessionsAdapter extends ListAdapter<SessionSummary, SessionsA
         @Override
         public boolean areContentsTheSame(@NonNull SessionSummary a, @NonNull SessionSummary b) {
             // The summary is rebuilt on every load: compare what the card draws
-            return a.status == b.status
+            return a.status.equals(b.status)
                     && a.durationMillis() == b.durationMillis()
                     && a.pieces.size() == b.pieces.size()
                     && java.util.Objects.equals(a.thumbnailLink(), b.thumbnailLink());

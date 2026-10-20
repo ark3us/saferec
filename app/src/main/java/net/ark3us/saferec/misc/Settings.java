@@ -114,14 +114,6 @@ public class Settings {
         getPrefs(context).edit().putBoolean("firstRunDone", done).apply();
     }
 
-    public static boolean isRecordingsTutorialShown(Context context) {
-        return getPrefs(context).getBoolean("recordingsTutorialShown", false);
-    }
-
-    public static void setRecordingsTutorialShown(Context context, boolean shown) {
-        getPrefs(context).edit().putBoolean("recordingsTutorialShown", shown).apply();
-    }
-
     public static int getChunkSizeMB(Context context) {
         return getPrefs(context).getInt("chunkSizeMB", 0);
     }
