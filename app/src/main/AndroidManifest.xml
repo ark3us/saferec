@@ -36,7 +36,18 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <meta-data
+                android:name="android.app.shortcuts"
+                android:resource="@xml/shortcuts" />
         </activity>
+        <activity
+            android:name=".QuickStartActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:launchMode="singleTask"
+            android:taskAffinity="net.ark3us.saferec.quickstart"
+            android:theme="@style/Theme.SafeRec.QuickStart" />
         <activity
             android:name=".RecordingsActivity"
             android:label="@string/my_recordings"

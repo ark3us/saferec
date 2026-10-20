@@ -172,4 +172,7 @@
     <string name="check_dialog_refresh">Se un file mancante è stato caricato dopo l\'apertura dell\'elenco, aggiorna l\'elenco ed esporta di nuovo.</string>
     <string name="check_share_anyway">Condividi comunque</string>
     <string name="check_upload_now">Carica ora</string>
+    <string name="quick_start_recording">Registrazione</string>
+    <string name="shortcut_record_short">Registra</string>
+    <string name="shortcut_record_long">Registra ora</string>
 </resources>

@@ -1,0 +1,80 @@
+package net.ark3us.saferec;
+
+import android.app.Activity;
+import android.app.KeyguardManager;
+import android.content.Intent;
+import android.os.Build;
+import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
+import android.util.Log;
+import android.view.View;
+import android.view.WindowManager;
+
+import androidx.core.content.ContextCompat;
+
+import net.ark3us.saferec.services.SafeRecService;
+
+/**
+ * The one entry point of every quick start (tile, shortcut, power-key guard, camera press).
+ * It is the only screen allowed over the lock screen: it shows black, never the viewfinder,
+ * so whoever holds a locked phone sees nothing of the camera.
+ */
+public class QuickStartActivity extends Activity {
+    private static final String TAG = QuickStartActivity.class.getSimpleName();
+
+    public static final String EXTRA_SOURCE = "net.ark3us.saferec.extra.SOURCE";
+    public static final String SOURCE_TILE = "tile";
+    public static final String SOURCE_SHORTCUT = "shortcut";
+    public static final String SOURCE_POWER = "power";
+    public static final String SOURCE_CAMERA = "camera";
+
+    private static final long LOCKED_FINISH_DELAY_MS = 1500;
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+            setShowWhenLocked(true);
+            setTurnScreenOn(true);
+        } else {
+            getWindow().addFlags(WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED
+                    | WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON);
+        }
+
+        View black = new View(this);
+        black.setBackgroundColor(0xFF000000);
+        black.setContentDescription(getString(R.string.quick_start_recording));
+        setContentView(black);
+
+        Log.i(TAG, "Quick start from " + source());
+
+        // Only a fresh activity starts the recording: turning the screen back on resumes it,
+        // and a recreated one must not send a second start.
+        if (savedInstanceState != null) {
+            return;
+        }
+        Intent start = SafeRecService.createCommandIntent(this, SafeRecService.CMD_START);
+        start.putExtra(SafeRecService.EXTRA_QUICK_START, true);
+        ContextCompat.startForegroundService(this, start);
+
+        KeyguardManager keyguard = (KeyguardManager) getSystemService(KEYGUARD_SERVICE);
+        if (keyguard != null && keyguard.isKeyguardLocked()) {
+            new Handler(Looper.getMainLooper()).postDelayed(this::finish, LOCKED_FINISH_DELAY_MS);
+        } else {
+            startActivity(new Intent(this, MainActivity.class)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP));
+            finish();
+        }
+    }
+
+    private String source() {
+        Intent intent = getIntent();
+        String action = intent.getAction();
+        if ("android.media.action.STILL_IMAGE_CAMERA".equals(action)
+                || "android.media.action.STILL_IMAGE_CAMERA_SECURE".equals(action)) {
+            return SOURCE_CAMERA;
+        }
+        return intent.getStringExtra(EXTRA_SOURCE);
+    }
+}

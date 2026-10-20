@@ -166,4 +166,7 @@
     <string name="check_dialog_refresh">If a missing file was uploaded after the list was loaded, refresh the list and export again.</string>
     <string name="check_share_anyway">Share anyway</string>
     <string name="check_upload_now">Upload now</string>
+    <string name="quick_start_recording">Recording</string>
+    <string name="shortcut_record_short">Record</string>
+    <string name="shortcut_record_long">Record now</string>
 </resources>
