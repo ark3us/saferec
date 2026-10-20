@@ -950,7 +950,7 @@ public class SessionActivity extends AppCompatActivity {
     }
 
     /**
-     * A piece trashed on Drive after the screen loaded: playback goes on from the next one.
+     * A piece gone from Drive since the screen loaded: playback goes on from the next one.
      * The failed request names the piece; false when it was the last one, or is unknown.
      */
     private boolean skipPiece(HttpDataSource.InvalidResponseCodeException response) {
