@@ -1,6 +1,5 @@
 package net.ark3us.saferec.ui;
 
-import android.os.Build;
 import android.os.Bundle;
 import android.graphics.drawable.GradientDrawable;
 import android.view.View;
@@ -94,25 +93,7 @@ public class FirstRun {
                 break;
             case THREE_PRESSES:
                 title.setText(R.string.first_run_three_presses_title);
-                int state = BuildConfig.POWER_GESTURE ? guardState() : GUARD_DISABLED;
-                switch (state) {
-                    case GUARD_NEEDS_PERMISSION:
-                        text.setText(guardStepText());
-                        actionLabel = R.string.first_run_continue;
-                        break;
-                    case GUARD_STOPPED:
-                        text.setText(R.string.three_presses_starting);
-                        actionLabel = R.string.first_run_done;
-                        break;
-                    case GUARD_ACTIVE:
-                        text.setText(R.string.three_presses_on);
-                        actionLabel = R.string.first_run_done;
-                        break;
-                    default:
-                        text.setText(R.string.first_run_three_presses_text);
-                        actionLabel = R.string.first_run_turn_on;
-                        break;
-                }
+                actionLabel = renderThreePresses();
                 break;
             default:
                 title.setText(R.string.first_run_about_title);
@@ -160,48 +141,50 @@ public class FirstRun {
         }
     }
 
-    private static final int GUARD_DISABLED = 0;
-    private static final int GUARD_NEEDS_PERMISSION = 1;
-    private static final int GUARD_STOPPED = 2;
-    private static final int GUARD_ACTIVE = 3;
+    /*
+     * The guard is compileOnly without the build switch. Its code sits in the bodies below,
+     * inside the constant check, so javac leaves it out of that build. No switch over a guard
+     * enum here: its map would join FirstRun$1, which render() loads (GuardSetup has them).
+     */
 
-    // Guard and GuardSetup are not packaged without the build switch: callers check POWER_GESTURE
-    private int guardState() {
-        switch (net.ark3us.saferec.guard.Guard.status(activity)) {
-            case NEEDS_OVERLAY:
-            case NEEDS_BATTERY_EXEMPTION:
-                return GUARD_NEEDS_PERMISSION;
-            case STOPPED:
-                return GUARD_STOPPED;
-            case ACTIVE:
-                return GUARD_ACTIVE;
-            default:
-                return GUARD_DISABLED;
+    /** The three presses card for what the guard still needs. Returns the button's label. */
+    private int renderThreePresses() {
+        if (BuildConfig.POWER_GESTURE) {
+            int state = GuardSetup.state(activity);
+            switch (state) {
+                case GuardSetup.STATE_NEEDS_OVERLAY:
+                case GuardSetup.STATE_NEEDS_BATTERY:
+                    text.setText(GuardSetup.stepText(state));
+                    return R.string.first_run_continue;
+                case GuardSetup.STATE_STOPPED:
+                    text.setText(R.string.three_presses_starting);
+                    return R.string.first_run_done;
+                case GuardSetup.STATE_ACTIVE:
+                    text.setText(R.string.three_presses_on);
+                    return R.string.first_run_done;
+                default:
+                    break;
+            }
         }
-    }
-
-    private int guardStepText() {
-        if (net.ark3us.saferec.guard.Guard.status(activity)
-                == net.ark3us.saferec.guard.Guard.Status.NEEDS_OVERLAY) {
-            return R.string.three_presses_step_overlay;
-        }
-        return Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
-                ? R.string.three_presses_step_battery : R.string.three_presses_step_battery_legacy;
+        text.setText(R.string.first_run_three_presses_text);
+        return R.string.first_run_turn_on;
     }
 
     private void onThreePressesPrimary() {
-        switch (guardState()) {
-            case GUARD_STOPPED:
-            case GUARD_ACTIVE:
-                finish();
-                break;
-            case GUARD_DISABLED:
-                net.ark3us.saferec.guard.Guard.setEnabled(activity, true);
-                GuardSetup.openNextStep(activity);
-                break;
-            default:
-                GuardSetup.openNextStep(activity);
-                break;
+        if (BuildConfig.POWER_GESTURE) {
+            switch (GuardSetup.state(activity)) {
+                case GuardSetup.STATE_STOPPED:
+                case GuardSetup.STATE_ACTIVE:
+                    finish();
+                    break;
+                case GuardSetup.STATE_OFF:
+                    net.ark3us.saferec.guard.Guard.setEnabled(activity, true);
+                    GuardSetup.openNextStep(activity);
+                    break;
+                default:
+                    GuardSetup.openNextStep(activity);
+                    break;
+            }
         }
     }
 

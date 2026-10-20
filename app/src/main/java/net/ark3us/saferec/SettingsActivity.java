@@ -178,26 +178,22 @@ public class SettingsActivity extends AppCompatActivity {
     /**
      * The three presses row. The body sits inside the constant check, so javac leaves it out of
      * a build without the guard module (compileOnly then). Its lambdas reference no guard class:
-     * javac generates them even there.
+     * javac generates them even there. No switch over a guard enum either: its map would join the
+     * class's other enum switch maps (GuardSetup.state() gives ints).
      */
     private void renderThreePresses() {
         if (BuildConfig.POWER_GESTURE) {
-            net.ark3us.saferec.guard.Guard.Status status = net.ark3us.saferec.guard.Guard.status(this);
+            int state = GuardSetup.state(this);
             String summary;
             boolean stepMissing = false;
             boolean notRunning = false;
-            switch (status) {
-                case NEEDS_OVERLAY:
-                    summary = getString(R.string.three_presses_step_overlay);
+            switch (state) {
+                case GuardSetup.STATE_NEEDS_OVERLAY:
+                case GuardSetup.STATE_NEEDS_BATTERY:
+                    summary = getString(GuardSetup.stepText(state));
                     stepMissing = true;
                     break;
-                case NEEDS_BATTERY_EXEMPTION:
-                    // Below Android 12 the page is the battery optimization list, with other words
-                    summary = getString(Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
-                        ? R.string.three_presses_step_battery : R.string.three_presses_step_battery_legacy);
-                    stepMissing = true;
-                    break;
-                case STOPPED:
+                case GuardSetup.STATE_STOPPED:
                     if (guardRechecks < GUARD_RECHECK_MAX) {
                         summary = getString(R.string.three_presses_starting);
                         // The screen is in the foreground, so the guard's service may start now
@@ -210,7 +206,7 @@ public class SettingsActivity extends AppCompatActivity {
                         notRunning = true;
                     }
                     break;
-                case ACTIVE:
+                case GuardSetup.STATE_ACTIVE:
                     summary = getString(R.string.three_presses_on);
                     break;
                 default:
@@ -234,8 +230,7 @@ public class SettingsActivity extends AppCompatActivity {
     /** Opens the next setup step, remembering when it is the overlay page (see onResume()). */
     private void openGuardStep() {
         if (BuildConfig.POWER_GESTURE) {
-            overlayStepOpened = net.ark3us.saferec.guard.Guard.status(this)
-                == net.ark3us.saferec.guard.Guard.Status.NEEDS_OVERLAY;
+            overlayStepOpened = GuardSetup.state(this) == GuardSetup.STATE_NEEDS_OVERLAY;
             GuardSetup.openNextStep(this);
         }
     }
@@ -244,8 +239,7 @@ public class SettingsActivity extends AppCompatActivity {
     private void continueGuardSetup() {
         if (BuildConfig.POWER_GESTURE) {
             if (net.ark3us.saferec.guard.Guard.isEnabled(this)
-                    && net.ark3us.saferec.guard.Guard.status(this)
-                        == net.ark3us.saferec.guard.Guard.Status.NEEDS_BATTERY_EXEMPTION) {
+                    && GuardSetup.state(this) == GuardSetup.STATE_NEEDS_BATTERY) {
                 GuardSetup.openNextStep(this);
             }
         }

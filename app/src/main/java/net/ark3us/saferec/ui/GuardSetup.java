@@ -9,6 +9,7 @@ import android.os.Build;
 import android.provider.Settings;
 import android.util.Log;
 
+import androidx.annotation.StringRes;
 import androidx.appcompat.app.AlertDialog;
 
 import net.ark3us.saferec.R;
@@ -17,11 +18,47 @@ import net.ark3us.saferec.guard.Guard;
 /**
  * Leads the user to the next step the three presses still need. References the guard module,
  * which is compileOnly when the build switch is off: callers check BuildConfig.POWER_GESTURE.
+ * It is the only app class whose bytecode may name the guard (scripts/check-guard-refs.sh), so
+ * every switch over Guard.Status lives here: javac builds the maps of all the enum switches of a
+ * class in one synthetic class, and running any of them would load Guard.Status.
  */
 public final class GuardSetup {
     private static final String TAG = GuardSetup.class.getSimpleName();
 
+    // Guard.status() as plain ints, which callers may switch on: an int switch needs no map
+    public static final int STATE_OFF = 0;
+    public static final int STATE_NEEDS_OVERLAY = 1;
+    public static final int STATE_NEEDS_BATTERY = 2;
+    public static final int STATE_STOPPED = 3;
+    public static final int STATE_ACTIVE = 4;
+
     private GuardSetup() {}
+
+    /** What the three presses still need, one of the STATE_ ints. */
+    public static int state(Context context) {
+        switch (Guard.status(context)) {
+            case NEEDS_OVERLAY:
+                return STATE_NEEDS_OVERLAY;
+            case NEEDS_BATTERY_EXEMPTION:
+                return STATE_NEEDS_BATTERY;
+            case STOPPED:
+                return STATE_STOPPED;
+            case ACTIVE:
+                return STATE_ACTIVE;
+            default:
+                return STATE_OFF;
+        }
+    }
+
+    /** The text of a missing step. Below Android 12 the battery page is the optimization list, with other words. */
+    @StringRes
+    public static int stepText(int state) {
+        if (state == STATE_NEEDS_OVERLAY) {
+            return R.string.three_presses_step_overlay;
+        }
+        return Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+            ? R.string.three_presses_step_battery : R.string.three_presses_step_battery_legacy;
+    }
 
     /** Opens the page of the first missing step, or does nothing when no step is missing. */
     public static void openNextStep(Activity activity) {
