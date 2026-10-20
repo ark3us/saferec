@@ -7,7 +7,7 @@ import android.os.Build;
 import android.service.quicksettings.TileService;
 import android.util.Log;
 
-import net.ark3us.saferec.MainActivity;
+import net.ark3us.saferec.QuickStartActivity;
 
 public class SafeRecTileService extends TileService {
     private static final String TAG = SafeRecTileService.class.getSimpleName();
@@ -16,27 +16,24 @@ public class SafeRecTileService extends TileService {
     @Override
     public void onClick() {
         super.onClick();
-        unlockAndRun(() -> {
-            try {
-                Intent intent = new Intent(this, MainActivity.class);
-                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                intent.putExtra(SafeRecService.EXTRA_COMMAND, SafeRecService.CMD_START);
-                intent.putExtra(SafeRecService.EXTRA_FROM_TILE, true);
-                Log.i(TAG, "Tile clicked, launching SafeRecActivity");
+        try {
+            Intent intent = new Intent(this, QuickStartActivity.class);
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            intent.putExtra(QuickStartActivity.EXTRA_SOURCE, QuickStartActivity.SOURCE_TILE);
+            Log.i(TAG, "Tile clicked, launching QuickStartActivity");
 
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-                    PendingIntent pendingIntent = PendingIntent.getActivity(
-                            this,
-                            0,
-                            intent,
-                            PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
-                    startActivityAndCollapse(pendingIntent);
-                } else {
-                    startActivityAndCollapse(intent);
-                }
-            } catch (Exception e) {
-                Log.e(TAG, "Failed to launch MainActivity from tile", e);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                PendingIntent pendingIntent = PendingIntent.getActivity(
+                        this,
+                        0,
+                        intent,
+                        PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+                startActivityAndCollapse(pendingIntent);
+            } else {
+                startActivityAndCollapse(intent);
             }
-        });
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to launch QuickStartActivity from tile", e);
+        }
     }
 }

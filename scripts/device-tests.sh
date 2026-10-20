@@ -124,7 +124,6 @@ write_prefs() { # only_audio timestamping
         echo "<map>"
         echo "    <boolean name=\"tutorialShown\" value=\"true\" />"
         echo "    <boolean name=\"recordingsTutorialShown\" value=\"true\" />"
-        echo "    <boolean name=\"autoStartOnLaunch\" value=\"true\" />"
         echo "    <boolean name=\"onlyAudio\" value=\"$1\" />"
         echo "    <boolean name=\"timestampingEnabled\" value=\"$2\" />"
         echo "    <boolean name=\"useFrontCamera\" value=\"false\" />"
@@ -149,7 +148,7 @@ clear_store() { adb shell "run-as $PKG sh -c 'rm -f $STORE/* $WORK/* $APP_DIR/fi
 launch() { # -f must come before --activity-clear-task, which adds to the flags
     adb shell am start -n "$ACTIVITY" "$@" >/dev/null
 }
-tile_start() { launch --activity-clear-task --es command START --ez from_tile true; }
+tile_start() { launch --activity-clear-task --es command START; }
 start_recording() { # -> 0 when the service logs the session start
     mark_scenario
     tile_start
@@ -310,7 +309,7 @@ scenario_replay() {
     clear_store
     mark_scenario
     # NEW_TASK | LAUNCHED_FROM_HISTORY, like Recents re-delivering the tile intent
-    launch -f 0x10100000 --activity-clear-task --es command START --ez from_tile true
+    launch -f 0x10100000 --activity-clear-task --es command START
     sleep 8
     local started
     started=$(count_log "Starting recording session")

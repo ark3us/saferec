@@ -55,8 +55,6 @@ public class SafeRecService extends Service {
     public static final String EXTRA_COMMAND = "command";
     /** Boolean extra on CMD_START: record with the quick-start defaults, not the viewfinder's choices. */
     public static final String EXTRA_QUICK_START = "quick_start";
-    public static final String EXTRA_FROM_TILE = "from_tile";
-    public static final String EXTRA_FROM_NOTIFICATION = "from_notification";
     public static final String EXTRA_FILE_IDS = "file_ids";
     public static final String EXTRA_FOLDER_IDS = "folder_ids";
     public static final String STATUS_READY = "READY";

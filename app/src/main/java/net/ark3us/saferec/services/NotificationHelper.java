@@ -37,7 +37,6 @@ public class NotificationHelper {
                                                  int activeTimestamping, int pendingFiles) {
         Intent intent = new Intent(context, MainActivity.class);
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-        intent.putExtra(SafeRecService.EXTRA_FROM_NOTIFICATION, true);
         PendingIntent pendingIntent = PendingIntent.getActivity(
                 context, 0, intent, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
 

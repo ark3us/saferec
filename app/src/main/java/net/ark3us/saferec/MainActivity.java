@@ -267,11 +267,6 @@ public class MainActivity extends AppCompatActivity {
             showTutorialOverlay(-1);
         });
 
-        // Auto-start
-        addToggleRow(container, getString(R.string.auto_start), Settings.isAutoStartOnLaunch(this), (btn, isChecked) -> {
-            Settings.setAutoStartOnLaunch(this, isChecked);
-        });
-
         // Video Quality
         String quality = Settings.getVideoQuality(this);
         String qLabel = getString("HIGH".equals(quality) ? R.string.quality_high : ("MEDIUM".equals(quality) ? R.string.quality_medium : R.string.quality_low));
@@ -563,7 +558,7 @@ public class MainActivity extends AppCompatActivity {
                 && checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED;
     }
 
-    /** Runs the command from the tile, notification or auto-start setting, once per launch. */
+    /** Runs the command the activity was launched with, once per launch. */
     private void handleLaunchCommand() {
         if (launchCommandHandled) {
             return;
@@ -571,26 +566,7 @@ public class MainActivity extends AppCompatActivity {
         launchCommandHandled = true;
 
         String command = getCommand();
-        boolean fromTile = getIntent().getBooleanExtra(SafeRecService.EXTRA_FROM_TILE, false);
-        boolean fromNotification = getIntent().getBooleanExtra(SafeRecService.EXTRA_FROM_NOTIFICATION, false);
-        boolean autoStart = Settings.isAutoStartOnLaunch(this);
-
-        Log.i(TAG, "Launch info: command=" + command + ", fromTile=" + fromTile + ", fromNotification="
-                + fromNotification + ", autoStart=" + autoStart);
-
-        if (SafeRecService.CMD_START.equals(command)) {
-            if ((fromTile || fromNotification) && !autoStart) {
-                Log.i(TAG, "Ignoring CMD_START from tile/notification because autoStart is disabled");
-                command = null;
-            }
-        } else if (fromNotification && autoStart) {
-            if (!isStarted(ServiceState.getInstance().getStatus().getValue())) {
-                Log.i(TAG, "Auto-starting recording from notification launch");
-                command = SafeRecService.CMD_START;
-            } else {
-                Log.i(TAG, "Already recording, ignoring auto-start from notification launch");
-            }
-        }
+        Log.i(TAG, "Launch command: " + command);
 
         if (command != null) {
             startSafeRecService(command);
