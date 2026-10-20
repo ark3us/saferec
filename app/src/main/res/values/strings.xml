@@ -274,4 +274,9 @@
     <string name="retry_short">Retry</string>
     <string name="session_not_found">This recording is no longer on Drive.</string>
     <string name="session_load_failed">Could not load this recording. Check the network and try again.</string>
+    <string name="session_trash_confirm">Move this recording to the Google Drive trash? Drive keeps it for 30 days.</string>
+    <string name="piece_row">Piece %1$d · %2$s</string>
+    <string name="piece_repaired">Repaired after a cut, original kept</string>
+    <string name="session_share_timestamp">Share time stamp</string>
+    <string name="session_manifest_row">List of pieces (manifest)</string>
 </resources>

@@ -1,5 +1,23 @@
 package net.ark3us.saferec;
 
+import android.net.Uri;
+import android.text.format.DateFormat;
+import android.text.format.Formatter;
+import android.widget.PopupMenu;
+import android.widget.Toast;
+import androidx.appcompat.app.AlertDialog;
+import androidx.core.content.FileProvider;
+import androidx.core.view.accessibility.AccessibilityNodeInfoCompat;
+import androidx.core.view.AccessibilityDelegateCompat;
+import androidx.core.widget.NestedScrollView;
+import com.google.android.material.button.MaterialButton;
+import com.google.android.material.progressindicator.CircularProgressIndicatorSpec;
+import com.google.android.material.progressindicator.IndeterminateDrawable;
+import net.ark3us.saferec.media.MediaMerger;
+import net.ark3us.saferec.net.SessionManifest;
+import net.ark3us.saferec.services.SafeRecService;
+import java.io.File;
+import java.util.Date;
 import android.content.Context;
 import android.content.Intent;
 import android.os.Bundle;
@@ -52,7 +70,7 @@ import java.util.concurrent.RejectedExecutionException;
 
 /**
  * One session: its pieces played as one video, whether it is whole, and (from the next task)
- * what can be done with it. It loads that one session by id, so no list travels with the
+ * what can be done with it (export, share, trash, technical details). It loads that one session by id, so no list travels with the
  * intent. It never finishes by itself: a session Drive no longer has says so.
  */
 @OptIn(markerClass = UnstableApi.class)
@@ -85,6 +103,12 @@ public class SessionActivity extends AppCompatActivity {
     private boolean refreshTried;
     private boolean fullscreen;
     private OnBackPressedCallback leaveFullscreen;
+    private MaterialButton exportButton;
+    private MaterialButton shareVideoButton;
+    private MaterialButton trashButton;
+    // The button showing progress while an export or a share runs; null when idle
+    @Nullable
+    private MaterialButton busyButton;
 
     public static void start(Context context, String sessionId, String dataType) {
         context.startActivity(new Intent(context, SessionActivity.class)
@@ -124,11 +148,30 @@ public class SessionActivity extends AppCompatActivity {
 
         View technicalBody = findViewById(R.id.session_technical_body);
         View chevron = findViewById(R.id.session_technical_chevron);
-        findViewById(R.id.session_technical_header).setOnClickListener(v -> {
+        View header = findViewById(R.id.session_technical_header);
+        header.setOnClickListener(v -> {
             boolean open = technicalBody.getVisibility() != View.VISIBLE;
             technicalBody.setVisibility(open ? View.VISIBLE : View.GONE);
             chevron.setRotation(open ? 180f : 0f);
+            header.sendAccessibilityEvent(android.view.accessibility.AccessibilityEvent.TYPE_VIEW_CLICKED);
         });
+        // Screen readers announce the section as expanded or collapsed, and offer the opposite action
+        ViewCompat.setAccessibilityDelegate(header, new AccessibilityDelegateCompat() {
+            @Override
+            public void onInitializeAccessibilityNodeInfo(View host, AccessibilityNodeInfoCompat info) {
+                super.onInitializeAccessibilityNodeInfo(host, info);
+                boolean open = technicalBody.getVisibility() == View.VISIBLE;
+                info.addAction(open ? AccessibilityNodeInfoCompat.AccessibilityActionCompat.ACTION_COLLAPSE
+                        : AccessibilityNodeInfoCompat.AccessibilityActionCompat.ACTION_EXPAND);
+            }
+        });
+
+        exportButton = findViewById(R.id.export_evidence);
+        shareVideoButton = findViewById(R.id.session_share_video);
+        trashButton = findViewById(R.id.session_trash);
+        exportButton.setOnClickListener(v -> runExport());
+        shareVideoButton.setOnClickListener(v -> shareVideo());
+        trashButton.setOnClickListener(v -> confirmTrash());
 
         loadSession();
     }
@@ -256,6 +299,266 @@ public class SessionActivity extends AppCompatActivity {
         if (started && player == null && !fileIds.isEmpty()) {
             buildPlayer(0, 0);
         }
+        updateActions();
+        bindTechnical(summary);
+    }
+
+    // ---- Actions ----
+
+    /** The three actions work on a loaded session, one at a time. */
+    private void updateActions() {
+        boolean ready = session != null && busyButton == null;
+        exportButton.setEnabled(ready && !session.files.isEmpty());
+        shareVideoButton.setEnabled(ready && !fileIds.isEmpty());
+        trashButton.setEnabled(ready && !session.allFileIds.isEmpty());
+    }
+
+    /** Disables the three actions and shows a spinner in the one that runs. */
+    private void startBusy(MaterialButton button) {
+        busyButton = button;
+        CircularProgressIndicatorSpec spec = new CircularProgressIndicatorSpec(this, null, 0,
+                com.google.android.material.R.style.Widget_Material3_CircularProgressIndicator_ExtraSmall);
+        spec.indicatorColors = new int[]{button.getTextColors().getDefaultColor()};
+        button.setIcon(IndeterminateDrawable.createCircularDrawable(this, spec));
+        button.setIconTint(null);
+        updateActions();
+    }
+
+    private void endBusy() {
+        if (busyButton != null) {
+            busyButton.setIcon(null);
+            busyButton = null;
+        }
+        updateActions();
+    }
+
+    private void runExport() {
+        if (session == null || busyButton != null) {
+            return;
+        }
+        startBusy(exportButton);
+        Toast.makeText(this, R.string.exporting_evidence, Toast.LENGTH_SHORT).show();
+        new EvidenceExport(this, drive, executor).export(session, () -> {
+            if (!isDestroyed()) {
+                endBusy();
+            }
+        });
+    }
+
+    /** The pieces downloaded, merged into one video and handed to the share sheet. */
+    private void shareVideo() {
+        if (session == null || busyButton != null) {
+            return;
+        }
+        List<DriveRecordings.RecordingItem> chunks = new ArrayList<>();
+        for (DriveRecordings.RecordingItem item : session.files) {
+            if ("mp4".equalsIgnoreCase(item.mediaFile.getExtension())) {
+                chunks.add(item);
+            }
+        }
+        if (chunks.isEmpty()) {
+            return;
+        }
+        chunks.sort((a, b) -> Integer.compare(a.mediaFile.sequenceNumber, b.mediaFile.sequenceNumber));
+        String sessionId = session.sessionId;
+        startBusy(shareVideoButton);
+        Toast.makeText(this, R.string.downloading_chunks, Toast.LENGTH_SHORT).show();
+        drive.downloadFiles(chunks, new DriveRecordings.Callback<List<File>>() {
+            @Override
+            public void onSuccess(List<File> localFiles) {
+                try {
+                    executor.execute(() -> mergeAndShare(sessionId, localFiles));
+                } catch (RejectedExecutionException e) {
+                    for (File f : localFiles) {
+                        f.delete();
+                    }
+                }
+            }
+
+            @Override
+            public void onError(Exception e) {
+                Log.e(TAG, "Download for merge failed", e);
+                mainHandler.post(() -> {
+                    if (isDestroyed()) {
+                        return;
+                    }
+                    endBusy();
+                    Toast.makeText(SessionActivity.this, getString(R.string.download_failed, e.getMessage()),
+                            Toast.LENGTH_LONG).show();
+                });
+            }
+        });
+    }
+
+    private void mergeAndShare(String sessionId, List<File> localFiles) {
+        try {
+            File shareDir = new File(getCacheDir(), "merged_sharing");
+            if (!shareDir.isDirectory() && !shareDir.mkdirs()) {
+                throw new IllegalStateException("Failed to create share dir: " + shareDir.getAbsolutePath());
+            }
+            File shareFile = new File(shareDir, "merged_" + sessionId + ".mp4");
+            MediaMerger.merge(localFiles, shareFile);
+            Uri contentUri = FileProvider.getUriForFile(this, getPackageName() + ".fileprovider", shareFile);
+            mainHandler.post(() -> {
+                if (isDestroyed()) {
+                    return;
+                }
+                endBusy();
+                Intent intent = new Intent(Intent.ACTION_SEND);
+                intent.setType("video/mp4");
+                intent.putExtra(Intent.EXTRA_STREAM, contentUri);
+                intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                startActivity(Intent.createChooser(intent, getString(R.string.share_merged_recording)));
+            });
+        } catch (Exception e) {
+            Log.e(TAG, "Merge failed", e);
+            mainHandler.post(() -> {
+                if (isDestroyed()) {
+                    return;
+                }
+                endBusy();
+                Toast.makeText(this, getString(R.string.merge_failed, e.getMessage()), Toast.LENGTH_LONG).show();
+            });
+        } finally {
+            for (File f : localFiles) {
+                f.delete();
+            }
+        }
+    }
+
+    private void confirmTrash() {
+        if (session == null || busyButton != null) {
+            return;
+        }
+        new AlertDialog.Builder(this)
+                .setMessage(R.string.session_trash_confirm)
+                .setPositiveButton(R.string.session_trash, (d, which) -> trash())
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
+    }
+
+    /** The service trashes (never deletes for good); the list reloads itself when it resumes. */
+    private void trash() {
+        if (session == null) {
+            return;
+        }
+        Intent intent = SafeRecService.createCommandIntent(this, SafeRecService.CMD_DELETE);
+        intent.putExtra(SafeRecService.EXTRA_FILE_IDS, session.allFileIds.toArray(new String[0]));
+        intent.putExtra(SafeRecService.EXTRA_FOLDER_IDS, session.folderIds.toArray(new String[0]));
+        startService(intent); // the activity is in front: a plain start is allowed
+        int count = session.allFileIds.size();
+        Toast.makeText(this, getResources().getQuantityString(R.plurals.deleting_recordings_bg, count, count),
+                Toast.LENGTH_SHORT).show();
+        finish();
+    }
+
+    // ---- Technical details ----
+
+    private void bindTechnical(SessionSummary summary) {
+        ViewGroup list = findViewById(R.id.session_technical_body);
+        list.removeAllViews();
+        android.view.LayoutInflater inflater = getLayoutInflater();
+        java.text.DateFormat timeFormat = DateFormat.getTimeFormat(this);
+        for (SessionSummary.Piece piece : summary.pieces) {
+            View row = inflater.inflate(R.layout.item_session_piece, list, false);
+            ((TextView) row.findViewById(R.id.piece_title)).setText(getString(R.string.piece_row,
+                    piece.seq, timeFormat.format(new Date(piece.startMillis))));
+            ((TextView) row.findViewById(R.id.piece_size)).setText(Formatter.formatShortFileSize(this, piece.size));
+            row.findViewById(R.id.piece_shield).setVisibility(piece.timestampFileId != null ? View.VISIBLE : View.INVISIBLE);
+            row.findViewById(R.id.piece_repaired).setVisibility(piece.cutFileId != null ? View.VISIBLE : View.GONE);
+            row.setOnClickListener(v -> playFrom(piece));
+            if (piece.timestampFileId != null) {
+                row.setOnLongClickListener(v -> {
+                    PopupMenu menu = new PopupMenu(this, v);
+                    menu.getMenu().add(R.string.session_share_timestamp);
+                    menu.setOnMenuItemClickListener(item -> {
+                        shareTimestamp(piece.timestampFileId);
+                        return true;
+                    });
+                    menu.show();
+                    return true;
+                });
+            }
+            list.addView(row);
+        }
+        bindManifestRow(summary, list, inflater);
+    }
+
+    /** Only a session with a manifest has the row; its shield says the manifest has a time stamp. */
+    private void bindManifestRow(SessionSummary summary, ViewGroup list, android.view.LayoutInflater inflater) {
+        boolean manifest = false;
+        boolean stamped = false;
+        for (DriveRecordings.RecordingItem item : summary.files) {
+            String extension = item.mediaFile.getExtension();
+            manifest |= SessionManifest.EXTENSION.equalsIgnoreCase(extension);
+            stamped |= (SessionManifest.EXTENSION + ".tsa").equalsIgnoreCase(extension);
+        }
+        if (!manifest) {
+            return;
+        }
+        View row = inflater.inflate(R.layout.item_session_piece, list, false);
+        ((TextView) row.findViewById(R.id.piece_title)).setText(R.string.session_manifest_row);
+        row.findViewById(R.id.piece_size).setVisibility(View.GONE);
+        row.findViewById(R.id.piece_shield).setVisibility(stamped ? View.VISIBLE : View.INVISIBLE);
+        list.addView(row);
+    }
+
+    /** Plays from a piece. Its row maps to the playlist through the file ids: a piece without one is not in it. */
+    private void playFrom(SessionSummary.Piece piece) {
+        int index = fileIds.indexOf(piece.fileId);
+        if (index < 0) {
+            return;
+        }
+        if (player != null) {
+            player.seekTo(index, 0);
+        } else {
+            savedItem = index;
+            savedPosition = 0;
+            if (started && !fileIds.isEmpty()) {
+                buildPlayer(index, 0);
+            }
+        }
+        ((NestedScrollView) findViewById(R.id.session_scroll)).smoothScrollTo(0, 0);
+    }
+
+    private void shareTimestamp(String fileId) {
+        DriveRecordings.RecordingItem stamp = null;
+        for (DriveRecordings.RecordingItem item : session.files) {
+            if (fileId.equals(item.driveFile.getId())) {
+                stamp = item;
+            }
+        }
+        if (stamp == null || busyButton != null) {
+            return;
+        }
+        List<DriveRecordings.RecordingItem> single = new ArrayList<>();
+        single.add(stamp);
+        drive.shareFiles(single, new DriveRecordings.Callback<List<Uri>>() {
+            @Override
+            public void onSuccess(List<Uri> uris) {
+                mainHandler.post(() -> {
+                    if (isDestroyed()) {
+                        return;
+                    }
+                    Intent intent = new Intent(Intent.ACTION_SEND);
+                    intent.setType("application/timestamp-reply");
+                    intent.putExtra(Intent.EXTRA_STREAM, uris.get(0));
+                    intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                    startActivity(Intent.createChooser(intent, getString(R.string.share_tsa_signature)));
+                });
+            }
+
+            @Override
+            public void onError(Exception e) {
+                Log.e(TAG, "Share TSA failed", e);
+                mainHandler.post(() -> {
+                    if (!isDestroyed()) {
+                        Toast.makeText(SessionActivity.this, getString(R.string.share_failed, e.getMessage()),
+                                Toast.LENGTH_LONG).show();
+                    }
+                });
+            }
+        });
     }
 
     private String explain(SessionSummary summary) {
