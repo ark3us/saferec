@@ -7,6 +7,7 @@ import android.app.PendingIntent;
 import android.content.Context;
 import android.content.Intent;
 import android.graphics.drawable.Icon;
+import android.os.Build;
 import android.util.Log;
 import java.util.ArrayList;
 import java.util.List;
@@ -33,7 +34,8 @@ public class NotificationHelper {
         manager.createNotificationChannel(serviceChannel);
     }
 
-    public static Notification buildNotification(Context context, boolean isRecording, int activeUploads, int activeDeletions,
+    public static Notification buildNotification(Context context, boolean isRecording, long recordingSinceMillis, int safeChunks,
+                                                 int activeUploads, int activeDeletions,
                                                  int activeTimestamping, int pendingFiles) {
         Intent intent = new Intent(context, MainActivity.class);
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
@@ -43,7 +45,12 @@ public class NotificationHelper {
         String title = isRecording ? context.getString(R.string.notif_title_recording) : context.getString(R.string.notif_title_service);
         StringBuilder contentText = new StringBuilder();
         if (isRecording) {
-            contentText.append(context.getString(R.string.notif_content_recording));
+            if (safeChunks > 0) {
+                contentText.append(context.getResources().getQuantityString(
+                        R.plurals.notif_safe_chunks, safeChunks, safeChunks));
+            } else {
+                contentText.append(context.getString(R.string.notif_content_recording));
+            }
         } else if (activeTimestamping > 0) {
             contentText.append(context.getString(R.string.notif_content_timestamping));
         } else if (activeDeletions > 0) {
@@ -96,12 +103,52 @@ public class NotificationHelper {
                 .setColor(context.getColor(R.color.primary))
                 .setContentIntent(pendingIntent)
                 .setOngoing(isRecording || activeUploads > 0 || activeDeletions > 0 || activeTimestamping > 0 || pendingFiles > 0)
-                .setOnlyAlertOnce(true);
+                .setOnlyAlertOnce(true)
+                .setVisibility(Notification.VISIBILITY_PRIVATE)
+                .setPublicVersion(new Notification.Builder(context, CHANNEL_ID)
+                        .setContentTitle(context.getString(R.string.app_name))
+                        .setContentText(context.getString(R.string.notif_public_active))
+                        .setSmallIcon(R.drawable.ic_stat_shield_record)
+                        .build());
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            builder.setForegroundServiceBehavior(Notification.FOREGROUND_SERVICE_IMMEDIATE);
+        }
+
+        if (isRecording) {
+            builder.setUsesChronometer(true)
+                    .setWhen(recordingSinceMillis)
+                    .setShowWhen(true);
+            builder.addAction(buildStopAction(context));
+        }
 
         if (activeUploads > 0 || activeDeletions > 0 || activeTimestamping > 0) {
             builder.setProgress(0, 0, true);
         }
 
         return builder.build();
+    }
+
+    private static Notification.Action buildStopAction(Context context) {
+        PendingIntent stopIntent;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            stopIntent = PendingIntent.getService(context, 1,
+                    SafeRecService.createCommandIntent(context, SafeRecService.CMD_STOP),
+                    PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
+        } else {
+            // Before Android 12 the action cannot require the unlock: open the app instead
+            Intent open = new Intent(context, MainActivity.class);
+            open.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            stopIntent = PendingIntent.getActivity(context, 1, open,
+                    PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
+        }
+        Notification.Action.Builder action = new Notification.Action.Builder(
+                Icon.createWithResource(context, R.drawable.outline_stop_circle_24),
+                context.getString(R.string.notif_action_stop), stopIntent);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            // The phone must be unlocked: whoever holds a locked phone cannot stop the recording
+            action.setAuthenticationRequired(true);
+        }
+        return action.build();
     }
 }

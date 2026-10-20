@@ -190,8 +190,17 @@ public class SafeRecService extends Service {
         return names == null ? 0 : names.length;
     }
 
+    private long sessionStartMillis() {
+        try {
+            return currentSessionId == null ? 0 : Long.parseLong(currentSessionId);
+        } catch (NumberFormatException e) {
+            return 0;
+        }
+    }
+
     private Notification buildNotification(boolean recording) {
-        return NotificationHelper.buildNotification(this, recording, activeUploads, activeDeletions,
+        return NotificationHelper.buildNotification(this, recording,
+                recording ? sessionStartMillis() : 0, safeChunks, activeUploads, activeDeletions,
                 activeTimestamping, pendingFiles());
     }
 

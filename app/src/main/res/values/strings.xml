@@ -168,4 +168,10 @@
     <string name="quick_start_recording">Recording</string>
     <string name="shortcut_record_short">Record</string>
     <string name="shortcut_record_long">Record now</string>
+    <string name="notif_action_stop">Stop</string>
+    <string name="notif_public_active">Active</string>
+    <plurals name="notif_safe_chunks">
+        <item quantity="one">%d piece safe on Drive</item>
+        <item quantity="other">%d pieces safe on Drive</item>
+    </plurals>
 </resources>
