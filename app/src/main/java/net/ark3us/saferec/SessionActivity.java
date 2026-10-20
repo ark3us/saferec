@@ -371,11 +371,21 @@ public class SessionActivity extends AppCompatActivity {
         SessionsAdapter.bindStatus(status, summary.status);
         ((TextView) findViewById(R.id.session_explain)).setText(explain(summary));
 
-        fileIds = SessionPlaylist.fileIds(summary);
+        List<String> ids = SessionPlaylist.fileIds(summary);
+        boolean piecesChanged = !ids.equals(fileIds);
+        fileIds = ids;
         placeholders = SessionPlaylist.placeholderDurationsMs(summary);
         playerHolder.setVisibility(fileIds.isEmpty() ? View.GONE : View.VISIBLE);
-        if (started && player == null && !fileIds.isEmpty()) {
+        if (fileIds.isEmpty()) {
+            releasePlayer();
+        } else if (started && player == null) {
             buildPlayer(savedPosition);
+        } else if (player != null && piecesChanged) {
+            // Loaded again with pieces uploaded or trashed since: the same moment, on the new list
+            errorBar.setVisibility(View.GONE);
+            player.setMediaSource(sessionSource(new ProgressiveMediaSource.Factory(streamSource())),
+                    player.getCurrentPosition());
+            player.prepare();
         } else if (player != null && player.getPlayerError() != null) {
             // Loaded again (Drive connected, or the network back): the player tries again too
             retry();
@@ -427,7 +437,58 @@ public class SessionActivity extends AppCompatActivity {
         }
         startBusy(exportButton);
         Toast.makeText(this, R.string.exporting_evidence, Toast.LENGTH_SHORT).show();
-        export(session, false);
+        withFreshSession(false, this::export);
+    }
+
+    /** What an action does with the session as Drive holds it now. */
+    private interface SessionAction {
+        void run(SessionSummary fresh, boolean afterRefresh);
+    }
+
+    /**
+     * Loads the session again, shows it, then runs the action on it: an export or a share takes
+     * what Drive holds now, not the files listed when the screen opened (a piece uploaded since
+     * would be missing from the package, and its check would say so).
+     */
+    private void withFreshSession(boolean afterRefresh, SessionAction action) {
+        if (session == null) {
+            endBusy();
+            return;
+        }
+        String used = token;
+        drive.session(session.sessionId, session.dataType, new DriveRecordings.Callback<SessionSummary>() {
+            @Override
+            public void onSuccess(SessionSummary fresh) {
+                mainHandler.post(() -> {
+                    if (isDestroyed()) {
+                        return;
+                    }
+                    if (fresh == null) {
+                        endBusy();
+                        showState(R.string.session_not_found, 0);
+                        return;
+                    }
+                    bind(fresh);
+                    action.run(fresh, afterRefresh);
+                });
+            }
+
+            @Override
+            public void onError(Exception e) {
+                Log.w(TAG, "Session reload failed", e);
+                mainHandler.post(() -> {
+                    if (isDestroyed()) {
+                        return;
+                    }
+                    Runnable failed = () -> actionFailed(R.string.download_failed, e);
+                    if (!afterRefresh && DriveTokenRefresh.isUnauthorized(e)) {
+                        afterUnauthorized(used, () -> withFreshSession(true, action), failed);
+                    } else {
+                        failed.run();
+                    }
+                });
+            }
+        });
     }
 
     private void export(SessionSummary summary, boolean afterRefresh) {
@@ -467,7 +528,7 @@ public class SessionActivity extends AppCompatActivity {
             return;
         }
         startBusy(shareVideoButton);
-        shareVideo(session, false);
+        withFreshSession(false, this::shareVideo);
     }
 
     private void shareVideo(SessionSummary summary, boolean afterRefresh) {

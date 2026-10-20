@@ -104,8 +104,8 @@
     <string name="check_still_on_phone">(still on this phone, not uploaded yet)</string>
     <string name="check_verified">Verified on this phone: complete</string>
     <string name="check_dialog_title">Not verified on this phone</string>
-    <string name="check_dialog_on_phone">Some files are still on this phone. Upload them, wait, refresh the list and export again.</string>
-    <string name="check_dialog_refresh">If a missing file was uploaded after the list was loaded, refresh the list and export again.</string>
+    <string name="check_dialog_on_phone">Some files are still on this phone. Upload them, wait, then export again.</string>
+    <string name="check_dialog_refresh">A missing file is not on this phone either. If it was uploaded in the last moments, export again.</string>
     <string name="check_share_anyway">Share anyway</string>
     <string name="check_upload_now">Upload now</string>
     <string name="quick_start_recording">Recording</string>
