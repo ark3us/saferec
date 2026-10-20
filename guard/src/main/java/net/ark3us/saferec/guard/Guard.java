@@ -31,7 +31,7 @@ public final class Guard {
         return prefs(context).getBoolean(KEY_ENABLED, false);
     }
 
-    public static void setEnabled(Context context, boolean enabled) {
+    public static synchronized void setEnabled(Context context, boolean enabled) {
         Context app = context.getApplicationContext();
         prefs(app).edit().putBoolean(KEY_ENABLED, enabled).apply();
         if (enabled) {
@@ -52,7 +52,7 @@ public final class Guard {
      * Starts the service when the guard is enabled and allowed to draw over other apps. It runs
      * without the battery exemption too: the status then warns.
      */
-    public static void ensureRunning(Context context) {
+    public static synchronized void ensureRunning(Context context) {
         Context app = context.getApplicationContext();
         if (!isEnabled(app)) return;
         // KEEP makes this a no-op when the job exists; a restored or reset WorkManager loses it

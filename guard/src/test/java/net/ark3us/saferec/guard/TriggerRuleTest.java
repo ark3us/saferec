@@ -1,6 +1,8 @@
 package net.ark3us.saferec.guard;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
 
 import org.junit.Test;
 
@@ -44,5 +46,13 @@ public class TriggerRuleTest {
     @Test public void theSpanIncludesItsEnd() {
         expect(feed(new TriggerRule(), 0, 1250, 2500), false, false, true);
         expect(feed(new TriggerRule(), 0, 1250, 2501), false, false, false);
+    }
+
+    @Test public void theCooldownEndsAtExactlyFiveSeconds() {
+        TriggerRule rule = new TriggerRule();
+        rule.onScreenChange(0); rule.onScreenChange(400); assertTrue(rule.onScreenChange(800));
+        rule.onScreenChange(4000); rule.onScreenChange(4500);
+        assertFalse(rule.onScreenChange(5799)); // 4999 ms after the trigger
+        assertTrue(rule.onScreenChange(5800));  // 5000 ms after
     }
 }
