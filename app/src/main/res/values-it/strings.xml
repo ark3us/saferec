@@ -190,10 +190,13 @@
     <string name="vibrations">Vibrazioni</string>
     <string name="camera_gesture">Doppia pressione del tasto di accensione apre SafeRec</string>
     <string name="camera_gesture_choose">Quando Android chiede quale app usare, scegli SafeRec e Sempre.</string>
-    <string name="camera_gesture_tries">Servono due prove: una per il telefono sbloccato, poi una per il telefono bloccato. Ogni prova avvia una breve registrazione, che poi puoi fermare.</string>
     <string name="camera_gesture_lock_screen">Anche la scorciatoia della fotocamera sulla schermata di blocco potrebbe avviare SafeRec.</string>
-    <string name="camera_gesture_try_locked">Ora ancora una volta, per il telefono bloccato: quando Android lo chiede, scegli di nuovo SafeRec e Sempre.</string>
     <string name="camera_gesture_undo">Per annullare: Impostazioni → App → SafeRec → Apri per impostazione predefinita.</string>
+    <string name="camera_gesture_tries">Due prove: una a telefono sbloccato, una a telefono bloccato. Ogni prova avvia una breve registrazione: tieni premuto il pulsante di stop per fermarla.</string>
+    <string name="camera_gesture_try_locked">Salvato per il telefono sbloccato. Ora il telefono bloccato: scegli SafeRec, poi Sempre.</string>
+    <string name="camera_gesture_not_saved">Android non ha salvato SafeRec come predefinita. Se proponeva un\'altra app, hai toccato SafeRec una volta sola: riprova, e ora scegli SafeRec, poi Sempre.</string>
+    <string name="camera_gesture_try_again">Riprova</string>
+    <string name="camera_gesture_ready">Fatto: ora una doppia pressione del tasto di accensione registra, bloccato o no. Android vibra una volta per il gesto, poi SafeRec due volte.</string>
     <string name="camera_gesture_try">Provalo ora</string>
     <string name="camera_gesture_no_app">Nessuna app può aprire la fotocamera</string>
     <string name="power_gesture">Tre pressioni del tasto di accensione</string>

@@ -183,10 +183,13 @@
     <string name="vibrations">Vibrations</string>
     <string name="camera_gesture">Double press of the power key opens SafeRec</string>
     <string name="camera_gesture_choose">When Android asks which app to use, choose SafeRec and Always.</string>
-    <string name="camera_gesture_tries">It takes two tries: one for the unlocked phone, then one for the locked phone. Each try starts a short recording, which you can then stop.</string>
     <string name="camera_gesture_lock_screen">The camera shortcut on the lock screen may start SafeRec too.</string>
-    <string name="camera_gesture_try_locked">Now once more, for the locked phone: when Android asks, choose SafeRec and Always again.</string>
     <string name="camera_gesture_undo">To undo: Settings → Apps → SafeRec → Open by default.</string>
+    <string name="camera_gesture_tries">Two tries: one for the unlocked phone, one for the locked phone. Each try starts a short recording: hold the stop button to stop it.</string>
+    <string name="camera_gesture_try_locked">Saved for the unlocked phone. Now the locked phone: choose SafeRec, then Always.</string>
+    <string name="camera_gesture_not_saved">Android did not save SafeRec as the default. If it suggested another app, you tapped SafeRec just once: try again, and now choose SafeRec, then Always.</string>
+    <string name="camera_gesture_try_again">Try again</string>
+    <string name="camera_gesture_ready">Done: a double press of the power key now records, locked or not. Android vibrates once for the gesture, then SafeRec twice.</string>
     <string name="camera_gesture_try">Try it now</string>
     <string name="camera_gesture_no_app">No app can open the camera</string>
     <string name="power_gesture">Three presses of the power key</string>

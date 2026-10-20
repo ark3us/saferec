@@ -5,8 +5,10 @@ import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.content.pm.ResolveInfo;
 import android.content.res.Resources;
 import android.provider.MediaStore;
+import android.util.Log;
 
 import androidx.annotation.Nullable;
 
@@ -17,6 +19,7 @@ import androidx.annotation.Nullable;
  * with two camera apps, which on the lock screen needs an unlock.
  */
 public final class CameraGesture {
+    private static final String TAG = CameraGesture.class.getSimpleName();
     private static final String ALIAS = "net.ark3us.saferec.CameraGestureAlias";
     private static final String SYSTEM_UI = "com.android.systemui";
 
@@ -36,6 +39,7 @@ public final class CameraGesture {
             if (id == 0) return true;
             return allowsOtherApps(res.getString(id), context.getPackageName());
         } catch (Exception e) {
+            Log.w(TAG, "Cannot read SystemUI's camera gesture setting, offering the option", e);
             return true;
         }
     }
@@ -61,6 +65,20 @@ public final class CameraGesture {
             new Intent(MediaStore.INTENT_ACTION_STILL_IMAGE_CAMERA),
             new Intent(MediaStore.INTENT_ACTION_STILL_IMAGE_CAMERA_SECURE),
         };
+    }
+
+    /** Whether Android now opens the alias, without asking, for this intent ("Always" was stored). */
+    public static boolean isDefaultFor(Context context, Intent intent) {
+        ResolveInfo info = context.getPackageManager().resolveActivity(intent, PackageManager.MATCH_DEFAULT_ONLY);
+        return info != null && info.activityInfo != null && ALIAS.equals(info.activityInfo.name);
+    }
+
+    /** {@link #isDefaultFor} for each of {@link #tryIntents()}. */
+    public static boolean[] storedTries(Context context) {
+        Intent[] tries = tryIntents();
+        boolean[] stored = new boolean[tries.length];
+        for (int i = 0; i < tries.length; i++) stored[i] = isDefaultFor(context, tries[i]);
+        return stored;
     }
 
     private static ComponentName alias(Context context) {

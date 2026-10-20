@@ -39,6 +39,7 @@ import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowInsetsCompat;
 
 import net.ark3us.saferec.data.ServiceState;
+import net.ark3us.saferec.ui.CameraGestureSetup;
 import net.ark3us.saferec.ui.TutorialOverlayView;
 
 import net.ark3us.saferec.media.VideoStreamRecorder;
@@ -54,13 +55,6 @@ public class MainActivity extends AppCompatActivity {
 
     private static final String TAG = MainActivity.class.getSimpleName();
     private static final String STATE_LAUNCH_COMMAND_HANDLED = "launch_command_handled";
-    private static final int NO_TRY = -1;
-    /**
-     * The next try of the camera double press setup (an index of CameraGesture.tryIntents()),
-     * offered when the user comes back. Static: a try that reaches SafeRec recreates this
-     * activity (QuickStartActivity opens it with CLEAR_TOP), so a field would be lost.
-     */
-    private static int cameraGestureNextTry = NO_TRY;
 
     private TextureView videoPreview;
     private VideoStreamRecorder previewRecorder;
@@ -308,7 +302,7 @@ public class MainActivity extends AppCompatActivity {
         if (CameraGesture.isAvailable(this)) {
             addToggleRow(container, getString(R.string.camera_gesture), CameraGesture.isEnabled(this), (btn, isChecked) -> {
                 CameraGesture.setEnabled(this, isChecked);
-                if (isChecked) showCameraGestureDialog(0);
+                if (isChecked) CameraGestureSetup.begin(this);
             });
         }
 
@@ -323,31 +317,6 @@ public class MainActivity extends AppCompatActivity {
                 }
                 populateSettings(container, dialog);
             });
-        }
-    }
-
-    /** Step 0 explains and tries the unlocked phone's intent, the next steps try the others. */
-    private void showCameraGestureDialog(int step) {
-        String message = step == 0
-            ? getString(R.string.camera_gesture_choose) + "\n\n" + getString(R.string.camera_gesture_tries)
-                + "\n\n" + getString(R.string.camera_gesture_lock_screen) + "\n\n" + getString(R.string.camera_gesture_undo)
-            : getString(R.string.camera_gesture_try_locked);
-        new AlertDialog.Builder(this)
-            .setTitle(R.string.camera_gesture)
-            .setMessage(message)
-            .setPositiveButton(R.string.camera_gesture_try, (d, w) -> tryCameraGesture(step))
-            .setNegativeButton(android.R.string.ok, null)
-            .show();
-    }
-
-    private void tryCameraGesture(int step) {
-        Intent[] tries = CameraGesture.tryIntents();
-        cameraGestureNextTry = step + 1 < tries.length ? step + 1 : NO_TRY;
-        try {
-            startActivity(tries[step]);
-        } catch (android.content.ActivityNotFoundException e) {
-            cameraGestureNextTry = NO_TRY;
-            Toast.makeText(this, R.string.camera_gesture_no_app, Toast.LENGTH_SHORT).show();
         }
     }
 
@@ -731,14 +700,7 @@ public class MainActivity extends AppCompatActivity {
     protected void onResume() {
         super.onResume();
         videoPreview.post(this::tryStartPreview);
-        if (cameraGestureNextTry != NO_TRY) {
-            // Back from a try of the camera double press setup: offer the next one
-            int step = cameraGestureNextTry;
-            cameraGestureNextTry = NO_TRY;
-            if (CameraGesture.isEnabled(this)) {
-                showCameraGestureDialog(step);
-            }
-        }
+        CameraGestureSetup.onResume(this);
         if (BuildConfig.POWER_GESTURE && net.ark3us.saferec.guard.Guard.isEnabled(this)) {
             // The app is in the foreground, so the guard's foreground service may start now.
             net.ark3us.saferec.guard.Guard.ensureRunning(this);
