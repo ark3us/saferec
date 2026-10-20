@@ -15,16 +15,16 @@ public final class StatusModel {
      * @param hasToken        a Drive token is stored
      * @param authProblem     Drive needs the user to reconnect
      * @param online          the default network is available
-     * @param pendingFiles    chunks waiting in the outbox
+     * @param pendingPieces   recording pieces (chunks) waiting in the outbox
      * @param threePressesOff the power-key gesture is switched off
      */
     public static Kind kindOf(boolean recording, boolean hasToken, boolean authProblem, boolean online,
-                              int pendingFiles, boolean threePressesOff) {
+                              int pendingPieces, boolean threePressesOff) {
         if (!hasToken) return Kind.CONNECT_DRIVE;
         if (authProblem) return Kind.RECONNECT_DRIVE;
         if (threePressesOff && !recording) return Kind.THREE_PRESSES_OFF;
         // While recording online, the safe chip shows progress, so a waiting count would be noise.
-        if (pendingFiles > 0 && (!online || !recording)) return Kind.WAITING;
+        if (pendingPieces > 0 && (!online || !recording)) return Kind.WAITING;
         if (!online) return Kind.OFFLINE;
         return recording ? Kind.HIDDEN : Kind.DRIVE_OK;
     }

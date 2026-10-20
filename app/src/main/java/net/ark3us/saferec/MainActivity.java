@@ -30,6 +30,7 @@ import net.ark3us.saferec.data.ServiceState;
 import net.ark3us.saferec.media.VideoStreamRecorder;
 import net.ark3us.saferec.misc.Settings;
 import net.ark3us.saferec.net.GoogleDriveFileUploader;
+import net.ark3us.saferec.services.SafeCount;
 import net.ark3us.saferec.services.SafeRecService;
 import net.ark3us.saferec.ui.CameraGestureSetup;
 import net.ark3us.saferec.ui.DriveConnector;
@@ -75,8 +76,8 @@ public class MainActivity extends AppCompatActivity {
     private DriveConnector driveConnector;
     private NetworkWatcher networkWatcher;
     private boolean launchCommandHandled = false;
-    // Files in the outbox: counted on resume, then as the service publishes them
-    private int pendingFiles = 0;
+    // Pieces (chunks) in the outbox: counted on resume, then as the service publishes them
+    private int pendingPieces = 0;
     // The last audio-only value of the recording, null before the first one
     private @Nullable Boolean recordingAudioOnly;
     private final Handler handler = new Handler(Looper.getMainLooper());
@@ -284,8 +285,8 @@ public class MainActivity extends AppCompatActivity {
         });
         state.getSessionStart().observe(this, start -> renderRecordingInfo());
         state.getSafeChunks().observe(this, count -> renderRecordingInfo());
-        state.getPendingFiles().observe(this, count -> {
-            pendingFiles = count != null ? count : 0;
+        state.getPendingPieces().observe(this, count -> {
+            pendingPieces = count != null ? count : 0;
             renderStatusChip();
         });
         state.getDriveAuthProblem().observe(this, problem -> renderStatusChip());
@@ -433,7 +434,7 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void renderStatusChip() {
-        statusChip.render(isRecording(), networkWatcher.isOnline(), pendingFiles);
+        statusChip.render(isRecording(), networkWatcher.isOnline(), pendingPieces);
     }
 
     private static void show(View view, boolean visible) {
@@ -474,9 +475,9 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    private int countOutbox() {
-        String[] names = GoogleDriveFileUploader.outboxDir(this).list();
-        return names != null ? names.length : 0;
+    /** The same count as the service's: chunks only, not their timestamps or the manifest copy. */
+    private int countPendingPieces() {
+        return SafeCount.pieces(GoogleDriveFileUploader.outboxDir(this).list());
     }
 
     // ---- Preview ----
@@ -540,7 +541,7 @@ public class MainActivity extends AppCompatActivity {
             net.ark3us.saferec.guard.Guard.ensureRunning(this);
             statusChip.guardStarting();
         }
-        pendingFiles = countOutbox();
+        pendingPieces = countPendingPieces();
         permissionsBanner.refresh(Settings.onlyAudio(this));
         render();
         driveConnector.silentCheck(networkWatcher.isOnline());

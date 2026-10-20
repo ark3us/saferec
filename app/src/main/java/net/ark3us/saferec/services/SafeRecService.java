@@ -254,8 +254,10 @@ public class SafeRecService extends Service {
         if (destroyed) {
             return; // posted before onDestroy()
         }
-        int pending = pendingFiles();
-        ServiceState.getInstance().setPendingFiles(pending);
+        // Every file counts for the service's work, only the chunks for "N pieces waiting"
+        String[] outbox = outboxDir().list();
+        int pending = outbox == null ? 0 : outbox.length;
+        ServiceState.getInstance().setPendingPieces(SafeCount.pieces(outbox));
         boolean busy = isRecording || pending > 0 || activeUploads > 0 || activeDeletions > 0 || activeTimestamping > 0;
         if (!busy) {
             if (foregroundType != NOT_FOREGROUND) {

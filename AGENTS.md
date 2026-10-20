@@ -143,7 +143,7 @@ net.ark3us.saferec/
 │   ├── SafeRecService.java       # Foreground service orchestrating recording
 │   ├── SafeRecTileService.java   # Quick Settings tile: starts a recording through QuickStartActivity
 │   ├── StartPolicy.java          # What CMD_START and CMD_SWITCH_CAMERA do (pure Java)
-│   ├── SafeCount.java            # Which uploaded files count as "pieces safe"
+│   ├── SafeCount.java            # Which files are pieces: "N pieces safe", "N pieces waiting"
 │   ├── Haptics.java              # Two short pulses on start, one long on stop, three short when nothing records
 │   └── NotificationHelper.java  # Notification channel + builder
 │
@@ -645,7 +645,8 @@ Recording must start with the phone locked, in a pocket, without looking. Every 
 
 - **Status chip** (`StatusModel`): `CONNECT_DRIVE`, `RECONNECT_DRIVE`, `THREE_PRESSES_OFF`, `WAITING`, `OFFLINE`, `DRIVE_OK`, `HIDDEN`. Recording first, sync later: the chip reports, it never blocks.
 - **Stopping** is a 1 s hold on the record button (`HoldToStop`). A touch acts on the state it began in (`RecordGesture`): releasing a hold once restarted the recording.
-- **Drive.** `DriveConnector` checks silently, only online with a token, and never opens the account picker by itself. `ServiceState` publishes the session start, audio only, files waiting and a sticky Drive-auth flag.
+- **Drive.** `DriveConnector` checks silently, only online with a token, and never opens the account picker by itself. `ServiceState` publishes the session start, audio only, the pieces waiting and a sticky Drive-auth flag.
+- **Pieces waiting** counts the chunks (`.mp4`) in the outbox only (`SafeCount.pieces()`, used by the service and by `MainActivity` on resume). A chunk's `.tsa`, the manifest copy and a cut original travel with them but are not pieces: counting every file showed "2 pieces waiting" 17 s into an offline recording. The service keeps the raw file count for its own work and its notification ("N files waiting to be uploaded").
 - **Permissions** follow the mode: audio needs the microphone only. Recording permissions are separate from Drive (`requestRecordingPermissions`, `connectDrive(interactive, ...)`).
 - **Settings** live in `SettingsActivity`: Quick start, Evidence, Video, Google Drive, Advanced, Help. The three presses setup (`GuardSetup`) sends the battery step to the app's own page ("App battery usage, Unrestricted" on Android 12+, "Don't optimize" below) and continues by itself after the overlay page. The tile row adds the tile with `StatusBarManager.requestAddTileService` on Android 13+.
 - **First run**: three cards above the controls (what SafeRec does, permissions, three presses). The record button works throughout. The same cards are Settings, Help, Guide (`EXTRA_SHOW_GUIDE`).
@@ -857,7 +858,7 @@ Unit tests (JVM, no phone, under a second): `./gradlew testDebugUnitTest`. The s
   - a repair cut short starting over, leftovers and stray logs dropped;
   - timestamps made before the outbox going along with their chunk, an unrepaired chunk timestamped as it is, a timestamp left in `repair/` sent as it is.
 - `StartPolicyTest`: a start while recording is ignored, a camera switch restarts only while recording, unknown commands do nothing.
-- `SafeCountTest`: only the `.mp4` chunks of the current session count as safe.
+- `SafeCountTest`: only the `.mp4` chunks of the current session count as safe, and only `.mp4` chunks count as pieces waiting (not `.tsa`, `.cut`, `.cut.tsa` or the manifest).
 - `StatusModelTest`: which chip shows for each mix of Drive, network, permissions and guard state.
 - `HoldToStopTest`: the 1 s hold completes or cancels on the clock.
 - `RecordGestureTest`: a touch acts on the state it began in (releasing a hold never restarts).

@@ -22,6 +22,12 @@ public class StatusModelTest {
     @Test public void waitingWhileRecordingOffline() { assertEquals(WAITING, kindOf(true, true, false, false, 1, false)); }
     @Test public void noWaitingNoiseWhileRecordingOnline() { assertEquals(HIDDEN, kindOf(true, true, false, true, 4, false)); }
     @Test public void offlineWithNothingWaiting() { assertEquals(OFFLINE, kindOf(false, true, false, false, 0, false)); }
+    @Test public void authProblemWinsOverWaiting() { assertEquals(RECONNECT_DRIVE, kindOf(false, true, true, false, 3, false)); }
+    @Test public void noPiecesIsNotWaiting() {
+        assertEquals(DRIVE_OK, kindOf(false, true, false, true, 0, false));
+        assertEquals(DRIVE_OK, kindOf(false, true, false, true, -1, false));
+        assertEquals(OFFLINE, kindOf(false, true, false, false, -1, false));
+    }
     @Test public void allSafe() { assertEquals(DRIVE_OK, kindOf(false, true, false, true, 0, false)); }
     @Test public void onlyDriveAndGuardProblemsAreAttention() {
         for (StatusModel.Kind k : StatusModel.Kind.values()) {

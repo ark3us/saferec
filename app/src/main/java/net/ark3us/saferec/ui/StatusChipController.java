@@ -43,7 +43,7 @@ public final class StatusChipController {
     private boolean guardStarting = false;
     private boolean recording = false;
     private boolean online = false;
-    private int pendingFiles = 0;
+    private int pendingPieces = 0;
 
     public StatusChipController(Chip chip, Actions actions) {
         this.chip = chip;
@@ -52,10 +52,10 @@ public final class StatusChipController {
     }
 
     /** Draws the chip for these inputs; the token, the auth flag and the guard are read here. */
-    public void render(boolean recording, boolean online, int pendingFiles) {
+    public void render(boolean recording, boolean online, int pendingPieces) {
         this.recording = recording;
         this.online = online;
-        this.pendingFiles = pendingFiles;
+        this.pendingPieces = pendingPieces;
         render();
     }
 
@@ -78,7 +78,7 @@ public final class StatusChipController {
         String token = Settings.getAccessToken(context);
         boolean hasToken = token != null && !token.isEmpty();
         boolean authProblem = Boolean.TRUE.equals(ServiceState.getInstance().getDriveAuthProblem().getValue());
-        kind = StatusModel.kindOf(recording, hasToken, authProblem, online, pendingFiles, threePressesOff(context));
+        kind = StatusModel.kindOf(recording, hasToken, authProblem, online, pendingPieces, threePressesOff(context));
         bind(context);
     }
 
@@ -111,7 +111,7 @@ public final class StatusChipController {
                 break;
             case WAITING:
                 icon = online ? R.drawable.ms_cloud_upload : R.drawable.ms_cloud_off;
-                text = context.getResources().getQuantityString(R.plurals.status_waiting, pendingFiles, pendingFiles);
+                text = context.getResources().getQuantityString(R.plurals.status_waiting, pendingPieces, pendingPieces);
                 break;
             case OFFLINE:
                 icon = R.drawable.ms_cloud_off;

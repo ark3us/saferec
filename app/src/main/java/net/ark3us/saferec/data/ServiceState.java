@@ -24,8 +24,8 @@ public class ServiceState {
     private final MutableLiveData<Long> sessionStart = new MutableLiveData<>(0L);
     // The running recording has no video: an audio-only start, or the camera lost
     private final MutableLiveData<Boolean> audioOnly = new MutableLiveData<>(false);
-    // Files in the outbox, as the service last counted them
-    private final MutableLiveData<Integer> pendingFiles = new MutableLiveData<>(0);
+    // Recording pieces (chunks) in the outbox, as the service last counted them (SafeCount)
+    private final MutableLiveData<Integer> pendingPieces = new MutableLiveData<>(0);
     // Sticky: set by ERROR_AUTH, cleared only by whoever reconnects Drive
     private final MutableLiveData<Boolean> driveAuthProblem = new MutableLiveData<>(false);
 
@@ -78,8 +78,8 @@ public class ServiceState {
         return audioOnly;
     }
 
-    public MutableLiveData<Integer> getPendingFiles() {
-        return pendingFiles;
+    public MutableLiveData<Integer> getPendingPieces() {
+        return pendingPieces;
     }
 
     public MutableLiveData<Boolean> getDriveAuthProblem() {
@@ -95,8 +95,9 @@ public class ServiceState {
         this.audioOnly.postValue(audioOnly);
     }
 
-    public void setPendingFiles(int count) {
-        pendingFiles.postValue(count);
+    /** Chunks only: a timestamp or a manifest copy waiting is not a piece (SafeCount.pieces). */
+    public void setPendingPieces(int count) {
+        pendingPieces.postValue(count);
     }
 
     public void setDriveAuthProblem(boolean problem) {
