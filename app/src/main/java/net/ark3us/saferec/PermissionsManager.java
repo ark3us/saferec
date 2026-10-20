@@ -128,9 +128,14 @@ public class PermissionsManager {
                             if (!resolutionShown) {
                                 resolutionShown = true;
                                 Log.i(TAG, "Authorization requires user resolution");
-                                startAuthIntent.launch(
-                                        new IntentSenderRequest.Builder(result.getPendingIntent().getIntentSender()).build()
-                                );
+                                try {
+                                    startAuthIntent.launch(
+                                            new IntentSenderRequest.Builder(result.getPendingIntent().getIntentSender()).build()
+                                    );
+                                } catch (RuntimeException e) {
+                                    Log.e(TAG, "Could not launch the authorization", e);
+                                    finishResolution(null);
+                                }
                             }
                         } else {
                             Log.i(TAG, "Authorization needs the user; not launching");
@@ -197,7 +202,13 @@ public class PermissionsManager {
             pendingPermissions.add(onResult);
         }
         Log.i(TAG, "Requesting runtime permissions count=" + missing.size());
-        requestPermissionsLauncher.launch(missing.toArray(new String[0]));
+        try {
+            requestPermissionsLauncher.launch(missing.toArray(new String[0]));
+        } catch (RuntimeException e) {
+            Log.e(TAG, "Could not launch the permission request", e);
+            allGranted = false;
+            notifyPermissionsResult();
+        }
     }
 
     /**
