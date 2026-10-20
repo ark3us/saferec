@@ -23,7 +23,7 @@ SafeRec solves this fundamental flaw by continuously uploading video and audio c
 - **Background Recording**: Uses an Android Foreground Service, allowing you to seamlessly record even when the screen is locked or while you are using other apps.
 - **Audio-Only Mode**: Easily toggle between Video+Audio and Audio-Only modes for discretion, battery-saving, and reduced bandwidth.
 - **Quick Settings Tile**: Start and stop recordings instantly via the Android Quick Settings drop-down menu, without ever needing to open the app.
-- **Auto-Start**: Configure the app to automatically begin recording the moment the app is launched or the Tile is tapped.
+- **Quick Start**: Recording starts without unlocking the phone, from the Quick Settings tile, the "Record now" shortcut, or by pressing the power key three times (optional, can be left out of a build). It vibrates to confirm, and the notification shows the elapsed time and how many pieces are already safe on Drive. Stopping needs the unlocked phone.
 - **Cryptographic Timestamping (TSA)**: Hashes the media files (SHA-256) and requests timestamp certificates from a recognizable Time Stamping Authority (Sectigo), proving the integrity and creation time of your recordings.
 - **Survives Crashes, Kills and Reboots**: Chunks recorded offline wait on the phone and upload on their own once there is a network, even after the app was killed or the phone restarted, without opening the app again.
 - **Cut Chunk Repair**: A chunk cut by a crash or a sudden power cut is rebuilt into a playable video from a log kept while recording. Its untouched original goes to Drive too, and both are timestamped.

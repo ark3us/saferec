@@ -95,6 +95,8 @@ net.ark3us.saferec/
 ├── MainActivity.java          # Main UI, preview, start/stop, settings
 ├── RecordingsActivity.java    # Browse/download/merge/share recordings from Drive
 ├── RecordingsAdapter.java     # RecyclerView adapter for recordings list
+├── QuickStartActivity.java    # The one entry of every quick start; the only screen over the lock screen
+├── CameraGesture.java         # The optional camera double press (enables a disabled activity alias)
 ├── PlaybackActivity.java      # Video playback (streaming from Drive)
 ├── PermissionsManager.java    # Runtime permissions + Google Drive OAuth
 │
@@ -133,11 +135,22 @@ net.ark3us.saferec/
 │
 ├── services/
 │   ├── SafeRecService.java       # Foreground service orchestrating recording
-│   ├── SafeRecTileService.java   # Quick Settings tile to start recording
+│   ├── SafeRecTileService.java   # Quick Settings tile: starts a recording through QuickStartActivity
+│   ├── StartPolicy.java          # What CMD_START and CMD_SWITCH_CAMERA do (pure Java)
+│   ├── SafeCount.java            # Which uploaded files count as "pieces safe"
+│   ├── Haptics.java              # Two short pulses on start, one long on stop
 │   └── NotificationHelper.java  # Notification channel + builder
 │
 └── ui/
     └── TutorialOverlayView.java  # First-run tutorial overlay
+
+guard/                          # Separate Gradle module: the three power-key presses (see Quick Start)
+└── net/ark3us/saferec/guard/
+    ├── TriggerRule.java          # Three screen changes within 2.5 s, 5 s cooldown (pure Java)
+    ├── GuardService.java         # specialUse foreground service, listens to SCREEN_ON/OFF
+    ├── Guard.java                # Status, settings intents, ensureRunning()
+    ├── GuardBootReceiver.java    # BOOT_COMPLETED and MY_PACKAGE_REPLACED: starts the guard
+    └── GuardWatchdog.java        # 15-minute WorkManager job that restarts a dead guard
 ```
 
 ---
@@ -369,7 +382,7 @@ sequenceDiagram
 
 ### 4. Camera Switch Mid-Recording
 
-When the user switches front↔back during recording, [SafeRecService](app/src/main/java/net/ark3us/saferec/services/SafeRecService.java) receives a new `CMD_START`:
+When the user switches front↔back during recording, [SafeRecService](app/src/main/java/net/ark3us/saferec/services/SafeRecService.java) receives `CMD_SWITCH_CAMERA` (a `CMD_START` while recording is ignored):
 
 1. [stopRecording()](app/src/main/java/net/ark3us/saferec/MainActivity.java) — tears down audio, video, and muxer (uploads final chunk)
 2. [startRecording()](app/src/main/java/net/ark3us/saferec/services/SafeRecService.java) — creates a **new session/muxer**, re-opens camera with new ID
@@ -502,7 +515,8 @@ Foreground service orchestrating the recording. Commands via `Intent` extras:
 
 | Command | Action |
 |---------|--------|
-| `CMD_START` | (`startForegroundService`) If already recording: stop + restart (camera switch). Otherwise: start new recording |
+| `CMD_START` | (`startForegroundService`) Starts a recording. **Ignored while recording**, so a second quick start never cuts the session (`StartPolicy`). With `EXTRA_QUICK_START` (set by `QuickStartActivity`) it records with the quick-start settings, not the viewfinder's choices |
+| `CMD_SWITCH_CAMERA` | While recording: stop + restart with the other camera (a new session, see Camera Switch). Ignored when not recording |
 | `CMD_STOP` | Stop recording, reset session |
 | `CMD_UPLOAD_PENDING` | Upload the outbox now (safe while recording) |
 | `CMD_DELETE` | Move Drive files (`EXTRA_FILE_IDS`) to the Drive trash, never delete them for good. Folders (`EXTRA_FOLDER_IDS`) are trashed only when they hold nothing, not even trashed files. Deleting a folder for good would also delete the trashed files in it, and keeping it lets Drive's "Restore" put files back where they were. |
@@ -522,6 +536,12 @@ Camera/encoder callbacks are posted to the main thread (`onVideoResult`) and ign
 | Not recording; files in the outbox, uploads, TSA or trashing running | `dataSync` | What is running, or "N files waiting to be uploaded" |
 | Nothing left | leaves the foreground, `stopSelfResult(lastStartId)` | none |
 
+- **The notification** (`NotificationHelper`):
+  - It is shown at once (`FOREGROUND_SERVICE_IMMEDIATE`, API 31+), not after Android's ~10 s deferral.
+  - While recording it holds a chronometer counting from the session's start, and the count of safe pieces ("N pieces safe on Drive", a plural string): the chunks of the current session that reached Drive (`SafeCount`, `FileUploader.UploadListener.onFileUploaded`, `ServiceState.getSafeChunks()`).
+  - Its Stop action needs the phone unlocked (`setAuthenticationRequired(true)`, API 31+). Below API 31 the action opens the app, which needs the unlock anyway.
+  - Visibility is private: the lock screen shows a public version, the app name and "Active".
+- Haptics (`Haptics`): two short pulses when a recording starts, one long pulse when it stops, none on a camera switch. The `vibrations` setting turns them off.
 - Only `CMD_START` is sent with `startForegroundService()`, and the service enters the foreground before anything else. Other commands use `startService()`: with `startForegroundService()` the service would have to enter the foreground even with nothing to do, or crash.
 - Work counters (`activeTimestamping`, `activeDeletions`) go up when the work is submitted, not when its task starts. Otherwise the service could stop in between and drop the work.
 - Sticky restart after the process was killed: Android forbids entering the foreground from the background, so the service never tries. It resumes the outbox as a plain background service for as long as Android lets it run. Verified on a Galaxy S10+: the waiting chunk was uploaded after the kill, with no crash.
@@ -547,14 +567,80 @@ SharedPreferences wrapper. Keys:
 | `useFrontCamera` | boolean | false |
 | `videoQuality` | String | "LOW" |
 | `chunkSizeMB` | int | 0 (auto = 10 s chunks) |
-| `autoStartOnLaunch` | boolean | false |
+| `quickStartAudioOnly` | boolean | false (a quick start records video) |
+| `quickStartFrontCamera` | boolean | false (a quick start uses the back camera) |
+| `vibrations` | boolean | true |
 | `tutorialShown` | boolean | false |
 | `shareEmail` | String | "" (last address recordings were shared with) |
 | `timestampingEnabled` | boolean | false |
 
+The old `autoStartOnLaunch` setting is gone: the tile, the shortcut and the power key always record at once.
+
 Security note:
 - `SafeRecPrefs.xml` is excluded from Android cloud backup/device transfer/full backup rules to avoid backing up the Drive access token.
 
+
+---
+
+## Quick Start
+
+Recording must start with the phone locked, in a pocket, without looking. Every way in goes through one screen, `QuickStartActivity`.
+
+```
+ power key x3 ──► GuardService ──┐
+ tile (locked too) ──────────────┤
+ shortcut "Record now" ──────────┼──► QuickStartActivity ──► CMD_START + EXTRA_QUICK_START ──► SafeRecService
+ camera double press (optional) ─┘     (black, over the lock screen)
+```
+
+- **`QuickStartActivity`** shows over the lock screen and turns the screen on (`setShowWhenLocked`, `setTurnScreenOn`). It is black, with a "Recording" description for screen readers only, and never shows the camera or any recording. It sends `CMD_START` with `EXTRA_QUICK_START` once: a recreated activity (the screen coming back on) sends nothing. Locked, it finishes after 1.5 s. Unlocked, it opens `MainActivity`, already recording. `MainActivity` itself never shows over the lock screen.
+- **What it records.** The quick-start settings (`quickStartAudioOnly`, `quickStartFrontCamera`: video and back camera by default), not what was last picked on the viewfinder.
+- **Tile and shortcut.** The tile (`SafeRecTileService`) and the static shortcut "Record now" start `QuickStartActivity` with source `tile` / `shortcut`. The tile works from the lock screen without unlocking. Source `power` comes from the guard and `camera` from the double press.
+- **Stopping is deliberate.** Nobody stops a recording from the lock screen: the notification's Stop needs authentication (see the notification above).
+
+### Three presses of the power key
+
+No public API reports power key presses. Each press turns the screen on or off, and Android broadcasts `ACTION_SCREEN_ON` / `ACTION_SCREEN_OFF`.
+
+- **The guard** (`GuardService`, module `guard/`) is a foreground service of type `specialUse` that registers a runtime receiver for both broadcasts. Its notification is permanent, minimum importance and secret on the lock screen.
+- **The rule** (`TriggerRule`): three screen changes within 2.5 s trigger, then nothing for 5 s. It counts changes in a window and does not measure the rhythm, because `SCREEN_OFF` arrives ~0.4 s after its press (after the screen-off animation): presses 0.37 s apart were measured as 737 ms and 66 ms.
+- **Why an activity.** A service cannot enter the foreground with the camera or microphone type from the background (`SecurityException`). A visible activity can start that service, so the guard starts `QuickStartActivity` by component name, with source `power`.
+- **Why it is allowed.** The user grants "Display over other apps" (`SYSTEM_ALERT_WINDOW`). With it, Android lets the guard start an activity from the background (`BAL_ALLOW_SAW` in the system log). Without it, Android does not throw: the guard logs `trigger refused: no overlay permission`.
+- **Logs.** `Guard running`, `Guard stopped`, `Guard cannot start`.
+- **Measured in a spike** (Galaxy S10+, Android 16, locked with a PIN, screen off): video recording 0.6 s after the third press, the trigger screen visible 30-54 ms after the trigger, the phone stayed locked.
+- **Screen changes that are not presses.** Nothing is filtered, not even during a phone call: a deliberate start must never be blocked. A camera double press (two presses under 300 ms) gives at most two changes and does not trigger the guard.
+- **Costs.** A permanent notification, the overlay permission granted once, and a `specialUse` foreground service.
+
+### Keeping the guard alive
+
+On the S10+ the low-memory killer killed the app twice in a minute, with 0.5 GB free, and Android postponed the sticky restart by up to 165 s. Android 15+ does not let a service restarted in the background return to the foreground, so a killed guard would stay dead until the app opens.
+
+- **Battery exemption.** The setup sends the user to the system page of battery optimization (`ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS`), not the direct dialog: that needs `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`, which Play checks closely. An exempt app may return to the foreground from the background.
+- **Watchdog.** `GuardWatchdog` is a periodic WorkManager job (`guard-watchdog`, 15 minutes, the minimum) that calls `Guard.ensureRunning()`. `ensureRunning()` also re-arms the job, which a restored or reset WorkManager loses.
+- **Boot and update.** `GuardBootReceiver` restarts the guard on `BOOT_COMPLETED` and `MY_PACKAGE_REPLACED`.
+- **Status** (`Guard.status()`): `DISABLED`, `NEEDS_OVERLAY`, `NEEDS_BATTERY_EXEMPTION`, `STOPPED`, `ACTIVE`, in the order the user has to fix them. The app says so when the three presses are off.
+- To be verified on a device (plan Task 12): that `specialUse` starts from `BOOT_COMPLETED` on Android 15+, that the exemption brings a killed guard back, and the behavior of the guard while a call is on.
+
+### Build switch
+
+`saferec.powerGesture` in `gradle.properties` (default `true`). With `-Psaferec.powerGesture=false` the `guard` module is `compileOnly`: nothing of it is packaged, so the APK has no guard manifest entries (the `specialUse` service and its permission, the overlay permission, the boot receiver), and the app shows no setting or first-run step for it (`BuildConfig.POWER_GESTURE`). This is the build for Google Play if the `specialUse` declaration is refused.
+
+### Camera double press (optional)
+
+The double press of the power key opens the default camera app with `STILL_IMAGE_CAMERA` (unlocked) or `STILL_IMAGE_CAMERA_SECURE` (locked).
+
+- `CameraGestureAlias` is an activity alias for `QuickStartActivity` with both filters, **disabled** in the manifest. `CameraGesture.setEnabled()` turns it on when the user chooses so. A permanent declaration would show a chooser on phones with a second camera app, and on the lock screen that choice needs an unlock first.
+- Once the user picks SafeRec as "Always", the double press records, locked or not. Undo: Settings, Apps, SafeRec, Open by default.
+- It is offered only when SystemUI's `config_cameraGesturePackage` does not pin another camera app (`CameraGesture.isAvailable()`, `allowsOtherApps()`). If SystemUI cannot be read, it is offered, and "try it now" (`tryIntent()`) shows whether it works.
+- To be verified on a device (plan Task 12): the double press itself, and the Pixel's camera gesture setting.
+
+### Google Play declaration
+
+Foreground service type `specialUse`, to paste in the Play Console. The subtype is the value of `PROPERTY_SPECIAL_USE_FGS_SUBTYPE` in `guard/src/main/AndroidManifest.xml`:
+
+> Personal safety: start a recording with three presses of the power key, with the phone locked
+>
+> No other foreground service type fits: none covers listening for a user gesture while idle to start a safety recording, and the camera and microphone types cannot be started from the background, which is where the gesture is heard.
 
 ---
 
@@ -667,6 +753,7 @@ R8 shrinks and optimizes the release (`isMinifyEnabled`, `isShrinkResources` in 
 9. **Sharing is per person.** The share button grants one Google account read access to the whole `SafeRec` folder, future sessions included, and Google emails that person. The app never creates "anyone with the link" access, and it cannot revoke a share: that is done in Drive.
 10. **Android decides when the outbox job runs.** The delayed job of an app in the background can be held for over half an hour. The expedited one covers the cases the app sees coming (service stopped, boot), so this matters after a kill without notice: those chunks wait for that delayed job or the next app launch. In Doze jobs wait for a maintenance window, an app the user rarely opens gets fewer runs (App Standby buckets) and less expedited quota, and after repeated failed runs the job waits up to 5 h. A force stop cancels the jobs until the app leaves the stopped state. After a reboot nothing runs before the first unlock, because the outbox is in credential-encrypted storage. While the service lives, none of this applies.
 11. **A sudden power cut still costs the last moment.** Without a clean shutdown (a battery that fails before Android's ~1% shutdown, a kernel crash), the open chunk is cut. It is repaired from its sample log and uploaded after the boot without opening the app, but the last ~0.5 s that MediaMuxer held in memory is lost. On a real power loss, so is what had not reached the flash yet. Without a usable log the cut chunk is uploaded as it is, and plays only after repair tools.
+12. **The three presses depend on the guard being alive.** The guard is off after a reboot until the first unlock (its boot receiver is not direct-boot aware and the app's data is credential-encrypted). The low-memory killer can kill it, and Android postpones its restart. The watchdog brings it back within 15 minutes, only with the battery exemption. The tile, the shortcut and the app always work.
 
 ---
 
@@ -683,6 +770,10 @@ Unit tests (JVM, no phone, under a second): `./gradlew testDebugUnitTest`. The s
   - a chunk with its log repaired with the original kept as `.cut`, a failed repair sending the original;
   - a repair cut short starting over, leftovers and stray logs dropped;
   - timestamps made before the outbox going along with their chunk, an unrepaired chunk timestamped as it is, a timestamp left in `repair/` sent as it is.
+- `StartPolicyTest`: a start while recording is ignored, a camera switch restarts only while recording, unknown commands do nothing.
+- `SafeCountTest`: only the `.mp4` chunks of the current session count as safe.
+- `CameraGestureTest`: the gesture is offered unless another camera app is pinned.
+- Module `guard` (`bash ./gradlew :guard:testDebugUnitTest`): `TriggerRuleTest` (three changes within the window, the cooldown) and `GuardStatusTest` (the order of the statuses).
 - `SampleJournalTest`: round trip, a record cut short, a foreign file.
 - `EvidencePackageTest`: the zip's layout (Drive's, under `evidence/`), videos stored and the rest deflated, files byte for byte, a package without merged video, the report's lines, day-old files deleted.
 - `SessionCheckTest`: the verifier's cases, with a test authority made with BouncyCastle (a root and a timestamping certificate). It covers:
@@ -705,7 +796,8 @@ Unit tests (JVM, no phone, under a second): `./gradlew testDebugUnitTest`. The s
   - retry from the outbox, and no retry with the loop off;
   - a success releasing waiting files at once, and `retryNow()`;
   - `drain()`: empty outbox, a failure, waiting for an upload already running, chunks recorded meanwhile, stopping;
-  - repeat uploads: a new file's first upload goes straight, a retry and a file found in the outbox ask the server first.
+  - repeat uploads: a new file's first upload goes straight, a retry and a file found in the outbox ask the server first;
+  - a finished upload reported to the listener.
 
   Breaking the dedupe, the success trigger, the loop switch, any `drain()` rule or the repeat check fails the matching test (checked by mutation).
 
