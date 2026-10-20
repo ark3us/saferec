@@ -818,6 +818,8 @@ R8 shrinks and optimizes the release (`isMinifyEnabled`, `isShrinkResources` in 
   - an evidence package and its phone check: signatures and certificate chains (BouncyCastle, `CertPathBuilder`) said COMPLETE, as in the debug build.
 
   Check these again after adding a library or anything that uses reflection.
+- **Media3** (ExoPlayer and its UI, 1.11.1) plays the sessions. It ships its own consumer rules, so `proguard-rules.pro` has nothing for it. Both R8 builds above (normal and guard off) passed with no warning about `androidx.media3`. The `r8test` APK is 4.7 MB.
+  - To check on the phone with `r8test`: a session plays across its pieces, and an evidence package exports, with no crash.
 - **Before a release**, both green on the build that ships:
   - `bash scripts/check-guard-refs.sh`: no class but `ui/GuardSetup` references the guard, so the build with the switch off cannot crash on a missing guard class;
   - `bash ./gradlew :app:minifyR8testWithR8 -Psaferec.powerGesture=false`: R8 accepts the build without the guard module (the Play build if `specialUse` is refused) and strips `GuardSetup`.
