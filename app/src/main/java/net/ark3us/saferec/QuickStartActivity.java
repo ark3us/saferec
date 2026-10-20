@@ -34,6 +34,7 @@ public class QuickStartActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        // The manifest declares both too: the tile's PendingIntent reads them there (Android 14+)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
             setShowWhenLocked(true);
             setTurnScreenOn(true);
@@ -47,16 +48,15 @@ public class QuickStartActivity extends Activity {
         black.setContentDescription(getString(R.string.quick_start_recording));
         setContentView(black);
 
-        Log.i(TAG, "Quick start from " + source());
-
         // Only a fresh activity starts the recording: turning the screen back on resumes it,
-        // and a recreated one must not send a second start.
-        if (savedInstanceState != null) {
-            return;
+        // and a recreated one must not send a second start. A recreated one still finishes
+        // below, or its black screen would stay up.
+        if (savedInstanceState == null) {
+            Log.i(TAG, "Quick start from " + source());
+            startRecording();
+        } else {
+            Log.i(TAG, "Quick start screen recreated");
         }
-        Intent start = SafeRecService.createCommandIntent(this, SafeRecService.CMD_START);
-        start.putExtra(SafeRecService.EXTRA_QUICK_START, true);
-        ContextCompat.startForegroundService(this, start);
 
         KeyguardManager keyguard = (KeyguardManager) getSystemService(KEYGUARD_SERVICE);
         if (keyguard != null && keyguard.isKeyguardLocked()) {
@@ -65,6 +65,18 @@ public class QuickStartActivity extends Activity {
             startActivity(new Intent(this, MainActivity.class)
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP));
             finish();
+        }
+    }
+
+    private void startRecording() {
+        Intent start = SafeRecService.createCommandIntent(this, SafeRecService.CMD_START);
+        start.putExtra(SafeRecService.EXTRA_QUICK_START, true);
+        try {
+            ContextCompat.startForegroundService(this, start);
+        } catch (RuntimeException e) {
+            // This runs in the recording's own process: a refusal must never crash a recording
+            // already in progress
+            Log.e(TAG, "Cannot start the recording service", e);
         }
     }
 

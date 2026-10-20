@@ -46,7 +46,8 @@
         </activity>
         <!-- showWhenLocked and turnScreenOn in the manifest, not only at runtime: on Android 14+
              the tile's PendingIntent asks for the unlock unless the manifest declares them.
-             The camera alias inherits them. -->
+             The camera alias inherits them. No rotation: the black screen has nothing to turn,
+             and a rotation would recreate it. -->
         <activity
             android:name=".QuickStartActivity"
             android:exported="false"
@@ -54,6 +55,7 @@
             android:noHistory="true"
             android:launchMode="singleTask"
             android:taskAffinity="net.ark3us.saferec.quickstart"
+            android:screenOrientation="nosensor"
             android:showWhenLocked="true"
             android:turnScreenOn="true"
             android:theme="@style/Theme.SafeRec.QuickStart"
