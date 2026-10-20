@@ -9,9 +9,9 @@ public final class PermissionsBannerModel {
 
     public enum Kind {
         HIDDEN,
-        /** Audio mode, microphone refused. */
+        /** Microphone refused: in Audio mode, or in Video mode with the camera granted. */
         NEEDS_MICROPHONE,
-        /** Video mode, microphone refused. */
+        /** Video mode, microphone refused and camera not granted either. */
         NEEDS_CAMERA_AND_MICROPHONE,
         /** Video mode, microphone granted, camera refused: it records sound only. */
         SOUND_ONLY
