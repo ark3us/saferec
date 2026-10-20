@@ -226,6 +226,9 @@
     <string name="three_presses_starting">Starting…</string>
     <string name="three_presses_on">On: press the power key three times, even with the phone locked</string>
     <string name="three_presses_battery_help">Android may close SafeRec to save battery, and the three presses would stop working. On the next page, open \"App battery usage\" and choose \"Unrestricted\".</string>
+    <string name="three_presses_step_battery_legacy">Step 2 of 2: turn off battery optimization for SafeRec</string>
+    <string name="three_presses_battery_help_legacy">Android may close SafeRec to save battery, and the three presses would stop working. On the next page, choose \"All apps\", find SafeRec and choose \"Don\'t optimize\".</string>
+    <string name="three_presses_not_running">Not running: tap to start it</string>
     <string name="open_settings">Open settings</string>
     <string name="camera_gesture_summary_off">Off: the double press opens the camera</string>
     <string name="camera_gesture_summary_setup">Not set up yet: tap to try it</string>

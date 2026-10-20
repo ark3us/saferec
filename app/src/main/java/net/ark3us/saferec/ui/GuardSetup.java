@@ -39,13 +39,15 @@ public final class GuardSetup {
 
     /**
      * The battery optimization list shows every app, and the owner did not find SafeRec there.
-     * The app's own page leads to "App battery usage → Unrestricted" on Android 12+.
+     * The app's own page leads to "App battery usage → Unrestricted" on Android 12+. Below, only
+     * the list exists: "All apps", SafeRec, "Don't optimize".
      */
     private static void showBatteryDialog(Activity activity) {
         if (activity.isFinishing() || activity.isDestroyed()) return;
         new AlertDialog.Builder(activity)
             .setTitle(R.string.power_gesture)
-            .setMessage(R.string.three_presses_battery_help)
+            .setMessage(Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+                ? R.string.three_presses_battery_help : R.string.three_presses_battery_help_legacy)
             .setPositiveButton(R.string.open_settings, (d, w) -> open(activity, batterySettingsIntent(activity)))
             .setNegativeButton(android.R.string.cancel, null)
             .show();

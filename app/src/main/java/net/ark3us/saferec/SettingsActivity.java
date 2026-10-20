@@ -19,6 +19,7 @@ import android.widget.LinearLayout;
 import android.widget.Toast;
 
 import androidx.activity.EdgeToEdge;
+import androidx.annotation.NonNull;
 import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.graphics.Insets;
@@ -52,6 +53,7 @@ public class SettingsActivity extends AppCompatActivity {
     /** While the guard starts, the row is read again after this delay, a few times at most. */
     private static final long GUARD_RECHECK_MS = 1000;
     private static final int GUARD_RECHECK_MAX = 5;
+    private static final String STATE_OVERLAY_STEP_OPENED = "overlay_step_opened";
 
     private LinearLayout container;
     private PermissionsManager permissionsManager;
@@ -60,10 +62,18 @@ public class SettingsActivity extends AppCompatActivity {
     private final Runnable guardRecheck = this::render;
     private int guardRechecks = 0;
     private boolean driveConnecting = false;
+    /**
+     * The three presses setup just sent the user to the overlay page: on return, the next
+     * step (the battery dialog) opens by itself, once.
+     */
+    private boolean overlayStepOpened = false;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        // Android may recreate this screen while the user is on the overlay page
+        overlayStepOpened = savedInstanceState != null
+                && savedInstanceState.getBoolean(STATE_OVERLAY_STEP_OPENED);
         EdgeToEdge.enable(this);
         setContentView(R.layout.activity_settings);
 
@@ -95,8 +105,19 @@ public class SettingsActivity extends AppCompatActivity {
     protected void onResume() {
         super.onResume();
         guardRechecks = 0;
+        boolean continueGuardSetup = overlayStepOpened;
+        overlayStepOpened = false;
         render();
+        if (continueGuardSetup) {
+            continueGuardSetup();
+        }
         CameraGestureSetup.onResume(this);
+    }
+
+    @Override
+    protected void onSaveInstanceState(@NonNull Bundle outState) {
+        super.onSaveInstanceState(outState);
+        outState.putBoolean(STATE_OVERLAY_STEP_OPENED, overlayStepOpened);
     }
 
     @Override
@@ -164,23 +185,29 @@ public class SettingsActivity extends AppCompatActivity {
             net.ark3us.saferec.guard.Guard.Status status = net.ark3us.saferec.guard.Guard.status(this);
             String summary;
             boolean stepMissing = false;
+            boolean notRunning = false;
             switch (status) {
                 case NEEDS_OVERLAY:
                     summary = getString(R.string.three_presses_step_overlay);
                     stepMissing = true;
                     break;
                 case NEEDS_BATTERY_EXEMPTION:
-                    summary = getString(R.string.three_presses_step_battery);
+                    // Below Android 12 the page is the battery optimization list, with other words
+                    summary = getString(Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+                        ? R.string.three_presses_step_battery : R.string.three_presses_step_battery_legacy);
                     stepMissing = true;
                     break;
                 case STOPPED:
-                    summary = getString(R.string.three_presses_starting);
-                    // The screen is in the foreground, so the guard's service may start now
-                    net.ark3us.saferec.guard.Guard.ensureRunning(this);
                     if (guardRechecks < GUARD_RECHECK_MAX) {
+                        summary = getString(R.string.three_presses_starting);
+                        // The screen is in the foreground, so the guard's service may start now
+                        net.ark3us.saferec.guard.Guard.ensureRunning(this);
                         guardRechecks++;
                         handler.removeCallbacks(guardRecheck);
                         handler.postDelayed(guardRecheck, GUARD_RECHECK_MS);
+                    } else {
+                        summary = getString(R.string.three_presses_not_running);
+                        notRunning = true;
                     }
                     break;
                 case ACTIVE:
@@ -192,12 +219,44 @@ public class SettingsActivity extends AppCompatActivity {
             }
             View row = SettingsRows.toggle(container, 0, getString(R.string.power_gesture), summary,
                 net.ark3us.saferec.guard.Guard.isEnabled(this), (b, checked) -> setThreePresses(checked));
+            // With a step missing or the guard not running, a tap on the row leads to what is
+            // missing and never turns the guard off: only the switch itself does
             if (stepMissing) {
                 SettingsRows.markAttention(row);
-                // A tap on the row leads to the missing step and never turns the guard off:
-                // only the switch itself does
-                row.setOnClickListener(v -> GuardSetup.openNextStep(this));
+                row.setOnClickListener(v -> openGuardStep());
+            } else if (notRunning) {
+                SettingsRows.markAttention(row);
+                row.setOnClickListener(v -> restartGuard());
             }
+        }
+    }
+
+    /** Opens the next setup step, remembering when it is the overlay page (see onResume()). */
+    private void openGuardStep() {
+        if (BuildConfig.POWER_GESTURE) {
+            overlayStepOpened = net.ark3us.saferec.guard.Guard.status(this)
+                == net.ark3us.saferec.guard.Guard.Status.NEEDS_OVERLAY;
+            GuardSetup.openNextStep(this);
+        }
+    }
+
+    /** Back from the overlay page with the permission granted: the battery step follows at once. */
+    private void continueGuardSetup() {
+        if (BuildConfig.POWER_GESTURE) {
+            if (net.ark3us.saferec.guard.Guard.isEnabled(this)
+                    && net.ark3us.saferec.guard.Guard.status(this)
+                        == net.ark3us.saferec.guard.Guard.Status.NEEDS_BATTERY_EXEMPTION) {
+                GuardSetup.openNextStep(this);
+            }
+        }
+    }
+
+    /** The re-checks ended with the guard still stopped: try again, read the row in 1 s. */
+    private void restartGuard() {
+        if (BuildConfig.POWER_GESTURE) {
+            net.ark3us.saferec.guard.Guard.ensureRunning(this);
+            handler.removeCallbacks(guardRecheck);
+            handler.postDelayed(guardRecheck, GUARD_RECHECK_MS);
         }
     }
 
@@ -209,7 +268,7 @@ public class SettingsActivity extends AppCompatActivity {
         if (BuildConfig.POWER_GESTURE) {
             net.ark3us.saferec.guard.Guard.setEnabled(this, on);
             if (on) {
-                GuardSetup.openNextStep(this);
+                openGuardStep();
             }
             guardRechecks = 0;
             renderLater();
