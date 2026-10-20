@@ -110,7 +110,7 @@ public final class CameraGestureSetup {
             .setTitle(R.string.camera_gesture)
             .setMessage(message)
             .setPositiveButton(R.string.camera_gesture_try, (d, w) -> launch(activity, step))
-            .setNegativeButton(android.R.string.ok, null)
+            .setNegativeButton(android.R.string.cancel, null)
             .show();
     }
 
