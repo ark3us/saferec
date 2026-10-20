@@ -175,6 +175,7 @@
     <string name="shortcut_record_short">Registra</string>
     <string name="shortcut_record_long">Registra ora</string>
     <string name="notif_action_stop">Ferma</string>
+    <string name="notif_action_open">Apri SafeRec</string>
     <plurals name="notif_safe_chunks">
         <item quantity="one">%d pezzo al sicuro su Drive</item>
         <item quantity="many">%d pezzi al sicuro su Drive</item>

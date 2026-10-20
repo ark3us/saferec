@@ -124,9 +124,12 @@ public class NotificationHelper {
         }
 
         if (isRecording) {
-            builder.setUsesChronometer(true)
-                    .setWhen(recordingSinceMillis > 0 ? recordingSinceMillis : System.currentTimeMillis())
-                    .setShowWhen(true);
+            if (recordingSinceMillis > 0) {
+                builder.setUsesChronometer(true).setWhen(recordingSinceMillis).setShowWhen(true);
+            } else {
+                // No valid start: counting from now would show a wrong time
+                builder.setUsesChronometer(false).setShowWhen(false);
+            }
             builder.addAction(buildStopAction(context));
         }
 
@@ -150,9 +153,11 @@ public class NotificationHelper {
             stopIntent = PendingIntent.getActivity(context, 1, open,
                     PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
         }
+        boolean stops = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S;
         Notification.Action.Builder action = new Notification.Action.Builder(
                 Icon.createWithResource(context, R.drawable.outline_stop_circle_24),
-                context.getString(R.string.notif_action_stop), stopIntent);
+                context.getString(stops ? R.string.notif_action_stop : R.string.notif_action_open),
+                stopIntent);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             // The phone must be unlocked: whoever holds a locked phone cannot stop the recording
             action.setAuthenticationRequired(true);
