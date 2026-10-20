@@ -622,6 +622,7 @@ No public API reports power key presses. Each press turns the screen on or off, 
 - **Logs.** `Guard running`, `Guard stopped`, `Guard cannot start`.
 - **Measured in a spike** (Galaxy S10+, Android 16, locked with a PIN, screen off): video recording 0.6 s after the third press, the trigger screen visible 30-54 ms after the trigger, the phone stayed locked.
 - **Measured with the app** (same phone, presses by hand): it recorded with the trigger screen 30 ms after the trigger, and a second round during the recording was ignored (two pulses again). Two slow presses did nothing, and a camera double press (two presses 34 ms apart) opened the camera without triggering.
+- **On a Pixel with Android 17** (presses sent over adb, 0.45 s apart, phone locked): the same. Microphone 0.17 s and camera 0.27 s after the trigger, the phone stayed locked, and a second round was ignored with two pulses. Its lock screen showed no SafeRec notification or icon. Presses by hand on a Pixel are not verified.
 - **Screen changes that are not presses.** Nothing is filtered, not even during a phone call: a deliberate start must never be blocked. A camera double press (two presses under 300 ms) gives at most two changes and does not trigger the guard.
 - **Costs.** A permanent notification, the overlay permission granted once, and a `specialUse` foreground service.
 
@@ -662,7 +663,7 @@ The double press of the power key opens the default camera app with `STILL_IMAGE
   - When Android remembers another app as the last choice for an action, its chooser reads "Complete action using Camera" and lists SafeRec under "Use a different app". Tapping SafeRec there opens it just once, with no "Always", so a third try is needed (it then reads "Complete action using SafeRec").
   - The "Always" choices stay stored while the option is off. Turning it back on works at once, and the two tries only start needless recordings.
   - Fix: after each try, check whether the action now resolves to SafeRec (`resolveActivity`), offer the try again if not, and skip the tries already stored.
-- Not verified: a Pixel's camera gesture setting (`config_cameraGesturePackage`).
+- On a Pixel with Android 17, SystemUI pins the gesture to Google Camera (`config_cameraGesturePackage`), so the option is not offered there: the row was absent.
 
 ### Google Play declaration
 
@@ -833,7 +834,8 @@ Unit tests (JVM, no phone, under a second): `./gradlew testDebugUnitTest`. The s
 
 
 `scripts/device-tests.sh` drives a connected phone (debug build) and checks logcat, the chunk store and chunk durations with ffprobe. Scenarios: `offline_start`, `audio_only`, `camera_stolen`, `replay`, `errors_dont_stop`, `network_drop`, `retry_after_outage`, `outbox_job`, `tsa`, `av_sync`, plus a whole-run crash check. It toggles airplane mode, records camera and mic, rewrites SafeRec settings, and restores everything on exit. It refuses to run if the outbox or `recording/` is not empty.
-- `ANDROID_SERIAL` must name the test phone, or the script refuses to run. A manual test script, which did not pin the device, once ran on the owner's everyday phone plugged into the same cable. It installed SafeRec there (in the Private space too: `adb install` installs for every user), cleared the log buffer and toggled airplane mode.
+- `ANDROID_SERIAL` must name the test phone, or the script refuses to run. A manual test script, which did not pin the device, once ran on the owner's everyday phone plugged into the same cable. It installed SafeRec there (in the Private space too: `adb install` installs for every user), cleared the log buffer and toggled airplane mode. That copy stayed there, unused, until a later check found it. After testing on a phone that is not the test phone, uninstall with `adb uninstall` (every user) and check each user with `pm list packages --user N`.
+- Dismissing Google's account picker does not keep a test off Drive. If the phone's account gave SafeRec access before, the silent refresh gets a token without asking, and the chunks upload. A test on such a phone leaves its sessions on that Drive: trash them afterwards.
 
 - `av_sync` checks sync on the content.
   - It switches camera at 3 s (a cold camera start), then vibrates the phone with 80 ms pulses at seeded irregular times. Long pulses (250 ms) failed in dim light: long exposures show motion mostly when the motor starts and stops, and the two make rival correlation peaks ~0.25 s apart. The motor is one physical event seen by both tracks: the buzz reaches the microphone and the shake moves the image.
