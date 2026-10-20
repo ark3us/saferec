@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <dimen name="record_visual">88dp</dimen>
+    <dimen name="record_touch">112dp</dimen>
+    <dimen name="top_button">48dp</dimen>
+    <dimen name="chip_height">36dp</dimen>
+    <dimen name="glass_radius">18dp</dimen>
+    <dimen name="gutter">16dp</dimen>
+    <dimen name="scrim_height">240dp</dimen>
+</resources>

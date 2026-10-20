@@ -1,10 +1,10 @@
 <resources xmlns:tools="http://schemas.android.com/tools">
     <style name="Base.Theme.SafeRec" parent="Theme.Material3.Dark.NoActionBar">
-        <item name="colorPrimary">@color/primary</item>
-        <item name="colorPrimaryDark">@color/primary_dark</item>
-        <item name="colorAccent">@color/primary_variant</item>
+        <item name="colorPrimary">#FFFFFFFF</item>
+        <item name="colorOnPrimary">#FF000000</item>
         <item name="colorSurface">@color/surface_dark</item>
-        <item name="colorSurfaceVariant">@color/surface_elevated</item>
+        <item name="colorSurfaceContainer">@color/surface_card</item>
+        <item name="colorError">@color/attention_orange</item>
         <item name="android:windowBackground">@null</item>
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
@@ -24,5 +24,22 @@
         <item name="android:windowBackground">#000000</item>
         <item name="android:windowAnimationStyle">@null</item>
         <item name="android:windowNoTitle">true</item>
+    </style>
+
+    <style name="Widget.SafeRec.GlassChip" parent="Widget.Material3.Chip.Assist">
+        <item name="chipBackgroundColor">@color/glass_bg</item>
+        <item name="chipStrokeColor">@color/glass_stroke</item>
+        <item name="chipStrokeWidth">1dp</item>
+        <item name="android:textColor">@color/on_glass</item>
+        <item name="chipMinHeight">@dimen/chip_height</item>
+    </style>
+
+    <style name="Widget.SafeRec.GlassButton" parent="">
+        <item name="android:layout_width">@dimen/top_button</item>
+        <item name="android:layout_height">@dimen/top_button</item>
+        <item name="android:background">@drawable/glass_circle_bg</item>
+        <item name="android:tint">@color/on_glass</item>
+        <item name="android:padding">12dp</item>
+        <item name="android:scaleType">fitCenter</item>
     </style>
 </resources>

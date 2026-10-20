@@ -126,6 +126,8 @@ It ends with **COMPLETE** (every listed chunk present and unchanged) or **NOT VE
 
 This application was developed with the assistance of **Antigravity**.
 
+Icons: [Material Symbols](https://fonts.google.com/icons) by Google, Apache License 2.0.
+
 ## License
 
 This project is licensed under the GNU General Public License v3.0 - see the [LICENSE](LICENSE) file for details.
