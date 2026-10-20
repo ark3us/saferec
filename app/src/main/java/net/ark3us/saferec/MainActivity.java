@@ -3,6 +3,7 @@ package net.ark3us.saferec;
 import android.content.Intent;
 import android.content.res.Configuration;
 import android.graphics.SurfaceTexture;
+import android.graphics.drawable.Drawable;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -10,7 +11,11 @@ import android.os.SystemClock;
 import android.util.Log;
 import android.view.TextureView;
 import android.view.View;
+import android.view.ViewOutlineProvider;
 import android.widget.Chronometer;
+import android.widget.ImageButton;
+import android.widget.ImageView;
+import android.widget.TextView;
 
 import androidx.activity.EdgeToEdge;
 import androidx.annotation.NonNull;
@@ -28,7 +33,9 @@ import com.google.android.material.snackbar.Snackbar;
 import net.ark3us.saferec.data.ServiceState;
 import net.ark3us.saferec.media.VideoStreamRecorder;
 import net.ark3us.saferec.misc.Settings;
+import net.ark3us.saferec.net.DriveRecordings;
 import net.ark3us.saferec.net.GoogleDriveFileUploader;
+import net.ark3us.saferec.net.SessionSummary;
 import net.ark3us.saferec.services.SafeCount;
 import net.ark3us.saferec.services.SafeRecService;
 import net.ark3us.saferec.ui.CameraGestureSetup;
@@ -37,6 +44,7 @@ import net.ark3us.saferec.ui.NetworkWatcher;
 import net.ark3us.saferec.ui.PermissionsBanner;
 import net.ark3us.saferec.ui.RecordButton;
 import net.ark3us.saferec.ui.StatusChipController;
+import net.ark3us.saferec.ui.ThumbnailLoader;
 import net.ark3us.saferec.ui.FirstRun;
 
 /**
@@ -62,7 +70,14 @@ public class MainActivity extends AppCompatActivity {
     private View btnSwitchCamera;
     private View btnRecordings;
     private View btnSettings;
-    private View btnGallery;
+    private ImageButton btnGallery;
+    private View galleryHolder;
+    private TextView galleryBadge;
+    private ThumbnailLoader thumbnails;
+    private @Nullable DriveRecordings galleryRecordings;
+    // The latest session costs several Drive requests and a manifest: at most one load a minute
+    private long galleryLoadedAt = 0;
+    private static final long GALLERY_RELOAD_MS = 60_000;
     private MaterialButtonToggleGroup modeToggle;
     private Chip safeChip;
     private View audioOnlySurface;
@@ -126,6 +141,10 @@ public class MainActivity extends AppCompatActivity {
         btnRecordings = findViewById(R.id.btn_recordings);
         btnSettings = findViewById(R.id.btn_settings);
         btnGallery = findViewById(R.id.btn_gallery);
+        galleryHolder = findViewById(R.id.gallery_holder);
+        galleryBadge = findViewById(R.id.gallery_badge);
+        thumbnails = new ThumbnailLoader(this);
+        setUpGalleryButton();
         modeToggle = findViewById(R.id.mode_toggle);
         safeChip = findViewById(R.id.safe_chip);
         audioOnlySurface = findViewById(R.id.audio_only_surface);
@@ -287,6 +306,7 @@ public class MainActivity extends AppCompatActivity {
         state.getPendingPieces().observe(this, count -> {
             pendingPieces = count != null ? count : 0;
             renderStatusChip();
+            renderGalleryBadge();
         });
         state.getDriveAuthProblem().observe(this, problem -> renderStatusChip());
     }
@@ -400,7 +420,7 @@ public class MainActivity extends AppCompatActivity {
         show(recordingInfo, recording);
         holdHint.setVisibility(recording ? View.VISIBLE : View.INVISIBLE);
         show(modeToggle, !recording);
-        show(btnGallery, !recording);
+        show(galleryHolder, !recording);
         show(btnRecordings, !recording);
         show(btnSettings, !recording);
         // No camera to switch in Audio mode, nor in an audio-only recording (a switch restarts
@@ -430,6 +450,97 @@ public class MainActivity extends AppCompatActivity {
 
     private void renderStatusChip() {
         statusChip.render(isRecording(), networkWatcher.isOnline(), pendingPieces);
+    }
+
+    // ---- Gallery button ----
+
+    /** The thumbnail is clipped to the button's glass shape, whatever it shows. */
+    private void setUpGalleryButton() {
+        btnGallery.setOutlineProvider(ViewOutlineProvider.BACKGROUND);
+        btnGallery.setClipToOutline(true);
+        int icon = (int) (16 * getResources().getDisplayMetrics().density);
+        Drawable cloud = galleryBadge.getCompoundDrawablesRelative()[0];
+        if (cloud != null) {
+            cloud = cloud.mutate();
+            cloud.setBounds(0, 0, icon, icon);
+            galleryBadge.setCompoundDrawablesRelative(cloud, null, null, null);
+        }
+    }
+
+    /** Pieces waiting on this phone: a cloud and the count, nothing at 0. */
+    private void renderGalleryBadge() {
+        show(galleryBadge, pendingPieces > 0);
+        galleryBadge.setText(String.valueOf(pendingPieces));
+    }
+
+    /**
+     * Shows the newest session's thumbnail. Offline, without a token or without a session it is
+     * the plain icon, and a failed load changes nothing: the viewfinder never reports it.
+     */
+    private void refreshGallery() {
+        String token = Settings.getAccessToken(this);
+        if (token == null || !networkWatcher.isOnline()) {
+            showGalleryPlaceholder();
+            return;
+        }
+        long now = SystemClock.elapsedRealtime();
+        if (galleryLoadedAt != 0 && now - galleryLoadedAt < GALLERY_RELOAD_MS) {
+            return;
+        }
+        galleryLoadedAt = now;
+        if (galleryRecordings != null) {
+            galleryRecordings.shutdown();
+        }
+        DriveRecordings recordings = new DriveRecordings(this, token);
+        galleryRecordings = recordings;
+        recordings.latestSession(new DriveRecordings.Callback<SessionSummary>() {
+            @Override
+            public void onSuccess(SessionSummary latest) {
+                runOnUiThread(() -> showGalleryLatest(latest, token));
+            }
+
+            @Override
+            public void onError(Exception e) {
+                // Silent, and retried at the next resume instead of waiting the minute
+                Log.w(TAG, "Gallery thumbnail not loaded: " + e);
+                galleryLoadedAt = 0;
+            }
+        });
+    }
+
+    private void showGalleryLatest(@Nullable SessionSummary latest, String token) {
+        if (isDestroyed() || latest == null || latest.thumbnailLink() == null) {
+            if (!isDestroyed()) {
+                showGalleryPlaceholder();
+                if (latest != null) {
+                    describeGallery(latest);
+                }
+            }
+            return;
+        }
+        // The picture fills the button: no tint, no padding, cropped to the glass shape
+        btnGallery.setImageTintList(null);
+        btnGallery.setPadding(0, 0, 0, 0);
+        btnGallery.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        thumbnails.load(btnGallery, latest.thumbnailLink(), token, R.drawable.ms_photo_library);
+        describeGallery(latest);
+    }
+
+    private void describeGallery(SessionSummary latest) {
+        btnGallery.setContentDescription(getString(R.string.gallery_latest,
+                android.text.format.DateFormat.getMediumDateFormat(this)
+                        .format(new java.util.Date(latest.startMillis))));
+    }
+
+    private void showGalleryPlaceholder() {
+        int pad = (int) (16 * getResources().getDisplayMetrics().density);
+        btnGallery.setImageTintList(android.content.res.ColorStateList.valueOf(
+                getColor(R.color.on_glass)));
+        btnGallery.setPadding(pad, pad, pad, pad);
+        btnGallery.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        btnGallery.setTag(null);
+        btnGallery.setImageResource(R.drawable.ms_photo_library);
+        btnGallery.setContentDescription(getString(R.string.open_recordings));
     }
 
     private static void show(View view, boolean visible) {
@@ -537,6 +648,8 @@ public class MainActivity extends AppCompatActivity {
             statusChip.guardStarting();
         }
         pendingPieces = countPendingPieces();
+        renderGalleryBadge();
+        refreshGallery();
         permissionsBanner.refresh(Settings.onlyAudio(this));
         render();
         driveConnector.silentCheck(networkWatcher.isOnline());
@@ -616,6 +729,10 @@ public class MainActivity extends AppCompatActivity {
         handler.removeCallbacksAndMessages(null);
         statusChip.release();
         driveConnector.shutdown();
+        thumbnails.shutdown();
+        if (galleryRecordings != null) {
+            galleryRecordings.shutdown();
+        }
         super.onDestroy();
     }
 }

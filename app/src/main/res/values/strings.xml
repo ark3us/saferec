@@ -187,6 +187,7 @@
     <!-- Viewfinder -->
     <string name="mode_video">Video</string>
     <string name="mode_audio">Audio</string>
+    <string name="gallery_latest">Recordings, latest from %s</string>
     <string name="open_recordings">Recordings</string>
     <string name="permissions_banner">Camera and microphone are needed to record.</string>
     <string name="permissions_banner_audio">The microphone is needed to record.</string>

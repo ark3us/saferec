@@ -161,13 +161,71 @@ public class DriveRecordings {
     public void session(String sessionId, String dataType, Callback<SessionSummary> callback) {
         executor.execute(() -> {
             try {
-                List<SessionSummary> found = SessionSummary.group(collectItems(sessionId, dataType));
-                callback.onSuccess(found.isEmpty() ? null : found.get(0));
+                callback.onSuccess(loadSession(sessionId, dataType));
             } catch (Exception e) {
                 Log.e(TAG, "Failed to read session " + sessionId, e);
                 callback.onError(e);
             }
         });
+    }
+
+    private SessionSummary loadSession(String sessionId, String dataType) throws Exception {
+        List<SessionSummary> found = SessionSummary.group(collectItems(sessionId, dataType));
+        return found.isEmpty() ? null : found.get(0);
+    }
+
+    /**
+     * The newest session only, for the gallery button: Drive sorts the session folders (their
+     * names are epoch millis of equal length) and sends one, so the whole list is never read.
+     * Prefers the video folder, else audio; null when there is no session or it has no folder
+     * of either type.
+     */
+    public void latestSession(Callback<SessionSummary> callback) {
+        executor.execute(() -> {
+            try {
+                callback.onSuccess(findLatestSession());
+            } catch (Exception e) {
+                Log.e(TAG, "Failed to read the latest session", e);
+                callback.onError(e);
+            }
+        });
+    }
+
+    private SessionSummary findLatestSession() throws Exception {
+        List<String> baseFolderIds = driveClient.findBaseFolderIds();
+        if (baseFolderIds.isEmpty()) {
+            return null;
+        }
+        List<String> bases = baseFolderIds.subList(0, Math.min(50, baseFolderIds.size()));
+        StringBuilder q = new StringBuilder(
+                "trashed=false and mimeType='application/vnd.google-apps.folder' and (");
+        for (int i = 0; i < bases.size(); i++) {
+            if (i > 0)
+                q.append(" or ");
+            q.append("'").append(bases.get(i)).append("' in parents");
+        }
+        q.append(")");
+        FileList newest = driveClient.getDriveService().files().list()
+                .setQ(q.toString())
+                .setFields("files(id, name)")
+                .setOrderBy("name desc")
+                .setPageSize(1)
+                .execute();
+        if (newest.getFiles() == null || newest.getFiles().isEmpty()) {
+            return null;
+        }
+        String sessionId = newest.getFiles().get(0).getName();
+        // The session may be split between duplicate base folders: look in every folder of that name
+        List<String> sessionFolderIds = new ArrayList<>();
+        for (com.google.api.services.drive.model.File f : fetchFilesBatch(bases, true, sessionId)) {
+            sessionFolderIds.add(f.getId());
+        }
+        for (String type : new String[] { "video", "audio" }) {
+            if (!fetchFilesBatch(sessionFolderIds, true, type).isEmpty()) {
+                return loadSession(sessionId, type);
+            }
+        }
+        return null;
     }
 
     /**
