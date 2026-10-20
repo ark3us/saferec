@@ -242,6 +242,7 @@ Found while building and checking quick start and safe stop on the S10+ and a Pi
 - Chunks uploaded after the stop are not counted, and `ServiceState.safeChunks` keeps the old value until the next session. This matters for a status that shows "N safe" after stopping.
 - Below API 31 the notification's Stop only opens the app but is still labelled Stop. The chronometer falls back to "now" when a session id does not parse.
 - A START whose camera and microphone foreground is refused runs under `dataSync`, retried with stack traces, until Android 15's time limit stops it (pre-existing): check it with the viewfinder.
+- Ruling: the safe count after the stop stays as is (the two findings above). The viewfinder shows "N pieces safe" only while recording, and only from the first safe piece, and the notification after the stop shows the files waiting.
 - The "Record now" shortcut uses the status-bar icon: give it a proper one.
 
 **Guard and build**
