@@ -2,7 +2,7 @@ package net.ark3us.saferec.ui;
 
 /** The rule of the stop button: a hold of {@link #HOLD_MS} stops, anything shorter does nothing. */
 public final class HoldToStop {
-    static final long HOLD_MS = 1000;
+    public static final long HOLD_MS = 1000;
 
     private boolean held;
     private boolean consumed;

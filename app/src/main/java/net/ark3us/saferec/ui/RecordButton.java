@@ -47,6 +47,7 @@ public class RecordButton extends View {
     private boolean busy;
     private boolean holding;
     private int stopActionId = View.NO_ID;
+    private final Runnable stopCheck = this::checkStop;
     private float releasedFrom;
     private long releasedAt;
 
@@ -129,11 +130,12 @@ public class RecordButton extends View {
                 if (recording) {
                     hold.down(now());
                     holding = true;
+                    postDelayed(stopCheck, HoldToStop.HOLD_MS);
                     postInvalidateOnAnimation();
                 }
                 return true;
             case MotionEvent.ACTION_MOVE:
-                if (holding && !inside(e)) cancelHold(true);
+                if (holding && !checkStop() && !inside(e)) cancelHold(true);
                 return true;
             case MotionEvent.ACTION_POINTER_DOWN:
                 cancelHold(true);
@@ -142,6 +144,7 @@ public class RecordButton extends View {
                 if (!recording) {
                     if (inside(e)) performClick();
                 } else if (holding) {
+                    if (checkStop()) return true;
                     // Still held and not yet confirmed: an early release, so only a hint.
                     cancelHold(true);
                     performClick();
@@ -168,11 +171,21 @@ public class RecordButton extends View {
         return true;
     }
 
+    /** Decides the stop on the clock, not on a frame. True when this call confirmed it. */
+    private boolean checkStop() {
+        if (!holding || !hold.consumeStop(now())) return false;
+        cancelHold(false);
+        if (listener != null) listener.onStopConfirmed();
+        invalidate();
+        return true;
+    }
+
     private boolean inside(MotionEvent e) {
         return e.getX() >= 0 && e.getX() <= getWidth() && e.getY() >= 0 && e.getY() <= getHeight();
     }
 
     private void cancelHold(boolean animate) {
+        removeCallbacks(stopCheck);
         if (holding) {
             releasedFrom = hold.progress(now());
             releasedAt = now();
@@ -226,13 +239,7 @@ public class RecordButton extends View {
         if (holding) {
             long t = now();
             progress = hold.progress(t);
-            if (hold.consumeStop(t)) {
-                cancelHold(false);
-                progress = 0f;
-                if (listener != null) listener.onStopConfirmed();
-            } else {
-                again = true;
-            }
+            again = true;
         } else if (releasedFrom > 0f) {
             float left = 1f - (now() - releasedAt) / (float) RELEASE_ANIM_MS;
             if (left > 0f) {
