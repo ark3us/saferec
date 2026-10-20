@@ -469,7 +469,8 @@ scenario_outbox_job() {
     wait_log "Foreground time limit reached" 60 || note "warning: the service did not reach its time limit"
     sleep 3
     local services gone_line
-    services=$(adb shell dumpsys activity services "$PKG" | grep -c ServiceRecord)
+    # The guard is a long-running service by design: only the recording service must be gone.
+    services=$(adb shell dumpsys activity services "$PKG" | grep -cE 'ServiceRecord\{[^}]*SafeRecService')
     gone_line=$(wc -l <"$OUT/full.log")
     adb shell device_config delete activity_manager data_sync_fgs_timeout_duration >/dev/null
     FGS_TIMEOUT_SET=0
@@ -485,7 +486,7 @@ scenario_outbox_job() {
     dups=$(duplicate_uploads)
     logs >"$OUT/outbox_job.log"
     adb shell dumpsys jobscheduler 2>/dev/null | grep -A3 "$PKG" >"$OUT/outbox_job-jobs.txt"
-    note "waiting after the stop $waiting, services after the time limit $services, job runs $started"
+    note "waiting after the stop $waiting, recording services after the time limit $services, job runs $started"
     note "uploaded by the job $uploaded, left $left, ${took}s after the network came back, service restarts $restarted, duplicates $dups"
     ((waiting >= 1 && services == 0 && started >= 1 && restarted == 0 && left == 0 && uploaded >= waiting && dups == 0)) || ok=0
     if ((ok)); then
