@@ -47,6 +47,8 @@ public class DriveRecordings {
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
 
     private static final String TAG = DriveRecordings.class.getSimpleName();
+    // Session folders the gallery looks in, newest first, past ones whose files were trashed
+    private static final int LATEST_CANDIDATES = 5;
     private final GoogleDriveClient driveClient;
     private final Context context;
 
@@ -183,9 +185,10 @@ public class DriveRecordings {
 
     /**
      * The newest session only, for the gallery button: Drive sorts the session folders (their
-     * names are epoch millis of equal length) and sends one, so the whole list is never read.
-     * Prefers the video folder, else audio; null when there is no session or it has no folder
-     * of either type.
+     * names are epoch millis of equal length) and sends the newest few, so the whole list is
+     * never read. Prefers the video folder, else audio. A trashed session leaves its folders
+     * behind (folders holding trashed files stay), so a folder with no session in it is passed
+     * over for the next one. Null when none of them holds a session.
      */
     public void latestSession(Callback<SessionSummary> callback) {
         executor.execute(() -> {
@@ -216,12 +219,28 @@ public class DriveRecordings {
                 .setQ(q.toString())
                 .setFields("files(id, name)")
                 .setOrderBy("name desc")
-                .setPageSize(1)
+                .setPageSize(LATEST_CANDIDATES)
                 .execute();
-        if (newest.getFiles() == null || newest.getFiles().isEmpty()) {
+        if (newest.getFiles() == null) {
             return null;
         }
-        String sessionId = newest.getFiles().get(0).getName();
+        Set<String> tried = new HashSet<>();
+        for (com.google.api.services.drive.model.File candidate : newest.getFiles()) {
+            String sessionId = candidate.getName();
+            // Not a session's folder (a session's name is its start time), or one already looked in
+            if (sessionId == null || !sessionId.matches("\\d+") || !tried.add(sessionId)) {
+                continue;
+            }
+            SessionSummary latest = sessionIn(bases, sessionId);
+            if (latest != null) {
+                return latest;
+            }
+        }
+        return null;
+    }
+
+    /** The session of that name, its video if any, else its audio; null when it holds neither. */
+    private SessionSummary sessionIn(List<String> bases, String sessionId) throws Exception {
         // The session may be split between duplicate base folders: look in every folder of that name
         List<String> sessionFolderIds = new ArrayList<>();
         for (com.google.api.services.drive.model.File f : fetchFilesBatch(bases, true, sessionId)) {
@@ -229,7 +248,10 @@ public class DriveRecordings {
         }
         for (String type : new String[] { "video", "audio" }) {
             if (!fetchFilesBatch(sessionFolderIds, true, type).isEmpty()) {
-                return loadSession(sessionId, type);
+                SessionSummary session = loadSession(sessionId, type);
+                if (session != null) {
+                    return session;
+                }
             }
         }
         return null;
