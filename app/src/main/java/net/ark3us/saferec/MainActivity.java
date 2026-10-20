@@ -86,6 +86,8 @@ public class MainActivity extends AppCompatActivity {
     private TextView holdHint;
     // Which of the two spellings of the hint is showing, see pulseHoldHint()
     private boolean holdHintRepeat;
+    private String holdHintText;
+    private String holdHintTextAgain;
     // What the gallery button says without the waiting count
     private String galleryDescription;
 
@@ -155,6 +157,8 @@ public class MainActivity extends AppCompatActivity {
         recordingInfo = findViewById(R.id.recording_info);
         recordingTime = findViewById(R.id.recording_time);
         holdHint = findViewById(R.id.hold_hint);
+        holdHintText = getString(R.string.record_hold_to_stop);
+        holdHintTextAgain = holdHintText + "\u200B";
         ViewCompat.setAccessibilityLiveRegion(holdHint, ViewCompat.ACCESSIBILITY_LIVE_REGION_POLITE);
 
         PermissionsManager permissionsManager = new PermissionsManager(this);
@@ -402,7 +406,7 @@ public class MainActivity extends AppCompatActivity {
                 .withEndAction(() -> holdHint.animate().scaleX(1f).scaleY(1f).setDuration(150))
                 .start();
         holdHintRepeat = !holdHintRepeat;
-        holdHint.setText(getString(R.string.record_hold_to_stop) + (holdHintRepeat ? "\u200B" : ""));
+        holdHint.setText(holdHintRepeat ? holdHintTextAgain : holdHintText);
     }
 
     private void setOnlyAudio(boolean onlyAudio) {
