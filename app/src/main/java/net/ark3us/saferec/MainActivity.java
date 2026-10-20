@@ -81,6 +81,8 @@ public class MainActivity extends AppCompatActivity {
     // The silent Drive check asks Play services: at most once a minute, or when the network returns
     private long driveCheckedAt = 0;
     private static final long DRIVE_CHECK_MS = 60_000;
+    // Online when the viewfinder stopped: a false -> true at the next resume is "network back"
+    private boolean onlineAtStop = false;
     private MaterialButtonToggleGroup modeToggle;
     private Chip safeChip;
     private View audioOnlySurface;
@@ -171,8 +173,9 @@ public class MainActivity extends AppCompatActivity {
         driveConnector = new DriveConnector(this, permissionsManager, new DriveConnector.Listener() {
             @Override
             public void onDriveReady() {
-                // Nothing to send when no piece waits on this phone
-                if (countPendingPieces() > 0) {
+                // Nothing to send when the outbox is empty; a lone manifest copy or time stamp counts
+                String[] waiting = GoogleDriveFileUploader.outboxDir(MainActivity.this).list();
+                if (waiting != null && waiting.length > 0) {
                     startSafeRecService(SafeRecService.CMD_UPLOAD_PENDING);
                 }
             }
@@ -362,7 +365,10 @@ public class MainActivity extends AppCompatActivity {
         if (launchCommandHandled || !SafeRecService.CMD_START.equals(getCommand())) {
             btnRecord.post(this::handleLaunchCommand);
         } else {
-            permissionsBanner.whenCanRecord(Settings.onlyAudio(this), () -> btnRecord.post(this::handleLaunchCommand));
+            // Handled from now on: a refused start must never replay after a later grant
+            launchCommandHandled = true;
+            permissionsBanner.whenCanRecord(Settings.onlyAudio(this),
+                    () -> btnRecord.post(() -> startSafeRecService(SafeRecService.CMD_START)));
         }
     }
 
@@ -697,10 +703,12 @@ public class MainActivity extends AppCompatActivity {
         refreshGallery();
         permissionsBanner.refresh(Settings.onlyAudio(this));
         render();
+        boolean online = networkWatcher.isOnline();
         long now = SystemClock.elapsedRealtime();
-        if (driveCheckedAt == 0 || now - driveCheckedAt >= DRIVE_CHECK_MS) {
+        boolean networkBack = online && !onlineAtStop;
+        if (online && (networkBack || driveCheckedAt == 0 || now - driveCheckedAt >= DRIVE_CHECK_MS)) {
             driveCheckedAt = now;
-            driveConnector.silentCheck(networkWatcher.isOnline());
+            driveConnector.silentCheck(true);
         }
     }
 
@@ -714,6 +722,7 @@ public class MainActivity extends AppCompatActivity {
 
     @Override
     protected void onStop() {
+        onlineAtStop = networkWatcher.isOnline();
         networkWatcher.stop();
         super.onStop();
     }
