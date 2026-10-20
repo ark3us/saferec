@@ -55,6 +55,11 @@ public class DriveRecordings {
         this.driveClient = new GoogleDriveClient(accessToken);
     }
 
+    /** A new token for the requests from now on (after a refresh); one in flight keeps the old one. */
+    public void setAccessToken(String accessToken) {
+        driveClient.setAccessToken(accessToken);
+    }
+
     private static String groupKey(MediaFile file) {
         return groupKey(file.sessionId, file.dataType);
     }

@@ -19,6 +19,7 @@ import net.ark3us.saferec.net.SessionManifest;
 import net.ark3us.saferec.net.SessionSummary;
 import net.ark3us.saferec.net.TsaClient;
 import net.ark3us.saferec.services.SafeRecService;
+import net.ark3us.saferec.ui.DriveTokenRefresh;
 
 import java.io.File;
 import java.util.ArrayList;
@@ -36,6 +37,15 @@ import java.util.concurrent.ExecutorService;
  */
 public class EvidenceExport {
 
+    /** How an export ends, for the screen that runs it. Main thread. */
+    public interface Listener {
+        /** Shared, cancelled by the user, or failed with its message already shown. */
+        void onDone();
+
+        /** Drive refused the token while downloading: nothing shown, the screen may refresh it and export again. */
+        void onUnauthorized(Exception e);
+    }
+
     private static final String TAG = EvidenceExport.class.getSimpleName();
     private static final Comparator<DriveRecordings.RecordingItem> MERGE_ORDER =
             Comparator.comparingInt(item -> item.mediaFile.sequenceNumber);
@@ -51,16 +61,27 @@ public class EvidenceExport {
         this.executor = executor;
     }
 
-    /** Same as {@link #export(SessionSummary, Runnable)} with no end to wait for. */
+    /** Same as {@link #export(SessionSummary, Listener)} with no end to wait for. */
     public void export(SessionSummary summary) {
-        export(summary, () -> { });
+        export(summary, new Listener() {
+            @Override
+            public void onDone() {
+            }
+
+            @Override
+            public void onUnauthorized(Exception e) {
+                Toast.makeText(activity, activity.getString(R.string.download_failed, e.getMessage()),
+                        Toast.LENGTH_LONG).show();
+            }
+        });
     }
 
     /**
      * Builds the evidence package of a session (see EvidencePackage) and shares it: every file
      * of the session as it is on Drive, a merged video, a README, a report and the verifier.
      */
-    public void export(SessionSummary summary, Runnable done) {
+    public void export(SessionSummary summary, Listener listener) {
+        Runnable done = listener::onDone;
         String sessionId = summary.sessionId;
         String dataType = summary.dataType;
         List<DriveRecordings.RecordingItem> files = summary.files;
@@ -70,7 +91,7 @@ public class EvidenceExport {
             return;
         }
         Log.i(TAG, "Exporting the evidence of session " + sessionId + " (" + files.size() + " files)");
-                Toast.makeText(activity, R.string.exporting_evidence, Toast.LENGTH_SHORT).show();
+        Toast.makeText(activity, R.string.exporting_evidence, Toast.LENGTH_SHORT).show();
         drive.downloadFiles(files, new DriveRecordings.Callback<List<File>>() {
             @Override
             public void onSuccess(List<File> localFiles) {
@@ -156,6 +177,10 @@ public class EvidenceExport {
             public void onError(Exception e) {
                 Log.e(TAG, "Download for the evidence package failed", e);
                 mainHandler.post(() -> {
+                    if (DriveTokenRefresh.isUnauthorized(e)) {
+                        listener.onUnauthorized(e);
+                        return;
+                    }
                     done.run();
                     Toast.makeText(activity, activity.getString(R.string.download_failed, e.getMessage()),
                             Toast.LENGTH_LONG).show();

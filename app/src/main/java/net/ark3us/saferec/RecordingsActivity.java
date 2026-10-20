@@ -27,11 +27,12 @@ import net.ark3us.saferec.net.DriveRecordings;
 import net.ark3us.saferec.net.EvidencePackage;
 import net.ark3us.saferec.net.GoogleDriveFileUploader;
 import net.ark3us.saferec.net.SessionSummary;
-import net.ark3us.saferec.ui.TrashedSessions;
 import net.ark3us.saferec.services.SafeCount;
 import net.ark3us.saferec.services.SafeRecService;
+import net.ark3us.saferec.ui.DriveTokenRefresh;
 import net.ark3us.saferec.ui.SessionsAdapter;
 import net.ark3us.saferec.ui.ThumbnailLoader;
+import net.ark3us.saferec.ui.TrashedSessions;
 
 import java.io.File;
 import java.util.List;
@@ -51,6 +52,7 @@ public class RecordingsActivity extends AppCompatActivity {
     private SessionsAdapter adapter;
     private ThumbnailLoader thumbnails;
     private PermissionsManager permissionsManager;
+    private DriveTokenRefresh tokenRefresh;
     private RecyclerView recyclerView;
     private SwipeRefreshLayout swipeRefreshLayout;
     private View progress;
@@ -61,7 +63,7 @@ public class RecordingsActivity extends AppCompatActivity {
     private TextView waitingBannerText;
     private MaterialButton waitingBannerAction;
     private int pendingPieces;
-    // One per token: it owns a thread, so a load never makes its own
+    // One per screen: it owns a thread, so a load never makes its own; a new token replaces its old one
     private DriveRecordings drive;
     private String driveToken;
     private boolean connecting;
@@ -91,6 +93,7 @@ public class RecordingsActivity extends AppCompatActivity {
         toolbar.setNavigationOnClickListener(v -> finish());
 
         permissionsManager = new PermissionsManager(this);
+        tokenRefresh = new DriveTokenRefresh(this, permissionsManager);
         thumbnails = new ThumbnailLoader(this);
         recyclerView = findViewById(R.id.recycler_view);
         swipeRefreshLayout = findViewById(R.id.swipe_refresh_layout);
@@ -142,12 +145,18 @@ public class RecordingsActivity extends AppCompatActivity {
         if (drive != null) {
             drive.shutdown();
         }
+        tokenRefresh.shutdown();
         backgroundExecutor.shutdown();
     }
 
     // ---- Loading ----
 
     private void loadSessions() {
+        loadSessions(false);
+    }
+
+    /** @param afterRefresh the token was just refreshed for this load: a second 401 is not refreshed again */
+    private void loadSessions(boolean afterRefresh) {
         int generation = ++loadGeneration;
         String token = Settings.getAccessToken(this);
         renderBanner();
@@ -160,13 +169,12 @@ public class RecordingsActivity extends AppCompatActivity {
             emptyState.setVisibility(View.GONE);
             progress.setVisibility(View.VISIBLE);
         }
-        if (drive == null || !token.equals(driveToken)) {
-            if (drive != null) {
-                drive.shutdown();
-            }
+        if (drive == null) {
             drive = new DriveRecordings(this, token);
-            driveToken = token;
+        } else if (!token.equals(driveToken)) {
+            drive.setAccessToken(token);
         }
+        driveToken = token;
         drive.listSessions(new DriveRecordings.Callback<List<SessionSummary>>() {
             @Override
             public void onSuccess(List<SessionSummary> sessions) {
@@ -201,11 +209,48 @@ public class RecordingsActivity extends AppCompatActivity {
                     if (isDestroyed() || generation != loadGeneration) {
                         return;
                     }
-                    swipeRefreshLayout.setRefreshing(false);
-                    progress.setVisibility(View.GONE);
-                    adapter.submitList(null);
-                    showMessage(R.string.recordings_load_failed, false);
+                    if (!afterRefresh && DriveTokenRefresh.isUnauthorized(e)) {
+                        refreshToken(token, generation);
+                        return;
+                    }
+                    showLoadFailed();
                 });
+            }
+        });
+    }
+
+    private void showLoadFailed() {
+        adapter.submitList(null);
+        showMessage(R.string.recordings_load_failed, false);
+    }
+
+    /**
+     * Drive refused the token: one silent refresh for the screen, then the list once more with the
+     * new token (DriveConnection stored it). Play services wanting the user: Connect Drive. A
+     * newer load meanwhile has its own answer.
+     */
+    private void refreshToken(String used, int generation) {
+        tokenRefresh.refresh(used, new DriveTokenRefresh.Listener() {
+            @Override
+            public void onToken(String token) {
+                if (generation == loadGeneration) {
+                    loadSessions(true);
+                }
+            }
+
+            @Override
+            public void onNeedsUser() {
+                if (generation == loadGeneration) {
+                    adapter.submitList(null);
+                    showMessage(R.string.recordings_not_connected, true);
+                }
+            }
+
+            @Override
+            public void onFailed() {
+                if (generation == loadGeneration) {
+                    showLoadFailed();
+                }
             }
         });
     }

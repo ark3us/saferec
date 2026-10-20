@@ -45,8 +45,10 @@ import androidx.media3.common.PlaybackException;
 import androidx.media3.common.Player;
 import androidx.media3.common.Timeline;
 import androidx.media3.common.util.UnstableApi;
+import androidx.media3.datasource.DataSource;
 import androidx.media3.datasource.DefaultHttpDataSource;
 import androidx.media3.datasource.HttpDataSource;
+import androidx.media3.datasource.ResolvingDataSource;
 import androidx.media3.exoplayer.ExoPlayer;
 import androidx.media3.exoplayer.source.ConcatenatingMediaSource2;
 import androidx.media3.exoplayer.source.MediaSource;
@@ -59,14 +61,14 @@ import net.ark3us.saferec.misc.Settings;
 import net.ark3us.saferec.net.DriveConnection;
 import net.ark3us.saferec.net.DriveRecordings;
 import net.ark3us.saferec.net.SessionSummary;
+import net.ark3us.saferec.ui.DriveTokenRefresh;
 import net.ark3us.saferec.ui.SessionPlaylist;
 import net.ark3us.saferec.ui.SessionsAdapter;
 import net.ark3us.saferec.ui.TrashedSessions;
 
 import java.util.ArrayList;
-import java.util.HashMap;
+import java.util.Collections;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
@@ -88,6 +90,11 @@ public class SessionActivity extends AppCompatActivity {
     private PermissionsManager permissionsManager;
     // One per screen: it owns a thread
     private DriveRecordings drive;
+    // The token of the screen, for Drive and the player; a refresh replaces it. Player threads read it
+    private volatile String token;
+    // The token the player's last request carried: the one Drive refused when it answers 401
+    private volatile String streamedWith;
+    private DriveTokenRefresh tokenRefresh;
     @Nullable
     private SessionSummary session;
     private List<String> fileIds = new ArrayList<>();
@@ -103,9 +110,9 @@ public class SessionActivity extends AppCompatActivity {
     private boolean started;
     // Where the player was in the session when onStop released it
     private long savedPosition;
-    // A 401 asks Play services for a new token once per screen
-    private boolean refreshTried;
     private boolean fullscreen;
+    // A load state (not connected, failed, gone) is on screen: the actions wait for a session again
+    private boolean stateShown;
     private OnBackPressedCallback leaveFullscreen;
     private View technicalBody;
     private View technicalChevron;
@@ -143,6 +150,7 @@ public class SessionActivity extends AppCompatActivity {
         errorBar = findViewById(R.id.player_error_bar);
 
         permissionsManager = new PermissionsManager(this);
+        tokenRefresh = new DriveTokenRefresh(this, permissionsManager);
         findViewById(R.id.player_retry).setOnClickListener(v -> retry());
         playerView.setFullscreenButtonClickListener(this::setFullscreen);
         leaveFullscreen = new OnBackPressedCallback(false) {
@@ -196,9 +204,14 @@ public class SessionActivity extends AppCompatActivity {
     // ---- Loading ----
 
     private void loadSession() {
+        loadSession(false);
+    }
+
+    /** @param afterRefresh the token was just refreshed for this load: a second 401 is not refreshed again */
+    private void loadSession(boolean afterRefresh) {
         String sessionId = getIntent().getStringExtra(EXTRA_SESSION_ID);
         String dataType = getIntent().getStringExtra(EXTRA_DATA_TYPE);
-        String token = Settings.getAccessToken(this);
+        String stored = Settings.getAccessToken(this);
         try {
             ((MaterialToolbar) toolbar).setTitle(
                     SessionsAdapter.formatTitle(this, Long.parseLong(sessionId)));
@@ -209,15 +222,12 @@ public class SessionActivity extends AppCompatActivity {
             showState(R.string.session_not_found, 0);
             return;
         }
-        if (token == null || token.isEmpty()) {
+        if (stored == null || stored.isEmpty()) {
             showState(R.string.recordings_not_connected, R.string.status_connect_drive);
             return;
         }
         hideState();
-        if (drive != null) {
-            drive.shutdown();
-        }
-        drive = new DriveRecordings(this, token);
+        useToken(stored);
         drive.session(sessionId, dataType, new DriveRecordings.Callback<SessionSummary>() {
             @Override
             public void onSuccess(SessionSummary result) {
@@ -237,10 +247,52 @@ public class SessionActivity extends AppCompatActivity {
             public void onError(Exception e) {
                 Log.w(TAG, "Session load failed", e);
                 mainHandler.post(() -> {
-                    if (!isDestroyed()) {
-                        showState(R.string.session_load_failed, R.string.retry_short);
+                    if (isDestroyed()) {
+                        return;
+                    }
+                    Runnable failed = () -> showState(R.string.session_load_failed, R.string.retry_short);
+                    if (!afterRefresh && DriveTokenRefresh.isUnauthorized(e)) {
+                        afterUnauthorized(stored, () -> loadSession(true), failed);
+                    } else {
+                        failed.run();
                     }
                 });
+            }
+        });
+    }
+
+    /** The token for Drive and the player from now on: the next request of each carries it. */
+    private void useToken(String newToken) {
+        token = newToken;
+        if (drive == null) {
+            drive = new DriveRecordings(this, newToken);
+        } else {
+            drive.setAccessToken(newToken);
+        }
+    }
+
+    /**
+     * Drive refused the token: one silent refresh for the whole screen, then the operation once
+     * more with the new token. When Play services want the user, the screen offers Connect Drive;
+     * otherwise {@code failed} says what did not work.
+     */
+    private void afterUnauthorized(@Nullable String used, Runnable retry, Runnable failed) {
+        tokenRefresh.refresh(used, new DriveTokenRefresh.Listener() {
+            @Override
+            public void onToken(String newToken) {
+                useToken(newToken);
+                retry.run();
+            }
+
+            @Override
+            public void onNeedsUser() {
+                endBusy();
+                showState(R.string.recordings_not_connected, R.string.status_connect_drive);
+            }
+
+            @Override
+            public void onFailed() {
+                failed.run();
             }
         });
     }
@@ -250,6 +302,13 @@ public class SessionActivity extends AppCompatActivity {
      * (connect Drive when there is no token, retry after an error).
      */
     private void showState(int message, int action) {
+        stateShown = true;
+        // Nothing plays hidden, and the message is in the body, which fullscreen hides
+        setFullscreen(false);
+        if (player != null) {
+            player.pause();
+        }
+        updateActions();
         playerHolder.setVisibility(View.GONE);
         findViewById(R.id.session_status).setVisibility(View.GONE);
         ((TextView) findViewById(R.id.session_explain)).setText(message);
@@ -271,6 +330,7 @@ public class SessionActivity extends AppCompatActivity {
     }
 
     private void hideState() {
+        stateShown = false;
         findViewById(R.id.session_state_action).setVisibility(View.GONE);
     }
 
@@ -316,6 +376,9 @@ public class SessionActivity extends AppCompatActivity {
         playerHolder.setVisibility(fileIds.isEmpty() ? View.GONE : View.VISIBLE);
         if (started && player == null && !fileIds.isEmpty()) {
             buildPlayer(savedPosition);
+        } else if (player != null && player.getPlayerError() != null) {
+            // Loaded again (Drive connected, or the network back): the player tries again too
+            retry();
         }
         updateActions();
         bindTechnical(summary);
@@ -333,7 +396,7 @@ public class SessionActivity extends AppCompatActivity {
 
     /** The three actions work on a loaded session, one at a time. */
     private void updateActions() {
-        boolean ready = session != null && busyButton == null;
+        boolean ready = session != null && busyButton == null && !stateShown;
         exportButton.setEnabled(ready && !session.files.isEmpty());
         shareVideoButton.setEnabled(ready && !fileIds.isEmpty());
         trashButton.setEnabled(ready && !session.allFileIds.isEmpty());
@@ -364,11 +427,38 @@ public class SessionActivity extends AppCompatActivity {
         }
         startBusy(exportButton);
         Toast.makeText(this, R.string.exporting_evidence, Toast.LENGTH_SHORT).show();
-        new EvidenceExport(this, drive, executor).export(session, () -> {
-            if (!isDestroyed()) {
-                endBusy();
+        export(session, false);
+    }
+
+    private void export(SessionSummary summary, boolean afterRefresh) {
+        String used = token;
+        new EvidenceExport(this, drive, executor).export(summary, new EvidenceExport.Listener() {
+            @Override
+            public void onDone() {
+                if (!isDestroyed()) {
+                    endBusy();
+                }
+            }
+
+            @Override
+            public void onUnauthorized(Exception e) {
+                if (isDestroyed()) {
+                    return;
+                }
+                Runnable failed = () -> actionFailed(R.string.download_failed, e);
+                if (afterRefresh) {
+                    failed.run();
+                } else {
+                    afterUnauthorized(used, () -> export(summary, true), failed);
+                }
             }
         });
+    }
+
+    /** An action stopped: its spinner goes, and a toast says why. */
+    private void actionFailed(int message, Exception e) {
+        endBusy();
+        Toast.makeText(this, getString(message, e.getMessage()), Toast.LENGTH_LONG).show();
     }
 
     /** The pieces downloaded, merged into one video and handed to the share sheet. */
@@ -376,18 +466,24 @@ public class SessionActivity extends AppCompatActivity {
         if (session == null || busyButton != null) {
             return;
         }
+        startBusy(shareVideoButton);
+        shareVideo(session, false);
+    }
+
+    private void shareVideo(SessionSummary summary, boolean afterRefresh) {
         List<DriveRecordings.RecordingItem> chunks = new ArrayList<>();
-        for (DriveRecordings.RecordingItem item : session.files) {
+        for (DriveRecordings.RecordingItem item : summary.files) {
             if ("mp4".equalsIgnoreCase(item.mediaFile.getExtension())) {
                 chunks.add(item);
             }
         }
         if (chunks.isEmpty()) {
+            endBusy();
             return;
         }
         chunks.sort((a, b) -> Integer.compare(a.mediaFile.sequenceNumber, b.mediaFile.sequenceNumber));
-        String sessionId = session.sessionId;
-        startBusy(shareVideoButton);
+        String sessionId = summary.sessionId;
+        String used = token;
         Toast.makeText(this, R.string.downloading_chunks, Toast.LENGTH_SHORT).show();
         drive.downloadFiles(chunks, new DriveRecordings.Callback<List<File>>() {
             @Override
@@ -408,9 +504,12 @@ public class SessionActivity extends AppCompatActivity {
                     if (isDestroyed()) {
                         return;
                     }
-                    endBusy();
-                    Toast.makeText(SessionActivity.this, getString(R.string.download_failed, e.getMessage()),
-                            Toast.LENGTH_LONG).show();
+                    Runnable failed = () -> actionFailed(R.string.download_failed, e);
+                    if (!afterRefresh && DriveTokenRefresh.isUnauthorized(e)) {
+                        afterUnauthorized(used, () -> shareVideo(summary, true), failed);
+                    } else {
+                        failed.run();
+                    }
                 });
             }
         });
@@ -596,8 +695,13 @@ public class SessionActivity extends AppCompatActivity {
         if (stamp == null || busyButton != null) {
             return;
         }
+        shareTimestamp(stamp, false);
+    }
+
+    private void shareTimestamp(DriveRecordings.RecordingItem stamp, boolean afterRefresh) {
         List<DriveRecordings.RecordingItem> single = new ArrayList<>();
         single.add(stamp);
+        String used = token;
         drive.shareFiles(single, new DriveRecordings.Callback<List<Uri>>() {
             @Override
             public void onSuccess(List<Uri> uris) {
@@ -617,9 +721,15 @@ public class SessionActivity extends AppCompatActivity {
             public void onError(Exception e) {
                 Log.e(TAG, "Share TSA failed", e);
                 mainHandler.post(() -> {
-                    if (!isDestroyed()) {
-                        Toast.makeText(SessionActivity.this, getString(R.string.share_failed, e.getMessage()),
-                                Toast.LENGTH_LONG).show();
+                    if (isDestroyed()) {
+                        return;
+                    }
+                    Runnable failed = () -> Toast.makeText(SessionActivity.this,
+                            getString(R.string.share_failed, e.getMessage()), Toast.LENGTH_LONG).show();
+                    if (!afterRefresh && DriveTokenRefresh.isUnauthorized(e)) {
+                        afterUnauthorized(used, () -> shareTimestamp(stamp, true), failed);
+                    } else {
+                        failed.run();
                     }
                 });
             }
@@ -649,7 +759,8 @@ public class SessionActivity extends AppCompatActivity {
     protected void onStart() {
         super.onStart();
         started = true;
-        if (player == null && !fileIds.isEmpty()) {
+        // Behind a load state (not connected, gone) the player waits for the next load
+        if (player == null && !fileIds.isEmpty() && !stateShown) {
             buildPlayer(savedPosition);
         }
     }
@@ -663,11 +774,7 @@ public class SessionActivity extends AppCompatActivity {
 
     /** Paused at the given position of the session: a recording is never played by surprise. */
     private void buildPlayer(long position) {
-        String token = Settings.getAccessToken(this);
-        Map<String, String> headers = new HashMap<>();
-        headers.put("Authorization", "Bearer " + (token != null ? token : ""));
-        ProgressiveMediaSource.Factory factory = new ProgressiveMediaSource.Factory(
-                new DefaultHttpDataSource.Factory().setDefaultRequestProperties(headers));
+        ProgressiveMediaSource.Factory factory = new ProgressiveMediaSource.Factory(streamSource());
         errorBar.setVisibility(View.GONE);
         player = new ExoPlayer.Builder(this).build();
         player.addListener(new Player.Listener() {
@@ -680,6 +787,19 @@ public class SessionActivity extends AppCompatActivity {
         player.setMediaSource(sessionSource(factory), Math.max(0, position));
         player.setPlayWhenReady(false);
         player.prepare();
+    }
+
+    /**
+     * Drive's media with the screen's current token as a header, read at each request: a retry,
+     * or the next piece, after a refresh carries the new token. The token is never in the URL.
+     */
+    private DataSource.Factory streamSource() {
+        return new ResolvingDataSource.Factory(new DefaultHttpDataSource.Factory(), spec -> {
+            String current = token;
+            streamedWith = current;
+            return spec.withAdditionalHeaders(Collections.singletonMap("Authorization",
+                    "Bearer " + (current != null ? current : "")));
+        });
     }
 
     /**
@@ -711,9 +831,17 @@ public class SessionActivity extends AppCompatActivity {
         Log.w(TAG, "Playback error", error);
         HttpDataSource.InvalidResponseCodeException response = invalidResponse(error);
         int code = response != null ? response.responseCode : 0;
-        if (code == 401 && !refreshTried) {
-            refreshTried = true;
-            refreshToken();
+        if (code == 401) {
+            // Released meanwhile (the screen stopped): onStart builds a new player, which tries again
+            afterUnauthorized(streamedWith, () -> {
+                if (player != null) {
+                    retry();
+                }
+            }, () -> {
+                if (player != null) {
+                    showPlayerError();
+                }
+            });
             return;
         }
         if ((code == 404 || code == 410) && skipPiece(response)) {
@@ -760,45 +888,13 @@ public class SessionActivity extends AppCompatActivity {
         errorBar.setVisibility(View.VISIBLE);
     }
 
-    /** Same piece, same position; a second failure shows the message again. */
+    /** Same position, with the current token; a second failure shows the message again. */
     private void retry() {
         if (player == null) {
             return;
         }
         errorBar.setVisibility(View.GONE);
         player.prepare();
-    }
-
-    /**
-     * Play services may hand out a new token without asking the user. Only a token Drive
-     * accepts replaces the player: anything else is the plain error message.
-     */
-    private void refreshToken() {
-        permissionsManager.connectDrive(false, (token, needsUser) -> {
-            if (token == null) {
-                showPlayerError();
-                return;
-            }
-            Context app = getApplicationContext();
-            try {
-                executor.execute(() -> {
-                    DriveConnection.Result result = DriveConnection.accept(app, token);
-                    mainHandler.post(() -> {
-                        if (isDestroyed()) {
-                            return;
-                        }
-                        if (result == DriveConnection.Result.VALID && player != null) {
-                            releasePlayer();
-                            buildPlayer(savedPosition);
-                        } else {
-                            showPlayerError();
-                        }
-                    });
-                });
-            } catch (RejectedExecutionException e) {
-                Log.w(TAG, "Screen gone, token check dropped", e);
-            }
-        });
     }
 
     // ---- Fullscreen ----
@@ -841,6 +937,7 @@ public class SessionActivity extends AppCompatActivity {
         if (drive != null) {
             drive.shutdown();
         }
+        tokenRefresh.shutdown();
         executor.shutdownNow();
     }
 }
