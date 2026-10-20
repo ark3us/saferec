@@ -192,7 +192,7 @@
     <string name="tile_added">The tile is in quick settings</string>
     <string name="tile_steps">Swipe down twice from the top of the screen, tap the pencil, find \"Start SafeRec\" and drag it among your tiles.</string>
     <string name="timestamping_title">Certified time</string>
-    <string name="timestamping_summary">When there is a network, each piece gets a time stamp from Sectigo, an independent authority: proof it existed, unchanged, at that time. Only the file\'s fingerprint is sent.</string>
+    <string name="timestamping_summary">Each piece recorded while there is a network gets a time stamp from Sectigo, an independent authority: proof it existed, unchanged, at that time. Only the file\'s fingerprint is sent.</string>
     <string name="video_camera">Camera</string>
     <string name="drive_title">Google Drive</string>
     <string name="drive_connected_as">Connected as %s</string>

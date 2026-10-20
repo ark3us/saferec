@@ -155,7 +155,8 @@ net.ark3us.saferec/
     ├── RecordGesture.java        # A touch acts on the state it began in (pure Java)
     ├── NetworkWatcher.java       # Validated default network
     ├── DriveConnector.java       # Silent Drive check, only online with a token
-    ├── PermissionsBanner.java    # Slim banner when a permission is missing
+    ├── PermissionsBanner.java    # Slim banner when a permission is missing; also the gate of every start from the app
+    ├── PermissionsBannerModel.java # What the banner says, and whether a start asks first (pure Java)
     ├── FirstRun.java             # The three first-run cards over the viewfinder
     ├── FirstRunSteps.java        # Which cards are still due (pure Java)
     ├── SettingsRows.java         # Row builders of the settings screen

@@ -199,7 +199,7 @@
     <string name="tile_added">Il riquadro è nelle impostazioni rapide</string>
     <string name="tile_steps">Scorri due volte dall\'alto, tocca la matita, trova \"Avvia SafeRec\" e trascinalo tra i tuoi riquadri.</string>
     <string name="timestamping_title">Ora certificata</string>
-    <string name="timestamping_summary">Quando c\'è rete, ogni pezzo riceve una marca temporale da Sectigo, un\'autorità indipendente: la prova che esisteva, identico, in quel momento. Viene inviata solo l\'impronta del file.</string>
+    <string name="timestamping_summary">Ogni pezzo registrato mentre c\'è rete riceve una marca temporale da Sectigo, un\'autorità indipendente: la prova che esisteva, identico, in quel momento. Viene inviata solo l\'impronta del file.</string>
     <string name="video_camera">Fotocamera</string>
     <string name="drive_title">Google Drive</string>
     <string name="drive_connected_as">Collegato come %s</string>
