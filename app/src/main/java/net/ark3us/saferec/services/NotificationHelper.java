@@ -18,7 +18,9 @@ import net.ark3us.saferec.R;
 public class NotificationHelper {
     private NotificationHelper() {}
     private static final String TAG = "NotificationHelper";
-    public static final String CHANNEL_ID = "SafeRecServiceChannel";
+    public static final String CHANNEL_ID = "SafeRecServiceSilentChannel";
+    /** The first channel: default importance, so it made a sound. Android cannot change it later. */
+    private static final String OLD_CHANNEL_ID = "SafeRecServiceChannel";
     public static final int NOTIFICATION_ID = 1;
 
     public static void createNotificationChannel(Context context) {
@@ -30,8 +32,16 @@ public class NotificationHelper {
         NotificationChannel serviceChannel = new NotificationChannel(
                 CHANNEL_ID,
                 context.getString(R.string.notif_channel_name),
-                NotificationManager.IMPORTANCE_DEFAULT);
+                NotificationManager.IMPORTANCE_LOW);
+        serviceChannel.setSound(null, null);
+        serviceChannel.enableVibration(false);
         manager.createNotificationChannel(serviceChannel);
+        try {
+            manager.deleteNotificationChannel(OLD_CHANNEL_ID);
+        } catch (RuntimeException e) {
+            // Android refuses while a foreground service uses the channel
+            Log.w(TAG, "Could not delete the old notification channel", e);
+        }
     }
 
     public static Notification buildNotification(Context context, boolean isRecording, long recordingSinceMillis, int safeChunks,
