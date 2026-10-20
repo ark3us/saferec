@@ -1,7 +1,7 @@
 <resources>
     <string name="app_name">SafeRec</string>
     <string name="tile_name_start">Start SafeRec</string>
-    <string name="tile_description">Quick settings tile to start or stop SafeRec recording</string>
+    <string name="tile_description">Quick settings tile to start a SafeRec recording</string>
     <string name="switch_camera">Switch camera</string>
     <string name="video_quality">Video Quality</string>
     <string name="share_root_folder">Share recordings with a person</string>

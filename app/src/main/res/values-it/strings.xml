@@ -1,7 +1,7 @@
 <resources>
     <string name="app_name">SafeRec</string>
     <string name="tile_name_start">Avvia SafeRec</string>
-    <string name="tile_description">Riquadro impostazioni rapide per avviare o fermare la registrazione SafeRec</string>
+    <string name="tile_description">Riquadro impostazioni rapide per avviare una registrazione SafeRec</string>
     <string name="switch_camera">Cambia fotocamera</string>
     <string name="video_quality">Qualità video</string>
     <string name="share_root_folder">Condividi le registrazioni con una persona</string>
