@@ -18,6 +18,14 @@ public final class StartPolicy {
         return lastStartedPulseMs == 0 || nowMs - lastStartedPulseMs >= REPLAY_GAP_MS;
     }
 
+    /**
+     * Whether a start records video: when the start asks for it and the camera is granted. A
+     * refused camera never blocks a recording: it records sound only, as when the camera is lost.
+     */
+    static boolean recordsVideo(boolean videoWanted, boolean cameraGranted) {
+        return videoWanted && cameraGranted;
+    }
+
     public static Action forCommand(String command, boolean recording) {
         if (SafeRecService.CMD_START.equals(command)) {
             return recording ? Action.IGNORE : Action.START;

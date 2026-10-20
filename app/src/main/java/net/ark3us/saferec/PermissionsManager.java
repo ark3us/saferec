@@ -35,6 +35,10 @@ public class PermissionsManager {
     }
 
     private static final String TAG = PermissionsManager.class.getSimpleName();
+    /** Needed by every recording: without it nothing records. */
+    private static final String MICROPHONE = Manifest.permission.RECORD_AUDIO;
+    /** Asked for in Video mode, never needed: without it a video start records sound only. */
+    private static final String CAMERA = Manifest.permission.CAMERA;
     private final AppCompatActivity context;
     private ActivityResultLauncher<String[]> requestPermissionsLauncher;
     private ActivityResultLauncher<IntentSenderRequest> startAuthIntent;
@@ -159,29 +163,45 @@ public class PermissionsManager {
     }
 
     /**
-     * What a recording needs: the microphone always, the camera only for video. The one list
-     * behind every recording gate. An audio-only recording enters the foreground as microphone
-     * only, so it needs no camera.
+     * What a recording of this kind asks for: the microphone always, the camera only for video.
+     * The one list behind every recording request. Only the microphone is needed to start
+     * (canRecord): SafeRecService records sound only when the camera is refused. An audio-only
+     * recording enters the foreground as microphone only, so it never asks for the camera.
      */
     public static String[] recordingPermissions(boolean audioOnly) {
-        return audioOnly
-                ? new String[]{Manifest.permission.RECORD_AUDIO}
-                : new String[]{Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO};
+        return audioOnly ? new String[]{MICROPHONE} : new String[]{CAMERA, MICROPHONE};
     }
 
-    /** Camera and microphone: what a video recording needs. */
+    /** Whether a recording may start, in any mode: the microphone is granted. */
+    public static boolean canRecord(Context context) {
+        return granted(context, MICROPHONE);
+    }
+
+    /** Whether a video start records video: otherwise it records sound only. */
+    public static boolean hasCameraPermission(Context context) {
+        return granted(context, CAMERA);
+    }
+
+    /** Camera and microphone: everything a video recording asks for. */
     public static boolean hasRecordingPermissions(Context context) {
         return hasRecordingPermissions(context, false);
     }
 
-    /** Whether a recording of this kind may start: microphone, plus the camera for video. */
+    /**
+     * Whether everything a recording of this kind asks for is granted: the microphone, plus the
+     * camera for video. Not the gate of a start, which needs only the microphone (canRecord).
+     */
     public static boolean hasRecordingPermissions(Context context, boolean audioOnly) {
         for (String permission : recordingPermissions(audioOnly)) {
-            if (context.checkSelfPermission(permission) != PackageManager.PERMISSION_GRANTED) {
+            if (!granted(context, permission)) {
                 return false;
             }
         }
         return true;
+    }
+
+    private static boolean granted(Context context, String permission) {
+        return context.checkSelfPermission(permission) == PackageManager.PERMISSION_GRANTED;
     }
 
     /**
@@ -193,10 +213,11 @@ public class PermissionsManager {
     }
 
     /**
-     * Asks for what a recording of this kind needs and, on API 33+, notifications: an audio-only
-     * recording never asks for the camera. Runs onResult after the answer, or at once when all are
-     * granted. A request already on screen is joined: onResult then runs after that answer, and
-     * should check what it needs itself. Never asks for Drive.
+     * Asks for what a recording of this kind asks for (recordingPermissions) and, on API 33+,
+     * notifications, all in one request: an audio-only recording never asks for the camera. Runs
+     * onResult after the answer, or at once when all are granted. A request already on screen is
+     * joined: onResult then runs after that answer, and should check what it needs itself. Never
+     * asks for Drive.
      */
     public void requestRecordingPermissions(boolean audioOnly, @Nullable Runnable onResult) {
         if (permissionsInFlight) {
@@ -209,7 +230,7 @@ public class PermissionsManager {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             missing.add(Manifest.permission.POST_NOTIFICATIONS);
         }
-        missing.removeIf(p -> context.checkSelfPermission(p) == PackageManager.PERMISSION_GRANTED);
+        missing.removeIf(p -> granted(context, p));
         if (missing.isEmpty()) {
             Log.i(TAG, "All recording permissions already granted");
             allGranted = true;

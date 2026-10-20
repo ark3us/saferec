@@ -18,6 +18,12 @@ public class StartPolicyTest {
         assertEquals(IGNORE, StartPolicy.forCommand("SOMETHING_ELSE", true));
         assertEquals(IGNORE, StartPolicy.forCommand("SOMETHING_ELSE", false));
     }
+    @Test public void videoWithTheCamera() { assertTrue(StartPolicy.recordsVideo(true, true)); }
+    @Test public void aRefusedCameraRecordsSoundOnly() { assertFalse(StartPolicy.recordsVideo(true, false)); }
+    @Test public void audioOnlyStaysAudioOnly() {
+        assertFalse(StartPolicy.recordsVideo(false, true));
+        assertFalse(StartPolicy.recordsVideo(false, false));
+    }
     @Test public void replayAfterTheGap() { assertTrue(StartPolicy.replaysStarted(5000, 4000)); }
     @Test public void noReplayRightAfterAStart() { assertFalse(StartPolicy.replaysStarted(4999, 4000)); }
     @Test public void replayWhenNothingVibratedYet() { assertTrue(StartPolicy.replaysStarted(10, 0)); }

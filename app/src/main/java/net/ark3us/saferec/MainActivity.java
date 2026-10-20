@@ -309,17 +309,16 @@ public class MainActivity extends AppCompatActivity {
     }
 
     /**
-     * Runs the launch command. Only a start records, with the viewfinder's mode: it waits for what
-     * that mode needs, asked first if missing. Other commands, and no command, need nothing.
+     * Runs the launch command. Only a start records, with the viewfinder's mode, through the same
+     * gate as the record button: the microphone is needed, the camera is not. Other commands, and
+     * no command, need nothing.
      */
     private void launchWhenPermitted() {
-        boolean audioOnly = Settings.onlyAudio(this);
-        if (launchCommandHandled || !SafeRecService.CMD_START.equals(getCommand())
-                || PermissionsManager.hasRecordingPermissions(this, audioOnly)) {
-            // Posted on a view so the service starts only once the activity is visible
+        // Posted on a view so the service starts only once the activity is visible
+        if (launchCommandHandled || !SafeRecService.CMD_START.equals(getCommand())) {
             btnRecord.post(this::handleLaunchCommand);
         } else {
-            permissionsBanner.ask(audioOnly, () -> btnRecord.post(this::handleLaunchCommand));
+            permissionsBanner.whenCanRecord(Settings.onlyAudio(this), () -> btnRecord.post(this::handleLaunchCommand));
         }
     }
 
@@ -349,16 +348,12 @@ public class MainActivity extends AppCompatActivity {
     // ---- Recording and permissions ----
 
     /**
-     * Waits only for what the mode records with (the microphone, plus the camera for video), never
-     * for Drive, the network or the first run.
+     * Waits only for the microphone, never for Drive, the network or the first run. In Video mode
+     * a missing camera is asked for with it, but a refused camera never blocks: the service then
+     * records sound only.
      */
     private void startRecording() {
-        boolean audioOnly = Settings.onlyAudio(this);
-        if (PermissionsManager.hasRecordingPermissions(this, audioOnly)) {
-            startSafeRecService(SafeRecService.CMD_START);
-        } else {
-            permissionsBanner.ask(audioOnly, () -> startSafeRecService(SafeRecService.CMD_START));
-        }
+        permissionsBanner.whenCanRecord(Settings.onlyAudio(this), () -> startSafeRecService(SafeRecService.CMD_START));
     }
 
     /** While a start or stop is on its way; the next status, or the timeout, ends it. */

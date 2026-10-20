@@ -17,20 +17,24 @@ import net.ark3us.saferec.PermissionsManager;
 import net.ark3us.saferec.R;
 
 /**
- * The banner under the top bar after a recording permission was refused: never over the record
- * button. It says what the mode needs (the microphone, plus the camera for video). Its "Allow"
- * asks again, or opens the app's settings once Android stops showing the dialog.
+ * The gate of a start, and the banner under the top bar after a recording permission was refused:
+ * never over the record button. A start needs the microphone only. In Video mode the camera is
+ * asked for with it, and a refused camera records sound only, which the banner says
+ * (PermissionsBannerModel). Its "Allow" asks again, or opens the app's settings once Android
+ * stops showing the dialog.
  */
 public final class PermissionsBanner {
     private static final String TAG = PermissionsBanner.class.getSimpleName();
-    private static final String STATE_DENIED = "permissions_denied";
+    private static final String STATE_MICROPHONE_REFUSED = "microphone_refused";
+    private static final String STATE_CAMERA_REFUSED = "camera_refused";
 
     private final Activity activity;
     private final PermissionsManager permissions;
     private final View banner;
     private final TextView text;
-    // Refused since this screen opened
-    private boolean denied;
+    // Refused since this screen opened; meaningful only while still missing
+    private boolean microphoneRefused;
+    private boolean cameraRefused;
     // The mode the banner speaks for
     private boolean audioOnly;
 
@@ -40,49 +44,84 @@ public final class PermissionsBanner {
         this.permissions = permissions;
         this.banner = banner;
         this.text = text;
-        denied = savedState != null && savedState.getBoolean(STATE_DENIED);
+        microphoneRefused = savedState != null && savedState.getBoolean(STATE_MICROPHONE_REFUSED);
+        cameraRefused = savedState != null && savedState.getBoolean(STATE_CAMERA_REFUSED);
         allow.setOnClickListener(v -> onAllow());
     }
 
     /**
-     * Asks for what a recording of this kind needs. Runs onGranted once granted; a refusal shows
-     * the banner.
+     * Runs start once a recording of this kind can start: at once when nothing needs asking,
+     * otherwise after the answer, as soon as the microphone is granted. The service records
+     * video only when the camera was granted too.
      */
-    public void ask(boolean audioOnly, @Nullable Runnable onGranted) {
+    public void whenCanRecord(boolean audioOnly, Runnable start) {
         this.audioOnly = audioOnly;
+        if (PermissionsBannerModel.mustAsk(audioOnly, PermissionsManager.canRecord(activity),
+                PermissionsManager.hasCameraPermission(activity), cameraRefused)) {
+            ask(audioOnly, start);
+        } else {
+            start.run();
+        }
+    }
+
+    /**
+     * Asks for what a recording of this kind asks for, in one request. Runs onCanRecord once the
+     * microphone is granted; a refusal shows the banner.
+     */
+    private void ask(boolean audioOnly, @Nullable Runnable onCanRecord) {
         permissions.requestRecordingPermissions(audioOnly, () -> {
-            if (PermissionsManager.hasRecordingPermissions(activity, audioOnly)) {
-                denied = false;
-                render();
-                if (onGranted != null) {
-                    onGranted.run();
-                }
-            } else {
-                Log.i(TAG, "Recording permission refused, audioOnly=" + audioOnly);
-                denied = true;
-                render();
+            boolean microphone = PermissionsManager.canRecord(activity);
+            microphoneRefused = !microphone;
+            if (!audioOnly) {
+                cameraRefused = !PermissionsManager.hasCameraPermission(activity);
+            }
+            Log.i(TAG, "Permissions answered: microphone " + microphone + ", camera refused " + cameraRefused
+                    + ", audioOnly=" + audioOnly);
+            render();
+            if (microphone && onCanRecord != null) {
+                onCanRecord.run();
             }
         });
     }
 
-    /** The screen came back or the mode changed: the banner goes once this mode can record. */
+    /** The screen came back or the mode changed: what was granted since no longer shows. */
     public void refresh(boolean audioOnly) {
         this.audioOnly = audioOnly;
-        if (PermissionsManager.hasRecordingPermissions(activity, audioOnly)) {
-            denied = false;
+        if (PermissionsManager.canRecord(activity)) {
+            microphoneRefused = false;
+        }
+        if (PermissionsManager.hasCameraPermission(activity)) {
+            cameraRefused = false;
         }
         render();
     }
 
     public void save(Bundle outState) {
-        outState.putBoolean(STATE_DENIED, denied);
+        outState.putBoolean(STATE_MICROPHONE_REFUSED, microphoneRefused);
+        outState.putBoolean(STATE_CAMERA_REFUSED, cameraRefused);
     }
 
     private void render() {
-        text.setText(audioOnly ? R.string.permissions_banner_audio : R.string.permissions_banner);
-        banner.setVisibility(denied ? View.VISIBLE : View.GONE);
+        PermissionsBannerModel.Kind kind = PermissionsBannerModel.kindOf(audioOnly,
+                PermissionsManager.canRecord(activity), PermissionsManager.hasCameraPermission(activity),
+                microphoneRefused, cameraRefused);
+        switch (kind) {
+            case NEEDS_MICROPHONE:
+                text.setText(R.string.permissions_banner_audio);
+                break;
+            case NEEDS_CAMERA_AND_MICROPHONE:
+                text.setText(R.string.permissions_banner);
+                break;
+            case SOUND_ONLY:
+                text.setText(R.string.permissions_banner_sound_only);
+                break;
+            default:
+                break;
+        }
+        banner.setVisibility(kind == PermissionsBannerModel.Kind.HIDDEN ? View.GONE : View.VISIBLE);
     }
 
+    /** Asks for what is missing: with sound only, the camera alone (the microphone is granted). */
     private void onAllow() {
         if (!dialogNoLongerShown()) {
             ask(audioOnly, null);

@@ -22,6 +22,7 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.core.content.ContextCompat;
 
+import net.ark3us.saferec.PermissionsManager;
 import net.ark3us.saferec.data.ServiceState;
 import net.ark3us.saferec.media.AudioStreamRecorder;
 import net.ark3us.saferec.media.ChunkRepair;
@@ -343,7 +344,11 @@ public class SafeRecService extends Service {
      * its own, and changes only its camera.
      */
     private void startOrSwitch(String command, boolean quick) {
-        boolean includeVideo = quick ? !Settings.isQuickStartAudioOnly(this) : !Settings.onlyAudio(this);
+        boolean videoWanted = quick ? !Settings.isQuickStartAudioOnly(this) : !Settings.onlyAudio(this);
+        // A refused camera never blocks a recording, from the app or a quick start: it records
+        // sound only, in the foreground as microphone alone. Android 14+ refuses the camera type
+        // without its permission, and the dataSync fallback is no recording type.
+        boolean includeVideo = StartPolicy.recordsVideo(videoWanted, PermissionsManager.hasCameraPermission(this));
         boolean useFront = quick ? Settings.isQuickStartFrontCamera(this) : Settings.getUseFrontCamera(this);
         if (CMD_START.equals(command)) {
             // Sent with startForegroundService(): the service must enter the foreground whatever
@@ -361,6 +366,9 @@ public class SafeRecService extends Service {
         }
         switch (StartPolicy.forCommand(command, isRecording)) {
             case START:
+                if (videoWanted && !includeVideo) {
+                    Log.w(TAG, "No camera permission: recording sound only");
+                }
                 startToConfirm = true;
                 startRecording(includeVideo, useFront);
                 break;
