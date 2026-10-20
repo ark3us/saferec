@@ -248,6 +248,7 @@
     <string name="session_explain_not_checked">Questa registrazione non ha su Drive l\'elenco dei suoi pezzi (le versioni precedenti di SafeRec non lo creavano), quindi non si può verificare.</string>
     <string name="session_explain_unreadable">Non è stato possibile leggere l\'elenco dei suoi pezzi, quindi non si può verificare. Riprova più tardi.</string>
     <string name="session_share_video">Condividi il video</string>
+    <string name="session_share_audio">Condividi l\'audio</string>
     <string name="session_trash">Sposta nel cestino</string>
     <string name="session_technical">Dettagli tecnici</string>
     <string name="player_error">Impossibile riprodurre la registrazione ora. Controlla la rete e riprova.</string>

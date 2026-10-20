@@ -239,6 +239,7 @@
     <string name="session_explain_not_checked">This recording has no list of its pieces on Drive (older versions of SafeRec did not make one), so it cannot be checked.</string>
     <string name="session_explain_unreadable">The list of its pieces could not be read, so it cannot be checked. Try again later.</string>
     <string name="session_share_video">Share the video</string>
+    <string name="session_share_audio">Share the audio</string>
     <string name="session_trash">Move to trash</string>
     <string name="session_technical">Technical details</string>
     <string name="player_error">Cannot play this recording right now. Check the network and try again.</string>

@@ -14,6 +14,7 @@ import com.google.android.material.button.MaterialButton;
 import com.google.android.material.progressindicator.CircularProgressIndicatorSpec;
 import com.google.android.material.progressindicator.IndeterminateDrawable;
 import net.ark3us.saferec.media.MediaMerger;
+import net.ark3us.saferec.media.MuxerSink;
 import net.ark3us.saferec.net.SessionManifest;
 import net.ark3us.saferec.services.SafeRecService;
 import java.io.File;
@@ -379,6 +380,7 @@ public class SessionActivity extends AppCompatActivity {
         status.setVisibility(View.VISIBLE);
         SessionsAdapter.bindStatus(status, summary.status);
         ((TextView) findViewById(R.id.session_explain)).setText(explain(summary));
+        shareVideoButton.setText(isAudio(summary) ? R.string.session_share_audio : R.string.session_share_video);
 
         List<String> ids = SessionPlaylist.fileIds(summary);
         boolean piecesChanged = !ids.equals(fileIds);
@@ -557,13 +559,14 @@ public class SessionActivity extends AppCompatActivity {
         }
         chunks.sort((a, b) -> Integer.compare(a.mediaFile.sequenceNumber, b.mediaFile.sequenceNumber));
         String sessionId = summary.sessionId;
+        String type = isAudio(summary) ? "audio/mp4" : "video/mp4";
         String used = token;
         Toast.makeText(this, R.string.downloading_chunks, Toast.LENGTH_SHORT).show();
         drive.downloadFiles(chunks, new DriveRecordings.Callback<List<File>>() {
             @Override
             public void onSuccess(List<File> localFiles) {
                 try {
-                    executor.execute(() -> mergeAndShare(sessionId, localFiles));
+                    executor.execute(() -> mergeAndShare(sessionId, type, localFiles));
                 } catch (RejectedExecutionException e) {
                     for (File f : localFiles) {
                         f.delete();
@@ -589,7 +592,12 @@ public class SessionActivity extends AppCompatActivity {
         });
     }
 
-    private void mergeAndShare(String sessionId, List<File> localFiles) {
+    private static boolean isAudio(SessionSummary summary) {
+        return MuxerSink.DATA_TYPE_AUDIO.equals(summary.dataType);
+    }
+
+    /** @param type the MIME type the share sheet offers it as: an audio session is sound only */
+    private void mergeAndShare(String sessionId, String type, List<File> localFiles) {
         try {
             File shareDir = new File(getCacheDir(), "merged_sharing");
             if (!shareDir.isDirectory() && !shareDir.mkdirs()) {
@@ -604,7 +612,7 @@ public class SessionActivity extends AppCompatActivity {
                 }
                 endBusy();
                 Intent intent = new Intent(Intent.ACTION_SEND);
-                intent.setType("video/mp4");
+                intent.setType(type);
                 intent.putExtra(Intent.EXTRA_STREAM, contentUri);
                 intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
                 startActivity(Intent.createChooser(intent, getString(R.string.share_merged_recording)));
