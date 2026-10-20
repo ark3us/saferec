@@ -54,7 +54,7 @@ public final class CameraGesture {
     /**
      * The intents the double press sends, to try them without the key: unlocked, then locked.
      * Android stores the "Always" choice per action, so each one needs its own try: with only
-     * the first, the double press of a locked phone still opened the other camera app.
+     * the first, a locked phone still asked which app to use, behind the unlock.
      */
     public static Intent[] tryIntents() {
         return new Intent[] {
