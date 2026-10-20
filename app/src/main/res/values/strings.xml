@@ -164,8 +164,8 @@
     <string name="camera_gesture_not_saved">Android did not save SafeRec as the default. If it suggested another app, you tapped SafeRec just once: try again, and now choose SafeRec, then Always.</string>
     <string name="camera_gesture_try_again">Try again</string>
     <string name="camera_gesture_ready">Done: a double press of the power key now records, locked or not. Android vibrates once for the gesture, then SafeRec twice.</string>
-    <string name="camera_gesture_stuck">Android keeps proposing another camera app and does not let SafeRec become the default on this phone. The option is now off. To start a recording without unlocking, use the three presses of the power key or the quick settings tile: they always work.</string>
-    <string name="camera_gesture_stuck_no_guard">Android keeps proposing another camera app and does not let SafeRec become the default on this phone. The option is now off. To start a recording without unlocking, use the quick settings tile: it always works.</string>
+    <string name="camera_gesture_stuck">Android keeps proposing another camera app and does not let SafeRec become the default on this phone. The option is now off. To start a recording without unlocking, use the three presses of the power key or the quick settings tile instead.</string>
+    <string name="camera_gesture_stuck_no_guard">Android keeps proposing another camera app and does not let SafeRec become the default on this phone. The option is now off. To start a recording without unlocking, use the quick settings tile instead.</string>
     <string name="camera_gesture_try">Try it now</string>
     <string name="camera_gesture_no_app">No app can open the camera</string>
     <string name="power_gesture">Three presses of the power key</string>

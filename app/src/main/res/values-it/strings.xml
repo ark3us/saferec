@@ -171,8 +171,8 @@
     <string name="camera_gesture_not_saved">Android non ha salvato SafeRec come predefinita. Se proponeva un\'altra app, hai toccato SafeRec una volta sola: riprova, e ora scegli SafeRec, poi Sempre.</string>
     <string name="camera_gesture_try_again">Riprova</string>
     <string name="camera_gesture_ready">Fatto: ora una doppia pressione del tasto di accensione registra, bloccato o no. Android vibra una volta per il gesto, poi SafeRec due volte.</string>
-    <string name="camera_gesture_stuck">Android continua a proporre un\'altra app fotocamera e su questo telefono non lascia che SafeRec diventi quella predefinita. L\'opzione ora è spenta. Per avviare una registrazione senza sbloccare usa le tre pressioni del tasto di accensione o il riquadro nelle impostazioni rapide: funzionano sempre.</string>
-    <string name="camera_gesture_stuck_no_guard">Android continua a proporre un\'altra app fotocamera e su questo telefono non lascia che SafeRec diventi quella predefinita. L\'opzione ora è spenta. Per avviare una registrazione senza sbloccare usa il riquadro nelle impostazioni rapide: funziona sempre.</string>
+    <string name="camera_gesture_stuck">Android continua a proporre un\'altra app fotocamera e su questo telefono non lascia che SafeRec diventi quella predefinita. L\'opzione ora è spenta. Per avviare una registrazione senza sbloccare usa invece le tre pressioni del tasto di accensione o il riquadro nelle impostazioni rapide.</string>
+    <string name="camera_gesture_stuck_no_guard">Android continua a proporre un\'altra app fotocamera e su questo telefono non lascia che SafeRec diventi quella predefinita. L\'opzione ora è spenta. Per avviare una registrazione senza sbloccare usa invece il riquadro nelle impostazioni rapide.</string>
     <string name="camera_gesture_try">Provalo ora</string>
     <string name="camera_gesture_no_app">Nessuna app può aprire la fotocamera</string>
     <string name="power_gesture">Tre pressioni del tasto di accensione</string>
