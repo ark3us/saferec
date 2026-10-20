@@ -163,7 +163,7 @@
     <string name="camera_gesture_try_locked">Saved for the unlocked phone. Now the locked phone: choose SafeRec, then Always.</string>
     <string name="camera_gesture_not_saved">Android did not save SafeRec as the default. If it suggested another app, you tapped SafeRec just once: try again, and now choose SafeRec, then Always.</string>
     <string name="camera_gesture_try_again">Try again</string>
-    <string name="camera_gesture_ready">Done: a double press of the power key now records, locked or not. Android vibrates once for the gesture, then SafeRec twice.</string>
+    <string name="camera_gesture_ready">Done: a double press of the power key now records, locked or not. Android vibrates once for the gesture; then, if vibrations are on, SafeRec twice.</string>
     <string name="camera_gesture_stuck">Android keeps proposing another camera app and does not let SafeRec become the default on this phone. The option is now off. To start a recording without unlocking, use the three presses of the power key or the quick settings tile instead.</string>
     <string name="camera_gesture_stuck_no_guard">Android keeps proposing another camera app and does not let SafeRec become the default on this phone. The option is now off. To start a recording without unlocking, use the quick settings tile instead.</string>
     <string name="camera_gesture_try">Try it now</string>
@@ -220,7 +220,7 @@
     <string name="tile_added">The tile is in quick settings</string>
     <string name="tile_steps">Swipe down twice from the top of the screen, tap the pencil, find \"Start SafeRec\" and drag it among your tiles.</string>
     <string name="timestamping_title">Certified time</string>
-    <string name="timestamping_summary">Each piece gets a time stamp from Sectigo, an independent authority: proof it existed, unchanged, at that time. Only the file\'s fingerprint is sent.</string>
+    <string name="timestamping_summary">When there is a network, each piece gets a time stamp from Sectigo, an independent authority: proof it existed, unchanged, at that time. Only the file\'s fingerprint is sent.</string>
     <string name="video_camera">Camera</string>
     <string name="drive_title">Google Drive</string>
     <string name="drive_connected_as">Connected as %s</string>
@@ -235,11 +235,11 @@
     <string name="guide_title">Guide</string>
 
     <string name="first_run_about_title">Evidence that survives</string>
-    <string name="first_run_about_text">SafeRec records video and sound and sends it to your Google Drive in 10-second pieces, so what you recorded is safe even if the phone is broken or taken. It records without a network too: pieces wait on the phone.</string>
+    <string name="first_run_about_text">SafeRec records video and sound and sends each 10-second piece to your Google Drive as soon as it can. What reached Drive stays safe even if the phone is broken or taken. Without a network it keeps recording, and the pieces wait on the phone.</string>
     <string name="first_run_permissions_title">Camera and microphone</string>
     <string name="first_run_permissions_text">SafeRec needs them to record, and notifications to show that it is recording.</string>
     <string name="first_run_three_presses_title">Record without unlocking</string>
-    <string name="first_run_three_presses_text">Press the power key three times, even with the phone locked in a pocket. Two short vibrations confirm. It needs two permissions, asked next.</string>
+    <string name="first_run_three_presses_text">Press the power key three times, even with the phone locked in a pocket. If vibrations are on, two short pulses confirm. It needs two permissions, asked next.</string>
     <string name="first_run_next">Next</string>
     <string name="first_run_allow">Allow</string>
     <string name="first_run_turn_on">Turn on</string>

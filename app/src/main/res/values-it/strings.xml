@@ -170,7 +170,7 @@
     <string name="camera_gesture_try_locked">Salvato per il telefono sbloccato. Ora il telefono bloccato: scegli SafeRec, poi Sempre.</string>
     <string name="camera_gesture_not_saved">Android non ha salvato SafeRec come predefinita. Se proponeva un\'altra app, hai toccato SafeRec una volta sola: riprova, e ora scegli SafeRec, poi Sempre.</string>
     <string name="camera_gesture_try_again">Riprova</string>
-    <string name="camera_gesture_ready">Fatto: ora una doppia pressione del tasto di accensione registra, bloccato o no. Android vibra una volta per il gesto, poi SafeRec due volte.</string>
+    <string name="camera_gesture_ready">Fatto: ora una doppia pressione del tasto di accensione registra, bloccato o no. Android vibra una volta per il gesto; poi, se le vibrazioni sono attive, SafeRec due volte.</string>
     <string name="camera_gesture_stuck">Android continua a proporre un\'altra app fotocamera e su questo telefono non lascia che SafeRec diventi quella predefinita. L\'opzione ora è spenta. Per avviare una registrazione senza sbloccare usa invece le tre pressioni del tasto di accensione o il riquadro nelle impostazioni rapide.</string>
     <string name="camera_gesture_stuck_no_guard">Android continua a proporre un\'altra app fotocamera e su questo telefono non lascia che SafeRec diventi quella predefinita. L\'opzione ora è spenta. Per avviare una registrazione senza sbloccare usa invece il riquadro nelle impostazioni rapide.</string>
     <string name="camera_gesture_try">Provalo ora</string>
@@ -228,7 +228,7 @@
     <string name="tile_added">Il riquadro è nelle impostazioni rapide</string>
     <string name="tile_steps">Scorri due volte dall\'alto, tocca la matita, trova \"Avvia SafeRec\" e trascinalo tra i tuoi riquadri.</string>
     <string name="timestamping_title">Ora certificata</string>
-    <string name="timestamping_summary">Ogni pezzo riceve una marca temporale da Sectigo, un\'autorità indipendente: la prova che esisteva, identico, in quel momento. Viene inviata solo l\'impronta del file.</string>
+    <string name="timestamping_summary">Quando c\'è rete, ogni pezzo riceve una marca temporale da Sectigo, un\'autorità indipendente: la prova che esisteva, identico, in quel momento. Viene inviata solo l\'impronta del file.</string>
     <string name="video_camera">Fotocamera</string>
     <string name="drive_title">Google Drive</string>
     <string name="drive_connected_as">Collegato come %s</string>
@@ -243,11 +243,11 @@
     <string name="guide_title">Guida</string>
 
     <string name="first_run_about_title">Prove che sopravvivono</string>
-    <string name="first_run_about_text">SafeRec registra video e audio e li manda sul tuo Google Drive a pezzi di 10 secondi: ciò che hai registrato è al sicuro anche se il telefono viene rotto o preso. Registra anche senza rete: i pezzi aspettano sul telefono.</string>
+    <string name="first_run_about_text">SafeRec registra video e audio e manda ogni pezzo di 10 secondi sul tuo Google Drive appena può. Ciò che è arrivato su Drive resta al sicuro anche se il telefono viene rotto o preso. Senza rete continua a registrare, e i pezzi aspettano sul telefono.</string>
     <string name="first_run_permissions_title">Fotocamera e microfono</string>
     <string name="first_run_permissions_text">Servono per registrare, e le notifiche per mostrare che sta registrando.</string>
     <string name="first_run_three_presses_title">Registra senza sbloccare</string>
-    <string name="first_run_three_presses_text">Premi tre volte il tasto di accensione, anche col telefono bloccato in tasca. Due vibrazioni brevi confermano. Servono due permessi, chiesti subito dopo.</string>
+    <string name="first_run_three_presses_text">Premi tre volte il tasto di accensione, anche col telefono bloccato in tasca. Se le vibrazioni sono attive, due impulsi brevi confermano. Servono due permessi, chiesti subito dopo.</string>
     <string name="first_run_next">Avanti</string>
     <string name="first_run_allow">Consenti</string>
     <string name="first_run_turn_on">Attiva</string>
