@@ -5,6 +5,7 @@ import static net.ark3us.saferec.net.SessionSummary.Status.INCOMPLETE;
 import static net.ark3us.saferec.net.SessionSummary.Status.NOT_CHECKED;
 import static net.ark3us.saferec.net.SessionSummary.Status.UPLOADING;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
@@ -95,7 +96,31 @@ public class SessionSummaryTest {
 
     @Test
     public void notCheckedWhenTheManifestCannotBeRead() {
-        assertEquals(NOT_CHECKED, summary(withManifest(null), piece(0)).status);
+        SessionSummary s = summary(withManifest(null), piece(0));
+        assertEquals(NOT_CHECKED, s.status);
+        assertTrue(s.manifestUnreadable);
+    }
+
+    @Test
+    public void noManifestIsNotAnUnreadableOne() {
+        SessionSummary s = summary(null, piece(0));
+        assertEquals(NOT_CHECKED, s.status);
+        assertFalse(s.manifestUnreadable);
+    }
+
+    @Test
+    public void anEmptyManifestIsNeverComplete() {
+        // Its header only: it lists no chunk, so it proves nothing
+        String empty = "# SafeRec session " + SESSION + ", video\n";
+        SessionSummary s = summary(withManifest(SessionManifest.gaps(empty, ints(0), ints())), piece(0));
+        assertEquals(NOT_CHECKED, s.status);
+        assertTrue(s.manifestUnreadable);
+        assertEquals(NOT_CHECKED, summary(withManifest(SessionManifest.gaps("", ints(0), ints())), piece(0)).status);
+    }
+
+    @Test
+    public void aReadManifestIsNotUnreadable() {
+        assertFalse(summary(withManifest(noGaps()), piece(0)).manifestUnreadable);
     }
 
     @Test

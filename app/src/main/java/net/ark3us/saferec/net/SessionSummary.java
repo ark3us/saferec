@@ -27,7 +27,7 @@ public final class SessionSummary {
         UPLOADING,
         /** Chunks the manifest lists are on neither Drive nor this phone. */
         INCOMPLETE,
-        /** No readable manifest: nothing proves the session whole. */
+        /** No manifest, or one that cannot be read or lists nothing: nothing proves the session whole. */
         NOT_CHECKED
     }
 
@@ -72,9 +72,14 @@ public final class SessionSummary {
     public final Status status;
     public final List<Integer> onPhone;
     public final List<Integer> lost;
-    /** Null when the manifest is missing or could not be read. */
+    /** Null when the manifest is missing, could not be read, or lists no chunk. */
     @Nullable
     public final SessionManifest.Gaps gaps;
+    /**
+     * A manifest is on Drive, but it could not be read (the network, an expired token) or lists
+     * no chunk. Still not checked, but not because an older version made the session.
+     */
+    public final boolean manifestUnreadable;
     /** Pieces, timestamps, cut originals, the manifest and its timestamp: what an export downloads. */
     public final List<DriveRecordings.RecordingItem> files;
     public final List<String> allFileIds;
@@ -82,7 +87,7 @@ public final class SessionSummary {
     public final List<String> folderIds;
 
     private SessionSummary(String sessionId, String dataType, List<Piece> pieces,
-                           @Nullable SessionManifest.Gaps gaps,
+                           @Nullable SessionManifest.Gaps gaps, boolean manifestUnreadable,
                            List<DriveRecordings.RecordingItem> files) {
         this.sessionId = sessionId;
         this.dataType = dataType;
@@ -90,6 +95,7 @@ public final class SessionSummary {
         this.pieces = Collections.unmodifiableList(pieces);
         this.gaps = gaps;
         this.status = statusOf(gaps);
+        this.manifestUnreadable = manifestUnreadable;
         this.onPhone = gaps == null ? Collections.emptyList() : Collections.unmodifiableList(gaps.onPhone);
         this.lost = gaps == null ? Collections.emptyList() : Collections.unmodifiableList(gaps.lost);
         this.files = Collections.unmodifiableList(files);
@@ -162,6 +168,7 @@ public final class SessionSummary {
     private static SessionSummary build(List<DriveRecordings.RecordingItem> files) {
         MediaFile any = files.get(0).mediaFile;
         SessionManifest.Gaps gaps = null;
+        boolean manifest = false;
         Map<Integer, DriveRecordings.RecordingItem> chunks = new TreeMap<>();
         Map<Integer, String> timestamps = new TreeMap<>();
         Map<Integer, String> cuts = new TreeMap<>();
@@ -184,6 +191,7 @@ public final class SessionSummary {
                     cutTimestamps.putIfAbsent(seq, id);
                     break;
                 case SessionManifest.EXTENSION:
+                    manifest = true;
                     if (item.gaps != null) {
                         gaps = item.gaps;
                     }
@@ -202,7 +210,8 @@ public final class SessionSummary {
                     file.getThumbnailLink(), timestamps.get(seq), cuts.get(seq), cutTimestamps.get(seq),
                     file.getSize() != null ? file.getSize() : 0));
         }
-        return new SessionSummary(any.sessionId, any.dataType, pieces, gaps, new ArrayList<>(files));
+        return new SessionSummary(any.sessionId, any.dataType, pieces, gaps, manifest && gaps == null,
+                new ArrayList<>(files));
     }
 
     private static long parseId(String sessionId) {

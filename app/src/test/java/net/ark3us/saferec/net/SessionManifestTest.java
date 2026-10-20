@@ -1,6 +1,7 @@
 package net.ark3us.saferec.net;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 import java.util.Arrays;
@@ -84,6 +85,13 @@ public class SessionManifestTest {
         String text = manifest(SessionManifest.startedLine(chunk(0)),
                 SessionManifest.chunkLine(SessionManifest.CHUNK, chunk(0), 10, HASH));
         assertTrue(SessionManifest.gaps(text, Collections.singletonList(0), Collections.emptyList()).isEmpty());
+    }
+
+    @Test
+    public void aManifestThatListsNothingHasNoGaps() {
+        // Nothing to compare Drive with: the session stays unchecked, never complete
+        assertNull(SessionManifest.gaps(manifest(), Collections.singletonList(0), Collections.emptyList()));
+        assertNull(SessionManifest.gaps("", Collections.emptyList(), Collections.emptyList()));
     }
 
     @Test

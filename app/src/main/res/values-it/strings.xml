@@ -245,7 +245,8 @@
         <item quantity="many">Mancano %1$d pezzi su Drive.</item>
         <item quantity="other">Mancano %1$d pezzi su Drive.</item>
     </plurals>
-    <string name="session_explain_not_checked">Registrata da una versione precedente di SafeRec: non ha l\'elenco dei pezzi da verificare.</string>
+    <string name="session_explain_not_checked">Questa registrazione non ha su Drive l\'elenco dei suoi pezzi (le versioni precedenti di SafeRec non lo creavano), quindi non si può verificare.</string>
+    <string name="session_explain_unreadable">Non è stato possibile leggere l\'elenco dei suoi pezzi, quindi non si può verificare. Riprova più tardi.</string>
     <string name="session_share_video">Condividi il video</string>
     <string name="session_trash">Sposta nel cestino</string>
     <string name="session_technical">Dettagli tecnici</string>

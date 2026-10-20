@@ -236,7 +236,8 @@
         <item quantity="one">%1$d piece is missing on Drive.</item>
         <item quantity="other">%1$d pieces are missing on Drive.</item>
     </plurals>
-    <string name="session_explain_not_checked">Recorded by an older version of SafeRec: it has no list of its pieces to check.</string>
+    <string name="session_explain_not_checked">This recording has no list of its pieces on Drive (older versions of SafeRec did not make one), so it cannot be checked.</string>
+    <string name="session_explain_unreadable">The list of its pieces could not be read, so it cannot be checked. Try again later.</string>
     <string name="session_share_video">Share the video</string>
     <string name="session_trash">Move to trash</string>
     <string name="session_technical">Technical details</string>

@@ -3,6 +3,8 @@ package net.ark3us.saferec.net;
 import android.content.Context;
 import android.util.Log;
 
+import androidx.annotation.Nullable;
+
 import net.ark3us.saferec.misc.Settings;
 
 import java.io.File;
@@ -159,9 +161,18 @@ public final class SessionManifest {
         }
     }
 
+    /**
+     * Null when the manifest lists no chunk (its header only, or nothing): there is nothing to
+     * compare Drive with, so it must never make a session look complete.
+     */
+    @Nullable
     public static Gaps gaps(String manifest, Collection<Integer> onDrive, Collection<Integer> onPhone) {
+        Map<Integer, String> recorded = parse(manifest);
+        if (recorded.isEmpty()) {
+            return null;
+        }
         Gaps gaps = new Gaps();
-        for (Integer seq : missing(parse(manifest), onDrive)) {
+        for (Integer seq : missing(recorded, onDrive)) {
             (onPhone.contains(seq) ? gaps.onPhone : gaps.lost).add(seq);
         }
         return gaps;

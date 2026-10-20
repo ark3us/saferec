@@ -618,7 +618,9 @@ public class SessionActivity extends AppCompatActivity {
                 return getResources().getQuantityString(R.plurals.session_explain_incomplete,
                         summary.lost.size(), summary.lost.size());
             default:
-                return getString(R.string.session_explain_not_checked);
+                // Not checked: no manifest (an older version), or one that could not be read
+                return getString(summary.manifestUnreadable
+                        ? R.string.session_explain_unreadable : R.string.session_explain_not_checked);
         }
     }
 

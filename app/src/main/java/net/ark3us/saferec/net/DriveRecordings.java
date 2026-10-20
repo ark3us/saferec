@@ -35,7 +35,7 @@ public class DriveRecordings {
     public static class RecordingItem {
         public final MediaFile mediaFile;
         public final com.google.api.services.drive.model.File driveFile;
-        /** On a session manifest: the chunks it lists that Drive lacks. */
+        /** On a session manifest: the chunks it lists that Drive lacks; null when unread or empty. */
         public SessionManifest.Gaps gaps;
 
         public RecordingItem(MediaFile mediaFile, com.google.api.services.drive.model.File driveFile) {
@@ -91,7 +91,9 @@ public class DriveRecordings {
                 manifest.gaps = SessionManifest.gaps(content.toString("UTF-8"),
                         onDrive.getOrDefault(key, Collections.emptySet()),
                         onPhone.getOrDefault(key, Collections.emptySet()));
-                if (!manifest.gaps.isEmpty()) {
+                if (manifest.gaps == null) {
+                    Log.w(TAG, "Session " + key + ": the manifest lists no chunk");
+                } else if (!manifest.gaps.isEmpty()) {
                     Log.w(TAG, "Session " + key + ": on this phone " + manifest.gaps.onPhone + ", lost " + manifest.gaps.lost);
                 }
             } catch (IOException e) {
