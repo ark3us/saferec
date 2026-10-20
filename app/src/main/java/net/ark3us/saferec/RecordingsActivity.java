@@ -60,6 +60,9 @@ public class RecordingsActivity extends AppCompatActivity {
     private TextView waitingBannerText;
     private MaterialButton waitingBannerAction;
     private int pendingPieces;
+    // One per token: it owns a thread, so a load never makes its own
+    private DriveRecordings drive;
+    private String driveToken;
     private boolean connecting;
     // Each load takes a number; only the latest may draw, so a slow older answer never wins
     private int loadGeneration;
@@ -135,6 +138,9 @@ public class RecordingsActivity extends AppCompatActivity {
     protected void onDestroy() {
         super.onDestroy();
         thumbnails.shutdown();
+        if (drive != null) {
+            drive.shutdown();
+        }
         backgroundExecutor.shutdown();
     }
 
@@ -153,7 +159,14 @@ public class RecordingsActivity extends AppCompatActivity {
             emptyState.setVisibility(View.GONE);
             progress.setVisibility(View.VISIBLE);
         }
-        new DriveRecordings(this, token).listSessions(new DriveRecordings.Callback<List<SessionSummary>>() {
+        if (drive == null || !token.equals(driveToken)) {
+            if (drive != null) {
+                drive.shutdown();
+            }
+            drive = new DriveRecordings(this, token);
+            driveToken = token;
+        }
+        drive.listSessions(new DriveRecordings.Callback<List<SessionSummary>>() {
             @Override
             public void onSuccess(List<SessionSummary> sessions) {
                 mainHandler.post(() -> {
