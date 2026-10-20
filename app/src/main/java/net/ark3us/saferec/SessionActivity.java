@@ -143,7 +143,9 @@ public class SessionActivity extends AppCompatActivity {
         EdgeToEdge.enable(this);
         setContentView(R.layout.activity_session);
         ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.session_root), (v, insets) -> {
-            Insets bars = insets.getInsets(WindowInsetsCompat.Type.systemBars());
+            // The cutout too, as on the viewfinder: in landscape it sits on a side
+            Insets bars = insets.getInsets(
+                    WindowInsetsCompat.Type.systemBars() | WindowInsetsCompat.Type.displayCutout());
             v.setPadding(bars.left, bars.top, bars.right, bars.bottom);
             return insets;
         });
@@ -451,7 +453,7 @@ public class SessionActivity extends AppCompatActivity {
             return;
         }
         startBusy(exportButton);
-        Toast.makeText(this, R.string.exporting_evidence, Toast.LENGTH_SHORT).show();
+        // EvidenceExport says "Preparing the evidence package" once the downloads start
         withFreshSession(false, this::export);
     }
 
