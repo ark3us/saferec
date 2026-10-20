@@ -117,7 +117,7 @@ public class NotificationHelper {
 
         if (isRecording) {
             builder.setUsesChronometer(true)
-                    .setWhen(recordingSinceMillis)
+                    .setWhen(recordingSinceMillis > 0 ? recordingSinceMillis : System.currentTimeMillis())
                     .setShowWhen(true);
             builder.addAction(buildStopAction(context));
         }
