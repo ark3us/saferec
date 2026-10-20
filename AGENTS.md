@@ -13,12 +13,12 @@ graph TD
     subgraph UI["UI Layer"]
         MA["MainActivity"]
         RA["RecordingsActivity"]
-        PA["PlaybackActivity"]
+        SEA["SessionActivity (Media3 player, export, share, trash)"]
         SA["SettingsActivity"]
         QSA["QuickStartActivity"]
         PM["PermissionsManager"]
-        UH["ui/ helpers: StatusModel, RecordButton, FirstRun, GuardSetup"]
-        TO["TutorialOverlayView (recordings tutorial)"]
+        UH["ui/ helpers: StatusModel, RecordButton, FirstRun, GuardSetup, SessionsAdapter, SessionPlaylist, ThumbnailLoader"]
+        EE["EvidenceExport"]
     end
 
     subgraph Services["Service Layer"]
@@ -68,10 +68,15 @@ graph TD
     GDFU --> GDC
     MA -- "observes status and errors" --> SS
     SRS -- "updates status, reports errors" --> SS
-    RA -- "list/download/trash/share" --> DR
+    RA -- "lists sessions" --> DR
+    SEA -- "loads one session, streams pieces from Drive" --> DR
+    SEA -- "export" --> EE
+    EE -- "merged video" --> MM
     SRS -- "CMD_DELETE (trash)" --> DR
     DR --> GDC
-    RA -- "merge chunks" --> MM
+    SEA -- "share the video" --> MM
+    SEA -- "CMD_DELETE (trash)" --> SRS
+    RA -- "opens" --> SEA
     SRS --> NH
 ```
 
@@ -98,11 +103,11 @@ The app exists to save evidence when things go wrong. Keep these invariants:
 net.ark3us.saferec/
 ├── MainActivity.java          # The viewfinder: preview, status chip, record button, first run
 ├── SettingsActivity.java      # Settings in plain-language groups, rebuilt on every resume
-├── RecordingsActivity.java    # Browse/download/merge/share recordings from Drive
-├── RecordingsAdapter.java     # RecyclerView adapter for recordings list
+├── RecordingsActivity.java    # Session cards from Drive, with their status
+├── SessionActivity.java       # One session: Media3 player, status, export, share, trash, technical details
+├── EvidenceExport.java        # Builds, checks and shares a session's evidence package
 ├── QuickStartActivity.java    # The one entry of every quick start; the only screen over the lock screen
 ├── CameraGesture.java         # The optional camera double press (enables a disabled activity alias)
-├── PlaybackActivity.java      # Video playback (streaming from Drive)
 ├── PermissionsManager.java    # Recording permissions, and Google Drive OAuth apart from them
 │
 ├── data/
@@ -133,6 +138,7 @@ net.ark3us.saferec/
 │   ├── GoogleDriveClient.java    # Low-level Drive API wrapper
 │   ├── DriveRecordings.java      # Recordings on Drive: list, download, share, trash
 │   ├── MediaFile.java            # Chunk filename parser/generator
+│   ├── SessionSummary.java       # One session as the screens show it: pieces, status, duration, every Drive file
 │   ├── SessionManifest.java      # What a session recorded (chunks, sizes, SHA-256); gaps against Drive
 │   ├── EvidencePackage.java      # The zip handed over: merged video, Drive files, README, report, verifier
 │   ├── SessionCheck.java         # The verifier's checks, on the phone, before a session is handed over
@@ -158,11 +164,15 @@ net.ark3us.saferec/
     ├── PermissionsBanner.java    # Slim banner when a permission is missing; also the gate of every start from the app
     ├── PermissionsBannerModel.java # What the banner says, and whether a start asks first (pure Java)
     ├── FirstRun.java             # The three first-run cards over the viewfinder
+    ├── CappedScrollView.java     # Scroll view capped at 45% of the screen: the first-run text never reaches the top bar
     ├── FirstRunSteps.java        # Which cards are still due (pure Java)
     ├── SettingsRows.java         # Row builders of the settings screen
     ├── GuardSetup.java           # Three-presses setup; the only class that may reference the guard
     ├── CameraGestureSetup.java   # Camera double press setup and its self-check
-    └── TutorialOverlayView.java  # Tutorial of the recordings screen
+    ├── SessionsAdapter.java      # The session cards; the words shared with the session screen
+    ├── SessionPlaylist.java      # What the player plays: the pieces in order, and their Drive URLs (pure Java)
+    ├── ThumbnailLoader.java      # Drive thumbnails fetched with the token, cached in memory
+    └── TrashedSessions.java      # Sessions just trashed, hidden from the list for 2 minutes (pure Java)
 
 guard/                          # Separate Gradle module: the three power-key presses (see Quick Start)
 └── net/ark3us/saferec/guard/
@@ -284,19 +294,19 @@ cut 2 ….2.mp4 12345 sha256=…                        ← recovered as it was 
 - **Where.** The master stays on the phone (`files/manifests/`, never deleted: a recovery days later appends to it). After each line a full copy goes to the outbox, and Drive keeps one copy, `{sessionId}.0.manifest` (`text/plain`), replaced in place (`files.update`, allowed by `drive.file` on the app's own files; the id is cached, so an update is one request).
 - **A copy replaced while it uploads.** The next line can replace the outbox copy during its upload. The upload sends the bytes read at its start, then deletes the local copy only if it did not change, and otherwise sends the newer one too.
 - **Timestamp.** With timestamping on, the manifest is timestamped when a recording stops (after its last chunk's line) and after a recovery changed it, as `{sessionId}.0.manifest.tsa`. Not after every chunk: that would double the requests to the TSA. The token proves the list of chunks and their hashes at that time, so a chunk removed from Drive later shows. The master is hashed under the manifest's lock, and the TSA asked outside it, so new lines never wait for the network.
-- **Gaps in the list.** `DriveRecordings` reads each session's manifest and compares it with the `.mp4` files on Drive. Each missing chunk is "still on this phone" (outbox, `recording/` or `repair/`) or "recorded but missing on Drive". The session header shows it in red, also for a session with no chunk on Drive (all lost, or a recording whose first chunk is not uploaded yet). That header takes its place among the sessions, newest first: it used to go to the bottom of the list, below every older session. Gaps are computed from the manifest, not from consecutive sequence numbers, which can skip legitimately (an empty chunk).
-- **Trash.** Selecting every chunk of a session also selects its manifest and timestamp, so the session folder empties and goes to the trash too.
+- **Gaps in the list.** `DriveRecordings` reads each session's manifest and compares it with the `.mp4` files on Drive. Each missing chunk is "still on this phone" (outbox, `recording/` or `repair/`) or "recorded but missing on Drive". `SessionSummary` turns that into the session card's status (see Recordings and the session screen), and the session screen explains it with the counts ("N pieces are still on this phone", "N pieces are missing on Drive"). A session with no chunk on Drive (all lost, or a first chunk not uploaded yet) is listed too, as long as its manifest is on Drive. Gaps are computed from the manifest, not from consecutive sequence numbers, which can skip legitimately (an empty chunk).
+- **Trash.** The session screen trashes every file of the session (`SessionSummary.allFileIds`, pieces, timestamps, cut originals, manifest) and its type folder (`folderIds`), so the session folder empties and goes to the trash too. `CMD_DELETE` is asynchronous and Drive's search returns a just-trashed file for some seconds, so `TrashedSessions` hides the session from the list for 2 minutes.
 - **Verified on a Galaxy S10+:**
   - A 25 s recording left one manifest on Drive with `started` and `chunk` lines for chunks 0-2, whose sizes and SHA-256 matched the downloaded chunks.
   - The manifest's timestamp held the SHA-256 of the manifest on Drive.
-  - Once chunk 1 was trashed on Drive, the list showed "Recorded but missing on Drive: chunk 1".
+  - Once chunk 1 was trashed on Drive, the list showed "Recorded but missing on Drive: chunk 1" (the old session header; the card now shows Incomplete and the session screen says how many pieces are missing).
 - **Verifying a session.** `scripts/verify_session.py` (run with `uv run`) checks a session folder downloaded from Drive.
   - The manifest's timestamp, with `openssl ts -verify -digest` against certifi's Mozilla roots. Sectigo's tokens carry their whole chain (Signer R37, CA R41, Root R46, cross-signed by USERTrust RSA), so no extra certificate is bundled.
   - Every listed chunk, its own `.tsa`, and a repaired chunk's `.cut` and `.cut.tsa`.
   - The manifest only grows. When it no longer matches its timestamp, the verifier looks for a prefix that does: lines added later (a recovery after the stop) are reported as not covered, while an edited line matches no prefix and fails.
   - Its tests (`scripts/test_verify_session.py`) run offline, with a test TSA made with openssl. They cover a complete session, a missing, altered, never-closed or repaired chunk, lines added after the timestamp, an edited manifest, a token for another file and an untrusted authority. Four rules are checked by mutation.
   - Verified on a real session from the S10+ (a chunk and a repaired one, real Sectigo tokens): COMPLETE. Flipping one bit of a chunk, or deleting the cut original, made it fail.
-- **Evidence package.** The package icon on a session header (`RecordingsActivity.exportSession()`) builds `SafeRec-<session>.zip` in `cache/merged_sharing/` and shares it:
+- **Evidence package.** "Export evidence package" on the session screen (`EvidenceExport.export()`) builds `SafeRec-<session>.zip` in `cache/merged_sharing/` and shares it:
   ```
   SafeRec-<session>/README.txt         plain language, in the app's language: what is inside, how to check it
   SafeRec-<session>/report.txt         start, duration, chunks with SHA-256 and timestamp times, manifest state, gaps
@@ -318,7 +328,7 @@ cut 2 ….2.mp4 12345 sha256=…                        ← recovered as it was 
       - a chunk trashed on Drive: NOT VERIFIED in the dialog and in `report.txt`, "Share anyway" shared it, and the verifier failed it the same way.
     - Exporting while recording also showed chunks missing that had reached Drive after the list was loaded. The dialog then suggests refreshing the list.
   - Android collapses runs of spaces in string resources: the README and the report's column header are quoted in `strings.xml` to keep their layout.
-  - Verified on the S10+. A session recorded with timestamping on was exported from the list. In the zip, following its README, the verifier said COMPLETE (manifest, 3 chunks, real Sectigo tokens). The merged video played 22 s, and the report was aligned.
+  - Verified on the S10+. A session recorded with timestamping on was exported from the old list (the package icon of its header; the export now starts from the session screen, same code). In the zip, following its README, the verifier said COMPLETE (manifest, 3 chunks, real Sectigo tokens). The merged video played 22 s, and the report was aligned.
 - **Lessons from the test.** Drive's search (`files.list` with `trashed=false`) still returned a just-trashed file for a few seconds. And a JSON body passed through `adb shell` lost its double quotes: Drive ignored the body and answered with the file, which looked like a success.
 
 ### Cut Chunk Repair
@@ -422,10 +432,15 @@ The service remembers the running recording's type (`currentDataType`) and camer
 
 ### 6. Playback Lifecycle
 
-- `PlaybackActivity` uses `android:configChanges` for orientation/screen changes.
-- Video layout is recalculated in `onConfigurationChanged()` using cached prepared dimensions to keep aspect ratio correct after rotation.
+`SessionActivity` plays a session with Media3 (ExoPlayer and `PlayerView`).
 
-
+- **One player per screen, one playlist per session.** The pieces on Drive, in recording order, are the playlist items (`SessionPlaylist.fileIds()`, `SessionPlaylist.url()`: `files/<id>?alt=media`). A piece with no file id is skipped. Nothing is merged or downloaded first.
+- **The token is never in the URL.** `DefaultHttpDataSource` sends it as an `Authorization: Bearer` header, so a log or a crash report never holds it.
+- **Paused when built.** The player starts at the saved piece and position with `playWhenReady` off: a recording is never played by surprise.
+- **Released in `onStop`, rebuilt in `onStart`** at the saved piece and position, so the player holds no decoder or connection while the screen is hidden.
+- **Fullscreen** (the player's button): only the player is left, the system bars hide until the user swipes them in, and back leaves fullscreen first.
+- **Errors** show a bar with Retry in the player (it leaves fullscreen first, since the message sits in the body): same piece, same position. On an HTTP 401 the screen first asks Play services for a new token once, silently (`connectDrive(false)`, then `DriveConnection.accept`), and rebuilds the player only if Drive accepts it. Anything else is the plain error.
+- **Rotation.** `android:configChanges` (orientation, screen size, layout) keeps the activity and the player alive; fullscreen is a layout state, not a new screen.
 
 ## Key Classes
 
@@ -524,7 +539,7 @@ OpenGL ES 2.0 pipeline that composites a burned-in date/time overlay onto camera
 
 ### [MediaMerger](app/src/main/java/net/ark3us/saferec/media/MediaMerger.java) — [MediaMerger.java](app/src/main/java/net/ark3us/saferec/media/MediaMerger.java)
 
-Merges multiple MP4 chunks into a single file. Used by [RecordingsActivity](app/src/main/java/net/ark3us/saferec/RecordingsActivity.java) when user taps "Merge".
+Merges multiple MP4 chunks into a single file. Used by the session screen's "Share the video" ([SessionActivity](app/src/main/java/net/ark3us/saferec/SessionActivity.java)) and by the evidence package ([EvidenceExport](app/src/main/java/net/ark3us/saferec/EvidenceExport.java)). Playback does not merge: it plays the pieces as a playlist.
 
 - Reads video/audio formats from the first chunk
 - Strips `KEY_ROTATION` from format, applies rotation via `setOrientationHint` only
@@ -646,11 +661,11 @@ Recording must start with the phone locked, in a pocket, without looking. Every 
 
 - **Status chip** (`StatusModel`): `CONNECT_DRIVE`, `RECONNECT_DRIVE`, `THREE_PRESSES_OFF`, `WAITING`, `OFFLINE`, `DRIVE_OK`, `HIDDEN`. Recording first, sync later: the chip reports, it never blocks.
 - **Stopping** is a 1 s hold on the record button (`HoldToStop`). A touch acts on the state it began in (`RecordGesture`): releasing a hold once restarted the recording.
-- **Drive.** `DriveConnector` checks silently, only online with a token, and never opens the account picker by itself. `ServiceState` publishes the session start, audio only, the pieces waiting and a sticky Drive-auth flag.
+- **Drive.** `DriveConnector` checks silently, only online with a token, and never opens the account picker by itself. The viewfinder runs the check at most once a minute, and at once when the network came back (while online, or at the resume that follows a stop spent offline). When the outbox holds any file (a lone manifest copy or time stamp counts) a valid check sends `CMD_UPLOAD_PENDING`. `ServiceState` publishes the session start, audio only, the pieces waiting and a sticky Drive-auth flag.
 - **Pieces waiting** counts the chunks (`.mp4`) in the outbox only (`SafeCount.pieces()`, used by the service and by `MainActivity` on resume). A chunk's `.tsa`, the manifest copy and a cut original travel with them but are not pieces: counting every file showed "2 pieces waiting" 17 s into an offline recording. The service keeps the raw file count for its own work and its notification ("N files waiting to be uploaded").
 - **Permissions.** A start needs the microphone only, in every mode (`PermissionsManager.canRecord()`). Video mode asks for the camera with it, in one request, once per screen (`PermissionsBannerModel.mustAsk()`): the recording starts once the microphone is granted, with video if the camera was granted too. A refused camera records sound only, decided by the service, so a quick start does the same. While the camera stays refused in Video mode, the banner reads "No camera permission: recording sound only." and its Allow asks for the camera (the app's settings once Android no longer shows the dialog). A refused microphone shows the banner as before. Recording permissions are separate from Drive (`requestRecordingPermissions`, `connectDrive(interactive, ...)`).
 - **Settings** live in `SettingsActivity`: Quick start, Evidence, Video, Google Drive, Advanced, Help. The three presses setup (`GuardSetup`) sends the battery step to the app's own page ("App battery usage, Unrestricted" on Android 12+, "Don't optimize" below) and continues by itself after the overlay page. The tile row adds the tile with `StatusBarManager.requestAddTileService` on Android 13+.
-- **First run**: three cards above the controls (what SafeRec does, permissions, three presses). The record button works throughout. The same cards are Settings, Help, Guide (`EXTRA_SHOW_GUIDE`).
+- **First run**: three cards above the controls (what SafeRec does, permissions, three presses). The record button works throughout. The same cards are Settings, Help, Guide (`EXTRA_SHOW_GUIDE`). The card fits between the top bar (and the permissions banner) and the controls: its top margin follows the top container and its text sits in a `CappedScrollView` (at most 45% of the screen), so a long text (large font, translation, landscape) scrolls instead of reaching the top bar. A start waiting for the permission dialog survives a recreation (a rotation): `PermissionsBanner` saves it with the refusals.
 - **Build switch off.** `GuardSetup` is the only class that references the guard; `scripts/check-guard-refs.sh` checks it.
 - **Verified on a Galaxy S10+** (Android 16, debug build):
   - Ready and recording as specified. A 1.8 s hold stopped once with one long vibration and never restarted. The safe chip appeared at the first piece (~17 s).
@@ -730,6 +745,47 @@ Foreground service type `specialUse`, to paste in the Play Console. The subtype 
 >
 > No other foreground service type fits: none covers listening for a user gesture while idle to start a safety recording, and the camera and microphone types cannot be started from the background, which is where the gesture is heard.
 
+## Recordings and the session screen
+
+The list shows sessions, not chunks; one tap opens the session with its video and what can be done with it.
+
+```
+ RecordingsActivity                         SessionActivity
+ +-------------------------------+          +-------------------------------+
+ | 2 pieces waiting [Upload now] |  tap     | [ player: the pieces as one ] |
+ | [thumb] Oct 20 10:14          | ───────► | status line + explanation     |
+ |         1:32 · Video          |          | [Export evidence package]     |
+ |         Complete              |          | [Share the video]             |
+ | [thumb] Oct 19 21:02 ...      |          | [Move to trash]               |
+ +-------------------------------+          | Technical details v           |
+                                            +-------------------------------+
+```
+
+- **Session cards** (`SessionsAdapter`, `SessionSummary`). One card per session and type (video and audio of one session are two cards), newest first. The status comes from the manifest only: no readable manifest is "Not checked", any chunk the manifest lists that is on neither Drive nor this phone is "Incomplete", chunks still on this phone are "Uploading", otherwise "Complete". A card never says "Complete" without a manifest saying so.
+- **Duration** is the first piece's start to the last piece's end. Drive's own duration of the last piece is used when it has one, else a usual chunk (10 s).
+- **Thumbnail.** The first piece that has Drive's `thumbnailLink`, fetched with the token (`ThumbnailLoader`, 2 threads, in-memory cache of 1/16 of the heap) and shown instead of a placeholder icon. A failed picture keeps the placeholder: it is never an error. Audio sessions always show the placeholder.
+- **Waiting banner.** With chunks in the outbox, a banner above the list shows "N pieces waiting on this phone" with "Upload now" (`CMD_UPLOAD_PENDING`), or "Connect Drive" when there is no token. The count is `SafeCount.pieces()`, as on the viewfinder.
+- **List states.** No token: a message with "Connect Drive". Nothing recorded: "No recordings on Drive yet." Load failed: a message and pull to retry. The screen never closes itself. Each load has a number and only the latest draws. It reloads on resume, so a trash made on the session screen shows (`TrashedSessions` hides it meanwhile).
+- **One session at a time.** Multi-select is gone, by the owner's choice: every action lives on the session screen.
+- **The session screen** (`SessionActivity`). It loads one session by id (`DriveRecordings.session()`: its folders and files are asked for by name, so the whole list is never read). Top to bottom: the player, the status line with its explanation, "Export evidence package" (first, since it is the main purpose), "Share the video", "Move to trash" and "Technical details". The three actions run one at a time: the running one shows a spinner and the others are disabled.
+  - **Export evidence package** runs `EvidenceExport.export()`: the package and its phone check are described in the Session Manifest section.
+  - **Share the video** downloads the pieces, merges them (`MediaMerger`) and opens the share sheet. The cache copies are deleted afterwards.
+  - **Move to trash** asks first ("Drive keeps it for 30 days"), then sends `CMD_DELETE` for every file of the session and its folders (see Trash above) and closes the screen.
+  - **Technical details** (collapsed, announced as expanded or collapsed to screen readers): one row per piece with its size, a shield when it has a time stamp, and "Repaired after a cut, original kept" when it has a `.cut`. A tap plays from that piece. A long press on a stamped row offers "Share time stamp" (the `.tsa` file). A last row stands for the manifest, with its own shield, only when the session has one. Each row is one screen reader stop.
+- **Its own load states.** Session gone from Drive: a message. Load failed: a message and "Retry". No token: a message and "Connect Drive" (consent, a check with Drive, then the load). The player and the status are hidden in all three.
+- **Gallery button** (`MainActivity`). The viewfinder's button shows the newest session's thumbnail, from `DriveRecordings.latestSession()`: Drive sorts the session folders and sends one, so the list is never read. It loads at most once a minute, only online with a token, prefers the video folder, and keeps the plain icon on any failure (the viewfinder never reports it; the next resume tries again at once). A badge counts the pieces waiting on the phone, and the content description says so.
+- **The tutorial overlay of the old list is gone** with the list it explained.
+
+To verify on a device:
+- List states: no token, nothing recorded, a failed load (airplane mode) and pull to retry.
+- Playback across pieces of a long session, and a rotation in the middle of it.
+- Fullscreen: enter, leave with back, enter and rotate.
+- Airplane mode in the middle of playback, then Retry.
+- Export evidence package, from the session screen.
+- Share the video; Move to trash (the card disappears at once, and stays hidden after a reload).
+- `r8test`: the player, the thumbnails and the technical rows in the shrunk build.
+- TalkBack: the cards, the status, the technical rows and the collapsible header.
+
 ---
 
 ## Data Flow
@@ -771,7 +827,9 @@ Chunks are uploaded immediately on completion and **deleted locally** on success
 
 | Thread | Components |
 |--------|-----------|
-| **Main (UI)** | MainActivity, RecordingsActivity, service commands |
+| **Main (UI)** | MainActivity, RecordingsActivity, SessionActivity, service commands |
+| **Thumbnails** (2 threads) | `ThumbnailLoader`: Drive thumbnails, one loader per screen |
+| **Media3 playback** (ExoPlayer's own thread) | The session player: reads the pieces from Drive and decodes them |
 | **CameraBackground** (HandlerThread) | Camera2 callbacks, MediaCodec encoder callbacks (video) |
 | **Audio processing** (Thread) | `AudioStreamRecorder.processAudio()` loop |
 | **Upload pool** (4 threads) | `FileUploader.uploadExecutor` |
@@ -818,7 +876,7 @@ R8 shrinks and optimizes the release (`isMinifyEnabled`, `isShrinkResources` in 
   - an evidence package and its phone check: signatures and certificate chains (BouncyCastle, `CertPathBuilder`) said COMPLETE, as in the debug build.
 
   Check these again after adding a library or anything that uses reflection.
-- **Media3** (ExoPlayer and its UI, 1.11.1) plays the sessions. It ships its own consumer rules, so `proguard-rules.pro` has nothing for it. Both R8 builds above (normal and guard off) passed with no warning about `androidx.media3`. The `r8test` APK is 4.7 MB.
+- **Media3** (ExoPlayer and its UI, 1.11.1) plays the sessions. It ships its own consumer rules, so `proguard-rules.pro` has nothing for it. Both R8 builds above (normal and guard off) passed with no warning about `androidx.media3`. The `r8test` APK is 4.7 MB with Media3.
   - To check on the phone with `r8test`: a session plays across its pieces, and an evidence package exports, with no crash.
 - **Before a release**, both green on the build that ships:
   - `bash scripts/check-guard-refs.sh`: no class but `ui/GuardSetup` references the guard, so the build with the switch off cannot crash on a missing guard class;
@@ -831,7 +889,7 @@ R8 shrinks and optimizes the release (`isMinifyEnabled`, `isShrinkResources` in 
 ## Known Limitations
 
 1. **Camera switch = recording gap.** Switching cameras mid-session does a full stop+restart, creating a new muxer/session segment.
-2. **Mixed-rotation merge.** A single MP4 can only have one `setOrientationHint`. When chunks from different cameras (with different sensor orientations) or different device rotations are merged, some segments will display with wrong rotation.
+2. **Mixed-rotation merge.** A single MP4 can only have one `setOrientationHint`. When chunks from different cameras (with different sensor orientations) or different device rotations are merged, some segments will display with wrong rotation. This now applies to the merged video ("Share the video") and the evidence package's `merged.mp4` only: playback plays each piece with its own orientation.
 3. **No video mirroring.** Front camera video is recorded un-mirrored (you see yourself as others see you, not as a mirror reflection). This is standard for video recording.
 4. **Background Auth Failure.** If Drive rejects the access token (HTTP 401) during background upload, the app attempts a silent token refresh via Google Identity Services. If successful, the upload seamlessly resumes. If the refresh requires user interaction (e.g., token revoked or password changed), it reports `ERROR_AUTH`, prompting the user to re-authenticate, and keeps the token and the files. Later retries try the silent refresh again (at most once a minute), so uploads resume once Play services can issue a token. The recording keeps going.
 5. **Slow failure behind a VPN.** With a VPN app keeping its tunnel up while the phone has no network, packets vanish and each Drive call fails only after its 20 s timeout instead of at once. Uploads that were already running when the network dropped fail when it returns, and are retried.
@@ -868,6 +926,10 @@ Unit tests (JVM, no phone, under a second): `./gradlew testDebugUnitTest`. The s
 - `StartPolicyTest`: a start while recording is ignored, a camera switch restarts only while recording, unknown commands do nothing, a refused camera records sound only.
 - `PermissionsBannerModelTest`: the banner's text for each mix of mode, grants and refusals, and when a start asks first (never for the camera in Audio mode, once per screen in Video mode).
 - `SafeCountTest`: only the `.mp4` chunks of the current session count as safe, and only `.mp4` chunks count as pieces waiting (not `.tsa`, `.cut`, `.cut.tsa` or the manifest).
+- `SessionSummaryTest`: the status of a session (complete, uploading, incomplete, not checked, also with an unreadable manifest), duration from the starts and the last piece (a usual chunk when Drive does not know it), the first thumbnail, the technical files of a piece, every file and folder id, a session with only a manifest, newest first, video and audio as two summaries.
+- `SessionPlaylistTest`: the pieces in order, no playlist without pieces, the Drive media URL.
+- `SessionsAdapterTest`: the duration words (minutes and seconds, hours from one hour).
+- `TrashedSessionsTest`: a trashed session hidden right away and for its type only, visible again after the window, one never hidden is visible.
 - `StatusModelTest`: which chip shows for each mix of Drive, network, permissions and guard state.
 - `HoldToStopTest`: the 1 s hold completes or cancels on the clock.
 - `RecordGestureTest`: a touch acts on the state it began in (releasing a hold never restarts).
@@ -922,7 +984,7 @@ Unit tests (JVM, no phone, under a second): `./gradlew testDebugUnitTest`. The s
 - Checks read the host-side logcat capture (`full.log`), not the device buffer: failed uploads log long stack traces and the device buffer silently drops old lines.
 - Drive scenarios (`errors_dont_stop`, `network_drop`, `retry_after_outage`, `tsa`) need a Google consent given once in the app. The OAuth client only accepts builds whose signing SHA-1 is registered in the Cloud Console, so a new dev machine's debug key must be added there first.
 - Airplane mode is not an outage when a VPN app keeps its tunnel up. On Android 13+ the script also blocks SafeRec's own traffic: `cmd connectivity set-chain3-enabled` plus `set-package-networking-enabled`, restored on exit and reset at the next setup.
-- The Recordings screen lists the account's real recordings. A UI test must select only the items of the session it recorded, never "select all": a test once moved the owner's own recordings to the trash (restored, thanks to the trash).
+- The Recordings screen lists the account's real recordings. Multi-select is gone: a UI test opens only the session it recorded and trashes it from its own screen, never another card: a test once moved the owner's own recordings to the trash (restored, thanks to the trash).
 - `run-as` processes have no network permission, so `run-as … nc` or `curl` says nothing about the app's connectivity. Compare `/proc/net/dev` counters instead.
 
 Lesson learned: video encoders emit SPS/PPS as a `BUFFER_FLAG_CODEC_CONFIG` buffer with PTS 0. Writing it as a sample made 0 the video time base and silently dropped all audio after the first chunk. Codec config buffers must never reach `MuxerSink`.
