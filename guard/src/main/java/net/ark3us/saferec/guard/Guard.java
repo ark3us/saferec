@@ -54,7 +54,10 @@ public final class Guard {
      */
     public static void ensureRunning(Context context) {
         Context app = context.getApplicationContext();
-        if (!isEnabled(app) || !Settings.canDrawOverlays(app) || GuardService.running) return;
+        if (!isEnabled(app)) return;
+        // KEEP makes this a no-op when the job exists; a restored or reset WorkManager loses it
+        GuardWatchdog.schedule(app);
+        if (!Settings.canDrawOverlays(app) || GuardService.running) return;
         try {
             app.startForegroundService(new Intent(app, GuardService.class));
         } catch (RuntimeException e) {

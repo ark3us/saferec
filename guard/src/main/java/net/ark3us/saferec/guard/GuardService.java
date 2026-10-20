@@ -13,6 +13,7 @@ import android.content.pm.ServiceInfo;
 import android.os.Build;
 import android.os.IBinder;
 import android.os.SystemClock;
+import android.provider.Settings;
 import android.util.Log;
 
 /**
@@ -82,9 +83,15 @@ public class GuardService extends Service {
         }
         receiverRegistered = true;
         running = true;
+        Log.i(TAG, "Guard running");
     }
 
     private void trigger(Context context) {
+        if (!Settings.canDrawOverlays(context)) {
+            // Android does not throw for a blocked background start: only this line shows it.
+            // Still try, in case the check lies or another exemption applies.
+            Log.w(TAG, "trigger refused: no overlay permission");
+        }
         Intent intent = new Intent()
                 .setComponent(new ComponentName(context.getPackageName(), QUICK_START_CLASS))
                 .putExtra(EXTRA_SOURCE, SOURCE_POWER)
@@ -109,6 +116,7 @@ public class GuardService extends Service {
     @Override
     public void onDestroy() {
         running = false;
+        Log.i(TAG, "Guard stopped");
         if (receiverRegistered) {
             unregisterReceiver(screenReceiver);
             receiverRegistered = false;
