@@ -20,6 +20,15 @@ public class ServiceState {
     // Chunks of the current session already on Drive
     private final MutableLiveData<Integer> safeChunks = new MutableLiveData<>(0);
 
+    // Start of the running session (its id, epoch millis), 0 when none
+    private final MutableLiveData<Long> sessionStart = new MutableLiveData<>(0L);
+    // The running recording has no video: an audio-only start, or the camera lost
+    private final MutableLiveData<Boolean> audioOnly = new MutableLiveData<>(false);
+    // Files in the outbox, as the service last counted them
+    private final MutableLiveData<Integer> pendingFiles = new MutableLiveData<>(0);
+    // Sticky: set by ERROR_AUTH, cleared only by whoever reconnects Drive
+    private final MutableLiveData<Boolean> driveAuthProblem = new MutableLiveData<>(false);
+
     private ServiceState() { }
 
     public static synchronized ServiceState getInstance() {
@@ -39,6 +48,9 @@ public class ServiceState {
 
     public void reportError(String error) {
         errorData.postValue(error);
+        if (ERROR_AUTH.equals(error)) {
+            driveAuthProblem.postValue(true);
+        }
     }
 
     /** Marks the last error as handled so it is not shown again. Main thread only. */
@@ -56,5 +68,38 @@ public class ServiceState {
 
     public void setSafeChunks(int count) {
         safeChunks.postValue(count);
+    }
+
+    public MutableLiveData<Long> getSessionStart() {
+        return sessionStart;
+    }
+
+    public MutableLiveData<Boolean> getAudioOnly() {
+        return audioOnly;
+    }
+
+    public MutableLiveData<Integer> getPendingFiles() {
+        return pendingFiles;
+    }
+
+    public MutableLiveData<Boolean> getDriveAuthProblem() {
+        return driveAuthProblem;
+    }
+
+    public void setSession(long startMillis, boolean audioOnly) {
+        sessionStart.postValue(startMillis);
+        this.audioOnly.postValue(audioOnly);
+    }
+
+    public void setAudioOnly(boolean audioOnly) {
+        this.audioOnly.postValue(audioOnly);
+    }
+
+    public void setPendingFiles(int count) {
+        pendingFiles.postValue(count);
+    }
+
+    public void setDriveAuthProblem(boolean problem) {
+        driveAuthProblem.postValue(problem);
     }
 }

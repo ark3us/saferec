@@ -252,6 +252,7 @@ public class SafeRecService extends Service {
             return; // posted before onDestroy()
         }
         int pending = pendingFiles();
+        ServiceState.getInstance().setPendingFiles(pending);
         boolean busy = isRecording || pending > 0 || activeUploads > 0 || activeDeletions > 0 || activeTimestamping > 0;
         if (!busy) {
             if (foregroundType != NOT_FOREGROUND) {
@@ -314,6 +315,7 @@ public class SafeRecService extends Service {
                 Haptics.stopped(this);
                 currentSessionId = null;
                 currentSequenceNumber = 0;
+                ServiceState.getInstance().setSession(0, false);
                 break;
             case CMD_UPLOAD_PENDING:
                 // Safe while recording: the outbox only ever holds complete chunks
@@ -411,7 +413,9 @@ public class SafeRecService extends Service {
             currentSequenceNumber = 0;
             safeChunks = 0;
             ServiceState.getInstance().setSafeChunks(0);
+            ServiceState.getInstance().setSession(Long.parseLong(currentSessionId), !includeVideo);
         }
+        ServiceState.getInstance().setAudioOnly(!includeVideo);
         String sessionId = currentSessionId;
         Log.i(TAG, "Starting recording session id=" + sessionId + " sequence=" + currentSequenceNumber);
 
@@ -497,6 +501,7 @@ public class SafeRecService extends Service {
             videoRecorder.stop();
             videoRecorder = null;
             sink.setExpectedVideo(false);
+            ServiceState.getInstance().setAudioOnly(true);
             ServiceState.getInstance().reportError(ServiceState.ERROR_CAMERA);
         } else {
             Log.e(TAG, "Video recorder failed and no audio is recording, stopping");
