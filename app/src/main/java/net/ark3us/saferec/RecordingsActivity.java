@@ -27,6 +27,7 @@ import net.ark3us.saferec.net.DriveRecordings;
 import net.ark3us.saferec.net.EvidencePackage;
 import net.ark3us.saferec.net.GoogleDriveFileUploader;
 import net.ark3us.saferec.net.SessionSummary;
+import net.ark3us.saferec.ui.TrashedSessions;
 import net.ark3us.saferec.services.SafeCount;
 import net.ark3us.saferec.services.SafeRecService;
 import net.ark3us.saferec.ui.SessionsAdapter;
@@ -176,8 +177,16 @@ public class RecordingsActivity extends AppCompatActivity {
                     swipeRefreshLayout.setRefreshing(false);
                     progress.setVisibility(View.GONE);
                     adapter.setAccessToken(token);
-                    adapter.submitList(sessions);
-                    if (sessions.isEmpty()) {
+                    // A session just trashed may still be in Drive's answer
+                    long now = System.currentTimeMillis();
+                    List<SessionSummary> shown = new java.util.ArrayList<>();
+                    for (SessionSummary s : sessions) {
+                        if (!TrashedSessions.isHidden(s.sessionId, s.dataType, now)) {
+                            shown.add(s);
+                        }
+                    }
+                    adapter.submitList(shown);
+                    if (shown.isEmpty()) {
                         showMessage(R.string.recordings_empty, false);
                     } else {
                         emptyState.setVisibility(View.GONE);

@@ -59,6 +59,7 @@ import net.ark3us.saferec.net.DriveRecordings;
 import net.ark3us.saferec.net.SessionSummary;
 import net.ark3us.saferec.ui.SessionPlaylist;
 import net.ark3us.saferec.ui.SessionsAdapter;
+import net.ark3us.saferec.ui.TrashedSessions;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -103,6 +104,9 @@ public class SessionActivity extends AppCompatActivity {
     private boolean refreshTried;
     private boolean fullscreen;
     private OnBackPressedCallback leaveFullscreen;
+    private View technicalBody;
+    private View technicalChevron;
+    private View technicalHeader;
     private MaterialButton exportButton;
     private MaterialButton shareVideoButton;
     private MaterialButton trashButton;
@@ -146,16 +150,12 @@ public class SessionActivity extends AppCompatActivity {
         };
         getOnBackPressedDispatcher().addCallback(this, leaveFullscreen);
 
-        View technicalBody = findViewById(R.id.session_technical_body);
-        View chevron = findViewById(R.id.session_technical_chevron);
         View header = findViewById(R.id.session_technical_header);
-        header.setOnClickListener(v -> {
-            boolean open = technicalBody.getVisibility() != View.VISIBLE;
-            technicalBody.setVisibility(open ? View.VISIBLE : View.GONE);
-            chevron.setRotation(open ? 180f : 0f);
-            header.sendAccessibilityEvent(android.view.accessibility.AccessibilityEvent.TYPE_VIEW_CLICKED);
-        });
-        // Screen readers announce the section as expanded or collapsed, and offer the opposite action
+        technicalBody = findViewById(R.id.session_technical_body);
+        technicalChevron = findViewById(R.id.session_technical_chevron);
+        technicalHeader = header;
+        header.setOnClickListener(v -> setTechnicalExpanded(technicalBody.getVisibility() != View.VISIBLE));
+        // Screen readers offer the opposite action and announce the new state
         ViewCompat.setAccessibilityDelegate(header, new AccessibilityDelegateCompat() {
             @Override
             public void onInitializeAccessibilityNodeInfo(View host, AccessibilityNodeInfoCompat info) {
@@ -163,6 +163,19 @@ public class SessionActivity extends AppCompatActivity {
                 boolean open = technicalBody.getVisibility() == View.VISIBLE;
                 info.addAction(open ? AccessibilityNodeInfoCompat.AccessibilityActionCompat.ACTION_COLLAPSE
                         : AccessibilityNodeInfoCompat.AccessibilityActionCompat.ACTION_EXPAND);
+            }
+
+            @Override
+            public boolean performAccessibilityAction(View host, int action, Bundle args) {
+                if (action == AccessibilityNodeInfoCompat.ACTION_EXPAND) {
+                    setTechnicalExpanded(true);
+                    return true;
+                }
+                if (action == AccessibilityNodeInfoCompat.ACTION_COLLAPSE) {
+                    setTechnicalExpanded(false);
+                    return true;
+                }
+                return super.performAccessibilityAction(host, action, args);
             }
         });
 
@@ -301,6 +314,14 @@ public class SessionActivity extends AppCompatActivity {
         }
         updateActions();
         bindTechnical(summary);
+    }
+
+    private void setTechnicalExpanded(boolean open) {
+        technicalBody.setVisibility(open ? View.VISIBLE : View.GONE);
+        technicalChevron.setRotation(open ? 180f : 0f);
+        // The content change tells a screen reader the new state
+        technicalHeader.sendAccessibilityEvent(
+                android.view.accessibility.AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED);
     }
 
     // ---- Actions ----
@@ -446,6 +467,8 @@ public class SessionActivity extends AppCompatActivity {
         intent.putExtra(SafeRecService.EXTRA_FILE_IDS, session.allFileIds.toArray(new String[0]));
         intent.putExtra(SafeRecService.EXTRA_FOLDER_IDS, session.folderIds.toArray(new String[0]));
         startService(intent); // the activity is in front: a plain start is allowed
+        // The list reloads before the service has trashed anything
+        TrashedSessions.hide(session.sessionId, session.dataType, System.currentTimeMillis());
         int count = session.allFileIds.size();
         Toast.makeText(this, getResources().getQuantityString(R.plurals.deleting_recordings_bg, count, count),
                 Toast.LENGTH_SHORT).show();
