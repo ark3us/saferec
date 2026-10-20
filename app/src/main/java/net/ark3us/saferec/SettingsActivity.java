@@ -63,8 +63,9 @@ public class SettingsActivity extends AppCompatActivity {
     private int guardRechecks = 0;
     private boolean driveConnecting = false;
     /**
-     * The three presses setup just sent the user to the overlay page: on return, the next
-     * step (the battery dialog) opens by itself, once.
+     * The three presses setup just led the user to the overlay step (its dialog, then the page):
+     * on the next return, the battery dialog opens by itself, once. A cancelled dialog leaves it
+     * set, which is harmless: the next resume continues only if the overlay was granted meanwhile.
      */
     private boolean overlayStepOpened = false;
 
@@ -228,7 +229,7 @@ public class SettingsActivity extends AppCompatActivity {
         }
     }
 
-    /** Opens the next setup step, remembering when it is the overlay page (see onResume()). */
+    /** Opens the next setup step, remembering when it is the overlay one (see onResume()). */
     private void openGuardStep() {
         if (BuildConfig.POWER_GESTURE) {
             overlayStepOpened = GuardSetup.state(this) == GuardSetup.STATE_NEEDS_OVERLAY;

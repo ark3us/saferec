@@ -215,6 +215,8 @@
     <string name="three_presses_battery_help">Android può chiudere SafeRec per risparmiare batteria, e le tre pressioni smetterebbero di funzionare. Nella pagina seguente apri \"Utilizzo batteria app\" e scegli \"Senza limitazioni\".</string>
     <string name="three_presses_step_battery_legacy">Passo 2 di 2: disattiva l\'ottimizzazione della batteria per SafeRec</string>
     <string name="three_presses_battery_help_legacy">Android può chiudere SafeRec per risparmiare batteria, e le tre pressioni smetterebbero di funzionare. Nella pagina seguente scegli \"Tutte le app\", trova SafeRec e scegli \"Non ottimizzare\".</string>
+    <string name="three_presses_overlay_help">Le tre pressioni richiedono \"Mostra sopra altre app\". Nella pagina seguente trova SafeRec nell\'elenco, aprilo e attiva \"Consenti la visualizzazione sopra altre app\".</string>
+    <string name="three_presses_overlay_help_legacy">Le tre pressioni richiedono \"Mostra sopra altre app\". Nella pagina seguente attiva \"Consenti la visualizzazione sopra altre app\".</string>
     <string name="three_presses_not_running">Non attivo: tocca per avviarlo</string>
     <string name="open_settings">Apri impostazioni</string>
     <string name="camera_gesture_summary_off">Spento: la doppia pressione apre la fotocamera</string>

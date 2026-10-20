@@ -60,11 +60,14 @@ public final class GuardSetup {
             ? R.string.three_presses_step_battery : R.string.three_presses_step_battery_legacy;
     }
 
-    /** Opens the page of the first missing step, or does nothing when no step is missing. */
+    /**
+     * Explains the first missing step in a dialog whose button opens its page, or does nothing
+     * when no step is missing.
+     */
     public static void openNextStep(Activity activity) {
         switch (Guard.status(activity)) {
             case NEEDS_OVERLAY:
-                open(activity, Guard.overlaySettingsIntent(activity));
+                showOverlayDialog(activity);
                 break;
             case NEEDS_BATTERY_EXEMPTION:
                 showBatteryDialog(activity);
@@ -72,6 +75,21 @@ public final class GuardSetup {
             default:
                 break;
         }
+    }
+
+    /**
+     * Since Android 11 the overlay page ignores the package and lists every app: the dialog says
+     * to find SafeRec there. Below, the page is SafeRec's own switch.
+     */
+    private static void showOverlayDialog(Activity activity) {
+        if (activity.isFinishing() || activity.isDestroyed()) return;
+        new AlertDialog.Builder(activity)
+            .setTitle(R.string.power_gesture)
+            .setMessage(Build.VERSION.SDK_INT >= Build.VERSION_CODES.R
+                ? R.string.three_presses_overlay_help : R.string.three_presses_overlay_help_legacy)
+            .setPositiveButton(R.string.open_settings, (d, w) -> open(activity, Guard.overlaySettingsIntent(activity)))
+            .setNegativeButton(android.R.string.cancel, null)
+            .show();
     }
 
     /**
