@@ -22,6 +22,12 @@ public class CappedScrollView extends NestedScrollView {
     @Override
     protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
         int cap = (int) (getResources().getDisplayMetrics().heightPixels * MAX_SCREEN_FRACTION);
-        super.onMeasure(widthMeasureSpec, View.MeasureSpec.makeMeasureSpec(cap, View.MeasureSpec.AT_MOST));
+        // Keep what the parent offers (a weighted height in the card): the cap is only an upper bound
+        int mode = View.MeasureSpec.getMode(heightMeasureSpec);
+        int size = View.MeasureSpec.getSize(heightMeasureSpec);
+        int spec = mode == View.MeasureSpec.UNSPECIFIED
+                ? View.MeasureSpec.makeMeasureSpec(cap, View.MeasureSpec.AT_MOST)
+                : View.MeasureSpec.makeMeasureSpec(Math.min(size, cap), mode);
+        super.onMeasure(widthMeasureSpec, spec);
     }
 }

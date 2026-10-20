@@ -29,6 +29,7 @@ public class FirstRun {
     private final View card;
     private final PermissionsManager permissions;
     private final View controls;
+    private final View top;
     private final TextView title;
     private final TextView text;
     private final LinearLayout dots;
@@ -41,6 +42,7 @@ public class FirstRun {
         this.card = card;
         this.permissions = permissions;
         this.controls = activity.findViewById(R.id.bottom_controls);
+        this.top = activity.findViewById(R.id.top_container);
         title = card.findViewById(R.id.first_run_title);
         text = card.findViewById(R.id.first_run_text);
         dots = card.findViewById(R.id.first_run_dots);
@@ -49,13 +51,17 @@ public class FirstRun {
         primary.setOnClickListener(v -> onPrimary());
         // Sits right above the controls, whatever their height (bottom inset included)
         controls.addOnLayoutChangeListener((v, l, t, r, b, ol, ot, or, ob) -> anchor());
+        // And under the top bar and the permissions banner, so in landscape the text shrinks to the gap
+        top.addOnLayoutChangeListener((v, l, t, r, b, ol, ot, or, ob) -> anchor());
     }
 
     private void anchor() {
         ViewGroup.MarginLayoutParams lp = (ViewGroup.MarginLayoutParams) card.getLayoutParams();
         int bottom = controls.getHeight();
-        if (lp.bottomMargin != bottom) {
+        int topEdge = top.getBottom();
+        if (lp.bottomMargin != bottom || lp.topMargin != topEdge) {
             lp.bottomMargin = bottom;
+            lp.topMargin = topEdge;
             card.setLayoutParams(lp);
         }
     }
