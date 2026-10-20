@@ -49,6 +49,15 @@ public final class ThumbnailLoader {
      */
     public void load(ImageView target, @Nullable String thumbnailLink, String accessToken,
                      @DrawableRes int placeholder) {
+        load(target, thumbnailLink, accessToken, placeholder, null);
+    }
+
+    /**
+     * As above; {@code onPicture} runs on the main thread just before the picture is set, so a
+     * caller can style the view for a picture only once there is one.
+     */
+    public void load(ImageView target, @Nullable String thumbnailLink, String accessToken,
+                     @DrawableRes int placeholder, @Nullable Runnable onPicture) {
         target.setImageResource(placeholder);
         if (thumbnailLink == null) {
             target.setTag(null);
@@ -57,13 +66,16 @@ public final class ThumbnailLoader {
         target.setTag(thumbnailLink);
         Bitmap cached = cache.get(thumbnailLink);
         if (cached != null) {
+            if (onPicture != null) {
+                onPicture.run();
+            }
             target.setImageBitmap(cached);
             return;
         }
         int width = target.getWidth() > 0 ? target.getWidth() : FALLBACK_SIZE_PX;
         int height = target.getHeight() > 0 ? target.getHeight() : FALLBACK_SIZE_PX;
         try {
-            executor.execute(() -> fetch(target, thumbnailLink, accessToken, width, height));
+            executor.execute(() -> fetch(target, thumbnailLink, accessToken, width, height, onPicture));
         } catch (RuntimeException e) {
             // Shut down: the activity is gone
         }
@@ -73,7 +85,8 @@ public final class ThumbnailLoader {
         executor.shutdownNow();
     }
 
-    private void fetch(ImageView target, String link, String accessToken, int width, int height) {
+    private void fetch(ImageView target, String link, String accessToken, int width, int height,
+                       @Nullable Runnable onPicture) {
         HttpURLConnection connection = null;
         try {
             connection = (HttpURLConnection) new URL(link).openConnection();
@@ -106,6 +119,9 @@ public final class ThumbnailLoader {
             cache.put(link, bitmap);
             main.post(() -> {
                 if (link.equals(target.getTag())) {
+                    if (onPicture != null) {
+                        onPicture.run();
+                    }
                     target.setImageBitmap(bitmap);
                 }
             });

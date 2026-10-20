@@ -243,13 +243,12 @@
                 android:layout_height="wrap_content"
                 android:layout_gravity="center" />
 
-            <!-- The badge overlaps the button's corner: it needs the holder not to clip -->
+            <!-- The badge sits inside the holder's bounds: the controls bar clips its children -->
             <FrameLayout
                 android:id="@+id/gallery_holder"
                 android:layout_width="56dp"
                 android:layout_height="56dp"
-                android:layout_gravity="end|center_vertical"
-                android:clipChildren="false">
+                android:layout_gravity="end|center_vertical">
 
                 <ImageButton
                     android:id="@+id/btn_gallery"
@@ -267,8 +266,8 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_gravity="bottom|end"
-                    android:layout_marginEnd="-6dp"
-                    android:layout_marginBottom="-6dp"
+                    android:layout_marginEnd="2dp"
+                    android:layout_marginBottom="2dp"
                     android:background="@drawable/glass_bg"
                     android:drawablePadding="2dp"
                     android:drawableStart="@drawable/ms_cloud_upload"

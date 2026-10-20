@@ -518,11 +518,14 @@ public class MainActivity extends AppCompatActivity {
             }
             return;
         }
-        // The picture fills the button: no tint, no padding, cropped to the glass shape
-        btnGallery.setImageTintList(null);
-        btnGallery.setPadding(0, 0, 0, 0);
-        btnGallery.setScaleType(ImageView.ScaleType.CENTER_CROP);
-        thumbnails.load(btnGallery, latest.thumbnailLink(), token, R.drawable.ms_photo_library);
+        // The icon keeps its tint and padding until a picture arrives; the picture then fills
+        // the button: no tint, no padding, cropped to the glass shape
+        thumbnails.load(btnGallery, latest.thumbnailLink(), token, R.drawable.ms_photo_library,
+                () -> {
+                    btnGallery.setImageTintList(null);
+                    btnGallery.setPadding(0, 0, 0, 0);
+                    btnGallery.setScaleType(ImageView.ScaleType.CENTER_CROP);
+                });
         describeGallery(latest);
     }
 
