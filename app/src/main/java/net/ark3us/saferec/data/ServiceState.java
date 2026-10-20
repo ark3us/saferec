@@ -17,6 +17,9 @@ public class ServiceState {
     // failure is never mistaken for "recording stopped".
     private final MutableLiveData<String> errorData = new MutableLiveData<>();
 
+    // Chunks of the current session already on Drive
+    private final MutableLiveData<Integer> safeChunks = new MutableLiveData<>(0);
+
     private ServiceState() { }
 
     public static synchronized ServiceState getInstance() {
@@ -45,5 +48,13 @@ public class ServiceState {
 
     public MutableLiveData<String> getError() {
         return errorData;
+    }
+
+    public MutableLiveData<Integer> getSafeChunks() {
+        return safeChunks;
+    }
+
+    public void setSafeChunks(int count) {
+        safeChunks.postValue(count);
     }
 }

@@ -47,6 +47,9 @@ public abstract class FileUploader {
 
     public interface UploadListener {
         void onUploadStatusChanged(int activeUploads);
+
+        /** A file reached Drive. Called once per successful upload, before the next scan. */
+        default void onFileUploaded(File file) { }
     }
 
     private volatile UploadListener listener;
@@ -151,6 +154,10 @@ public abstract class FileUploader {
                 queuedFiles.remove(path);
             }
             if (uploaded) {
+                UploadListener l = listener;
+                if (l != null) {
+                    l.onFileUploaded(file);
+                }
                 onUploadSucceeded();
             } else if (file.exists()) {
                 onFilePending(file);

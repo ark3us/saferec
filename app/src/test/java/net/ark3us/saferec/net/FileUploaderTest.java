@@ -264,6 +264,30 @@ public class FileUploaderTest {
     }
 
     @Test
+    public void aSuccessfulUploadIsReportedToTheListener() throws Exception {
+        start(60_000, 60_000);
+        List<String> names = new CopyOnWriteArrayList<>();
+        uploader.setListener(new FileUploader.UploadListener() {
+            @Override
+            public void onUploadStatusChanged(int activeUploads) { }
+
+            @Override
+            public void onFileUploaded(File file) {
+                names.add(file.getName());
+            }
+        });
+        File x = chunk("x.mp4");
+        File y = chunk("y.mp4");
+        uploader.failing.add("y.mp4");
+        uploader.uploadNew(y);
+        waitUntil(() -> uploader.attemptsOf("y.mp4") == 1, 2000);
+        uploader.uploadNew(x);
+        waitUntil(() -> !x.exists(), 2000);
+        waitUntil(() -> !names.isEmpty(), 2000);
+        assertEquals(Collections.singletonList("x.mp4"), names);
+    }
+
+    @Test
     public void aNewFileIsSentWithoutAskingTheServer() throws Exception {
         start(50, 400);
         File a = chunk("a.mp4");

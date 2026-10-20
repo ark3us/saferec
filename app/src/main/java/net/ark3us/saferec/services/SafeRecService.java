@@ -31,7 +31,9 @@ import net.ark3us.saferec.media.WorkDir;
 import net.ark3us.saferec.misc.Settings;
 import net.ark3us.saferec.net.DriveRecordings;
 import net.ark3us.saferec.net.TsaClient;
+import net.ark3us.saferec.net.FileUploader;
 import net.ark3us.saferec.net.GoogleDriveFileUploader;
+import net.ark3us.saferec.net.MediaFile;
 import net.ark3us.saferec.net.OutboxWorker;
 import net.ark3us.saferec.net.SessionManifest;
 
@@ -77,6 +79,7 @@ public class SafeRecService extends Service {
     private int activeDeletions = 0;
     private int activeTimestamping = 0;
     private String currentSessionId;
+    private int safeChunks; // main thread only
     private String currentDataType;
     private String errorMessage;
     private GoogleDriveFileUploader uploader; // set in onCreate, before any other thread uses it
@@ -104,6 +107,15 @@ public class SafeRecService extends Service {
         return intent;
     }
 
+    /** Main thread. Counts a chunk of the current session that reached Drive. */
+    private void countSafeChunk(File file) {
+        if (SafeCount.isSessionChunk(MediaFile.fromFile(file), currentSessionId)) {
+            safeChunks++;
+            ServiceState.getInstance().setSafeChunks(safeChunks);
+            updateNotification();
+        }
+    }
+
     @Override
     public void onCreate() {
         super.onCreate();
@@ -111,9 +123,17 @@ public class SafeRecService extends Service {
         // Shared with the outbox job. While the service lives it retries on its own; once
         // it is gone, the job takes over.
         uploader = GoogleDriveFileUploader.getInstance(this);
-        uploader.setListener(num -> {
-            activeUploads = num;
-            updateNotification();
+        uploader.setListener(new FileUploader.UploadListener() {
+            @Override
+            public void onUploadStatusChanged(int num) {
+                activeUploads = num;
+                updateNotification();
+            }
+
+            @Override
+            public void onFileUploaded(File file) {
+                mainHandler.post(() -> countSafeChunk(file));
+            }
         });
         uploader.setRetryLoop(true);
         if (pendingFiles() > 0) {
@@ -343,6 +363,8 @@ public class SafeRecService extends Service {
         if (currentSessionId == null) {
             currentSessionId = String.valueOf(System.currentTimeMillis());
             currentSequenceNumber = 0;
+            safeChunks = 0;
+            ServiceState.getInstance().setSafeChunks(0);
         }
         String sessionId = currentSessionId;
         Log.i(TAG, "Starting recording session id=" + sessionId + " sequence=" + currentSequenceNumber);
