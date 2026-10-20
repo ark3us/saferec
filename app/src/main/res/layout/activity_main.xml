@@ -69,22 +69,6 @@
             android:background="#44FFFFFF" />
 
         <ImageButton
-            android:id="@+id/btn_share_root"
-            android:layout_width="48dp"
-            android:layout_height="48dp"
-            android:padding="10dp"
-            android:background="?attr/selectableItemBackgroundBorderless"
-            android:src="@drawable/baseline_share_24"
-            app:tint="@color/control_icon"
-            android:contentDescription="@string/share_root_folder" />
-
-        <View
-            android:layout_width="1dp"
-            android:layout_height="24dp"
-            android:layout_marginHorizontal="8dp"
-            android:background="#44FFFFFF" />
-
-        <ImageButton
             android:id="@+id/btn_recordings"
             android:layout_width="48dp"
             android:layout_height="48dp"

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A group header in the settings screen: title, with the group's icon set at the start in code -->
+<TextView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/header_title"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:drawablePadding="12dp"
+    android:gravity="center_vertical"
+    android:paddingHorizontal="@dimen/gutter"
+    android:paddingTop="24dp"
+    android:paddingBottom="4dp"
+    android:textAppearance="@style/TextAppearance.Material3.TitleSmall"
+    android:textColor="@color/on_glass_dim" />

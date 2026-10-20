@@ -1,8 +1,6 @@
 package net.ark3us.saferec;
 
-import android.Manifest;
 import android.content.Intent;
-import android.content.pm.PackageManager;
 import android.content.res.Configuration;
 import android.graphics.SurfaceTexture;
 import android.os.Bundle;
@@ -12,26 +10,12 @@ import android.view.View;
 import android.view.animation.Animation;
 import android.view.animation.AnimationUtils;
 import android.widget.ImageButton;
-import android.widget.PopupMenu;
 import android.widget.TextView;
 import android.widget.Toast;
-import android.view.Menu;
-import android.view.SubMenu;
 import android.view.ViewGroup;
-import android.view.LayoutInflater;
-import android.widget.LinearLayout;
-import android.widget.ImageView;
-import android.widget.CompoundButton;
-import android.widget.EditText;
-import android.text.InputType;
-import android.util.Patterns;
-
-import com.google.android.material.bottomsheet.BottomSheetDialog;
-import com.google.android.material.materialswitch.MaterialSwitch;
 
 import androidx.activity.EdgeToEdge;
 import androidx.annotation.NonNull;
-import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.appcompat.content.res.AppCompatResources;
 import androidx.core.graphics.Insets;
@@ -55,6 +39,8 @@ public class MainActivity extends AppCompatActivity {
 
     private static final String TAG = MainActivity.class.getSimpleName();
     private static final String STATE_LAUNCH_COMMAND_HANDLED = "launch_command_handled";
+    /** Opens the guide (from Settings → Help). Never carries a command. */
+    public static final String EXTRA_SHOW_GUIDE = "net.ark3us.saferec.extra.SHOW_GUIDE";
 
     private TextureView videoPreview;
     private VideoStreamRecorder previewRecorder;
@@ -63,7 +49,6 @@ public class MainActivity extends AppCompatActivity {
     private ImageButton btnStart;
     private ImageButton btnSwitchCamera;
     private ImageButton btnToggleCamera;
-    private ImageButton btnShareRoot;
     private ImageButton btnRecordings;
     private ImageButton btnSettings;
     private View recordRing;
@@ -72,8 +57,6 @@ public class MainActivity extends AppCompatActivity {
     private TextView errorMessageText;
     private PermissionsManager permissionsManager;
     private boolean launchCommandHandled = false;
-    /** The user turned the three presses on and may be on the way through the setup pages. */
-    private boolean guardSetupPending = false;
     private final ExecutorService backgroundExecutor = Executors.newSingleThreadExecutor();
 
     private static boolean isStarted(@Nullable String status) {
@@ -237,264 +220,29 @@ public class MainActivity extends AppCompatActivity {
             startActivity(intent);
         });
 
-        btnShareRoot = findViewById(R.id.btn_share_root);
-        btnShareRoot.setOnClickListener(v -> shareRootFolder());
-
         btnSettings = findViewById(R.id.btn_settings);
-        btnSettings.setOnClickListener(v -> showSettingsPopup());
+        btnSettings.setOnClickListener(v -> startActivity(new Intent(this, SettingsActivity.class)));
 
-    }
-
-
-
-    private void showSettingsPopup() {
-        BottomSheetDialog dialog = new BottomSheetDialog(this);
-        ViewGroup root = findViewById(android.R.id.content);
-        View sheetView = getLayoutInflater().inflate(R.layout.bottom_sheet_settings, root, false);
-        LinearLayout container = sheetView.findViewById(R.id.settings_container);
-
-        populateSettings(container, dialog);
-        dialog.setContentView(sheetView);
-        
-        // Ensure background is dimmed but preview is still visible
-        dialog.getWindow().setDimAmount(0.4f);
-        dialog.show();
-    }
-
-    private void populateSettings(LinearLayout container, BottomSheetDialog dialog) {
-        container.removeAllViews();
-        
-        // Show Tutorial
-        addSettingRow(container, getString(R.string.show_tutorial), null, null, v -> {
-            dialog.dismiss();
-            showTutorialOverlay(-1);
-        });
-
-        // Video Quality
-        String quality = Settings.getVideoQuality(this);
-        String qLabel = getString("HIGH".equals(quality) ? R.string.quality_high : ("MEDIUM".equals(quality) ? R.string.quality_medium : R.string.quality_low));
-        addSettingRow(container, getString(R.string.video_quality), qLabel, null, v -> showQualityDialog(container, dialog));
-
-        // Chunk Size
-        int currentChunk = Settings.getChunkSizeMB(this);
-        String cLabel = currentChunk == 0 ? getString(R.string.chunk_auto) : currentChunk + " MB";
-        addSettingRow(container, getString(R.string.chunk_size), cLabel, null, v -> showChunkSizeDialog(container, dialog));
-
-        // Timestamping
-        addToggleRow(container, getString(R.string.enable_timestamping), Settings.isTimestampingEnabled(this), (btn, isChecked) -> {
-            Settings.setTimestampingEnabled(this, isChecked);
-        });
-
-        // Quick start
-        addSettingRow(container, getString(R.string.quick_start_records),
-            getString(Settings.isQuickStartAudioOnly(this) ? R.string.quick_start_audio_only : R.string.quick_start_video),
-            null, v -> showQuickStartRecordsDialog(container, dialog));
-        addSettingRow(container, getString(R.string.quick_start_camera),
-            getString(Settings.isQuickStartFrontCamera(this) ? R.string.quick_start_camera_front : R.string.quick_start_camera_back),
-            null, v -> showQuickStartCameraDialog(container, dialog));
-
-        // Vibrations
-        addToggleRow(container, getString(R.string.vibrations), Settings.isVibrationsEnabled(this), (btn, isChecked) -> {
-            Settings.setVibrationsEnabled(this, isChecked);
-        });
-
-        // Camera double press (not offered when the phone ties it to another camera app)
-        if (CameraGesture.isAvailable(this)) {
-            addToggleRow(container, getString(R.string.camera_gesture), CameraGesture.isEnabled(this), (btn, isChecked) -> {
-                CameraGesture.setEnabled(this, isChecked);
-                if (isChecked) CameraGestureSetup.begin(this);
-            });
-        }
-
-        // Three presses of the power key (only when the guard module is built in)
-        if (BuildConfig.POWER_GESTURE) {
-            addSettingRow(container, getString(R.string.power_gesture), guardStatusLabel(), null, v -> {
-                boolean enable = !net.ark3us.saferec.guard.Guard.isEnabled(this);
-                net.ark3us.saferec.guard.Guard.setEnabled(this, enable);
-                guardSetupPending = enable;
-                if (enable && net.ark3us.saferec.guard.Guard.status(this) == net.ark3us.saferec.guard.Guard.Status.NEEDS_OVERLAY) {
-                    startActivity(net.ark3us.saferec.guard.Guard.overlaySettingsIntent(this));
-                }
-                populateSettings(container, dialog);
-            });
+        // Once per launch: a recreated activity keeps its intent and must not show the guide again
+        if (savedInstanceState == null && Settings.isTutorialShown(this)) {
+            showGuideIfRequested(getIntent());
         }
     }
 
-    private String guardStatusLabel() {
-        if (!BuildConfig.POWER_GESTURE) return "";
-        switch (net.ark3us.saferec.guard.Guard.status(this)) {
-            case NEEDS_OVERLAY: return getString(R.string.power_gesture_needs_overlay);
-            case NEEDS_BATTERY_EXEMPTION: return getString(R.string.power_gesture_needs_battery);
-            case STOPPED: return getString(R.string.power_gesture_stopped);
-            case ACTIVE: return getString(R.string.power_gesture_active);
-            default: return getString(R.string.power_gesture_off);
-        }
+    @Override
+    protected void onNewIntent(@NonNull Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        showGuideIfRequested(intent);
     }
 
-    private void showQuickStartRecordsDialog(LinearLayout container, BottomSheetDialog parent) {
-        String[] items = {getString(R.string.quick_start_video), getString(R.string.quick_start_audio_only)};
-        new AlertDialog.Builder(this)
-            .setTitle(R.string.quick_start_records)
-            .setSingleChoiceItems(items, Settings.isQuickStartAudioOnly(this) ? 1 : 0, (d, which) -> {
-                Settings.setQuickStartAudioOnly(this, which == 1);
-                d.dismiss();
-                populateSettings(container, parent);
-            })
-            .show();
-    }
-
-    private void showQuickStartCameraDialog(LinearLayout container, BottomSheetDialog parent) {
-        String[] items = {getString(R.string.quick_start_camera_back), getString(R.string.quick_start_camera_front)};
-        new AlertDialog.Builder(this)
-            .setTitle(R.string.quick_start_camera)
-            .setSingleChoiceItems(items, Settings.isQuickStartFrontCamera(this) ? 1 : 0, (d, which) -> {
-                Settings.setQuickStartFrontCamera(this, which == 1);
-                d.dismiss();
-                populateSettings(container, parent);
-            })
-            .show();
-    }
-
-    private void addSettingRow(LinearLayout container, String title, @Nullable String value, @Nullable Integer iconRes, View.OnClickListener listener) {
-        View row = getLayoutInflater().inflate(R.layout.item_setting_row, container, false);
-        View root = row.findViewById(R.id.row_root);
-        TextView titleTv = row.findViewById(R.id.setting_title);
-        TextView valueTv = row.findViewById(R.id.setting_value);
-        ImageView iconIv = row.findViewById(R.id.setting_icon);
-
-        titleTv.setText(title);
-        if (value != null) {
-            valueTv.setText(value);
-            valueTv.setVisibility(View.VISIBLE);
-        }
-        if (iconRes != null) {
-            iconIv.setImageResource(iconRes);
-            iconIv.setVisibility(View.VISIBLE);
-        }
-        root.setOnClickListener(listener);
-        container.addView(row);
-    }
-
-    private void addToggleRow(LinearLayout container, String title, boolean checked, CompoundButton.OnCheckedChangeListener listener) {
-        View row = getLayoutInflater().inflate(R.layout.item_setting_row, container, false);
-        View root = row.findViewById(R.id.row_root);
-        TextView titleTv = row.findViewById(R.id.setting_title);
-        MaterialSwitch toggle = row.findViewById(R.id.setting_switch);
-
-        titleTv.setText(title);
-        toggle.setVisibility(View.VISIBLE);
-        toggle.setChecked(checked);
-        toggle.setOnCheckedChangeListener(listener);
-        root.setOnClickListener(v -> toggle.setChecked(!toggle.isChecked()));
-        container.addView(row);
-    }
-
-    private void showQualityDialog(LinearLayout container, BottomSheetDialog parent) {
-        String[] qualities = {getString(R.string.quality_high), getString(R.string.quality_medium), getString(R.string.quality_low)};
-        String[] values = {"HIGH", "MEDIUM", "LOW"};
-        String current = Settings.getVideoQuality(this);
-        int selected = "HIGH".equals(current) ? 0 : ("MEDIUM".equals(current) ? 1 : 2);
-
-        new AlertDialog.Builder(this)
-            .setTitle(R.string.video_quality)
-            .setSingleChoiceItems(qualities, selected, (dialog, which) -> {
-                Settings.setVideoQuality(this, values[which]);
-                tryStartPreview();
-                dialog.dismiss();
-                populateSettings(container, parent);
-            })
-            .show();
-    }
-
-    private void showChunkSizeDialog(LinearLayout container, BottomSheetDialog parent) {
-        CharSequence[] items = {getString(R.string.chunk_auto), getString(R.string.chunk_custom)};
-        int current = Settings.getChunkSizeMB(this) == 0 ? 0 : 1;
-
-        new AlertDialog.Builder(this)
-            .setTitle(R.string.chunk_size)
-            .setSingleChoiceItems(items, current, (dialog, which) -> {
-                dialog.dismiss();
-                if (which == 0) {
-                    Settings.setChunkSizeMB(this, 0);
-                    populateSettings(container, parent);
-                } else {
-                    showChunkSizeInputDialog(container, parent);
-                }
-            })
-            .show();
-    }
-
-    private void showChunkSizeInputDialog(LinearLayout container, BottomSheetDialog parent) {
-        final EditText input = new EditText(this);
-        input.setInputType(InputType.TYPE_CLASS_NUMBER);
-        int current = Settings.getChunkSizeMB(this);
-        if (current > 0) input.setText(String.valueOf(current));
-        
-        new AlertDialog.Builder(this)
-            .setTitle(R.string.chunk_manual_title)
-            .setView(input)
-            .setPositiveButton("OK", (dialog, which) -> {
-                String val = input.getText().toString();
-                if (!val.isEmpty()) {
-                    try {
-                        int size = Integer.parseInt(val);
-                        Settings.setChunkSizeMB(this, Math.max(0, size));
-                        populateSettings(container, parent);
-                    } catch (NumberFormatException e) {
-                        Toast.makeText(this, R.string.chunk_invalid_input, Toast.LENGTH_SHORT).show();
-                    }
-                }
-            })
-            .setNegativeButton("Cancel", null)
-            .show();
-    }
-
-    private void shareRootFolder() {
-        String accessToken = Settings.getAccessToken(this);
-        if (accessToken == null || accessToken.isEmpty()) {
-            Toast.makeText(this, R.string.not_connected_drive, Toast.LENGTH_SHORT).show();
+    /** Settings → Help → Guide. Until the first run is done, the tutorial shows anyway. */
+    private void showGuideIfRequested(@Nullable Intent intent) {
+        if (intent == null || !intent.getBooleanExtra(EXTRA_SHOW_GUIDE, false)) {
             return;
         }
-        EditText input = new EditText(this);
-        input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS);
-        input.setHint(R.string.share_email_hint);
-        input.setText(Settings.getShareEmail(this));
-
-        new AlertDialog.Builder(this)
-            .setTitle(R.string.share_dialog_title)
-            .setMessage(R.string.share_dialog_message)
-            .setView(input)
-            .setPositiveButton(R.string.share, (dialog, which) -> {
-                String email = input.getText().toString().trim();
-                if (!Patterns.EMAIL_ADDRESS.matcher(email).matches()) {
-                    Toast.makeText(this, R.string.share_invalid_email, Toast.LENGTH_SHORT).show();
-                    return;
-                }
-                Settings.setShareEmail(this, email);
-                shareRecordingsWith(accessToken, email);
-            })
-            .setNegativeButton(android.R.string.cancel, null)
-            .show();
-    }
-
-    private void shareRecordingsWith(String accessToken, String email) {
-        Toast.makeText(this, R.string.sharing_recordings, Toast.LENGTH_SHORT).show();
-        backgroundExecutor.execute(() -> {
-            String message;
-            try {
-                new GoogleDriveClient(accessToken).shareBaseFolderWith(email);
-                message = getString(R.string.shared_with, email);
-            } catch (Exception e) {
-                Log.e(TAG, "Failed to share recordings", e);
-                // drive.file only reaches files this app created: a foreign file in the folder
-                // makes Drive refuse any change to the folder's sharing
-                message = String.valueOf(e.getMessage()).contains("appNotAuthorizedToChild")
-                        ? getString(R.string.share_refused_foreign_files)
-                        : getString(R.string.share_failed, e.getMessage());
-            }
-            String result = message;
-            runOnUiThread(() -> Toast.makeText(MainActivity.this, result, Toast.LENGTH_LONG).show());
-        });
+        intent.removeExtra(EXTRA_SHOW_GUIDE);
+        btnStart.post(() -> showTutorialOverlay(-1));
     }
 
     private void showTutorialOverlay(int step) {
@@ -520,9 +268,9 @@ public class MainActivity extends AppCompatActivity {
                 message = getText(R.string.tutorial_step_mode);
                 break;
             case 3:
-                target = btnShareRoot;
-                message = getText(R.string.tutorial_step_share);
-                break;
+                // The share button moved to settings: skip its step
+                showTutorialOverlay(step + 1);
+                return;
             case 4:
                 target = btnRecordings;
                 message = getText(R.string.tutorial_step_list);
@@ -701,18 +449,9 @@ public class MainActivity extends AppCompatActivity {
         super.onResume();
         videoPreview.post(this::tryStartPreview);
         CameraGestureSetup.onResume(this);
-        if (BuildConfig.POWER_GESTURE && net.ark3us.saferec.guard.Guard.isEnabled(this)) {
-            // The app is in the foreground, so the guard's foreground service may start now.
+        if (BuildConfig.POWER_GESTURE) {
+            // The app is in the foreground, so the guard's foreground service may start now
             net.ark3us.saferec.guard.Guard.ensureRunning(this);
-            if (guardSetupPending) {
-                net.ark3us.saferec.guard.Guard.Status status = net.ark3us.saferec.guard.Guard.status(this);
-                if (status == net.ark3us.saferec.guard.Guard.Status.NEEDS_BATTERY_EXEMPTION) {
-                    guardSetupPending = false;
-                    startActivity(net.ark3us.saferec.guard.Guard.batterySettingsIntent());
-                } else if (status != net.ark3us.saferec.guard.Guard.Status.NEEDS_OVERLAY) {
-                    guardSetupPending = false;
-                }
-            }
         }
     }
 
