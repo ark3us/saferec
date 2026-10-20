@@ -20,6 +20,8 @@ import java.io.File;
 import java.util.Date;
 import android.content.Context;
 import android.content.Intent;
+import android.content.res.Configuration;
+import android.graphics.Rect;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -31,6 +33,7 @@ import android.widget.TextView;
 
 import androidx.activity.EdgeToEdge;
 import androidx.activity.OnBackPressedCallback;
+import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.annotation.OptIn;
 import androidx.appcompat.app.AppCompatActivity;
@@ -111,6 +114,8 @@ public class SessionActivity extends AppCompatActivity {
     // Where the player was in the session when onStop released it
     private long savedPosition;
     private boolean fullscreen;
+    // Fullscreen came from turning the phone sideways: turning it back leaves it
+    private boolean autoFullscreen;
     // A load state (not connected, failed, gone) is on screen: the actions wait for a session again
     private boolean stateShown;
     private OnBackPressedCallback leaveFullscreen;
@@ -151,7 +156,10 @@ public class SessionActivity extends AppCompatActivity {
 
         permissionsManager = new PermissionsManager(this);
         tokenRefresh = new DriveTokenRefresh(this, permissionsManager);
-        findViewById(R.id.player_retry).setOnClickListener(v -> retry());
+        findViewById(R.id.player_retry).setOnClickListener(v -> {
+            retry();
+            fitPlayerToOrientation();
+        });
         playerView.setFullscreenButtonClickListener(this::setFullscreen);
         leaveFullscreen = new OnBackPressedCallback(false) {
             @Override
@@ -373,6 +381,7 @@ public class SessionActivity extends AppCompatActivity {
 
         List<String> ids = SessionPlaylist.fileIds(summary);
         boolean piecesChanged = !ids.equals(fileIds);
+        boolean playerWasShown = playerHolder.getVisibility() == View.VISIBLE;
         fileIds = ids;
         placeholders = SessionPlaylist.placeholderDurationsMs(summary);
         playerHolder.setVisibility(fileIds.isEmpty() ? View.GONE : View.VISIBLE);
@@ -392,6 +401,9 @@ public class SessionActivity extends AppCompatActivity {
         }
         updateActions();
         bindTechnical(summary);
+        if (!playerWasShown) {
+            fitPlayerToOrientation();
+        }
     }
 
     private void setTechnicalExpanded(boolean open) {
@@ -947,6 +959,9 @@ public class SessionActivity extends AppCompatActivity {
         // The message sits in the body, which fullscreen hides
         setFullscreen(false);
         errorBar.setVisibility(View.VISIBLE);
+        // In landscape the player is taller than the screen: bring the message into view
+        errorBar.post(() -> errorBar.requestRectangleOnScreen(
+                new Rect(0, 0, errorBar.getWidth(), errorBar.getHeight()), false));
     }
 
     /** Same position, with the current token; a second failure shows the message again. */
@@ -960,12 +975,37 @@ public class SessionActivity extends AppCompatActivity {
 
     // ---- Fullscreen ----
 
+    @Override
+    public void onConfigurationChanged(@NonNull Configuration newConfig) {
+        super.onConfigurationChanged(newConfig);
+        fitPlayerToOrientation();
+    }
+
+    /**
+     * In landscape a 16:9 player at full width is taller than the screen, and its controls fall
+     * below the fold: turning the phone sideways shows the player alone, and turning it back
+     * leaves that fullscreen. A fullscreen the user chose stays, and so does leaving it.
+     */
+    private void fitPlayerToOrientation() {
+        boolean landscape = getResources().getConfiguration().orientation == Configuration.ORIENTATION_LANDSCAPE;
+        boolean playerShown = playerHolder.getVisibility() == View.VISIBLE && !stateShown
+                && errorBar.getVisibility() != View.VISIBLE;
+        if (landscape && playerShown && !fullscreen) {
+            setFullscreen(true);
+            autoFullscreen = true;
+        } else if (!landscape && fullscreen && autoFullscreen) {
+            setFullscreen(false);
+        }
+    }
+
     /** Only the player is left, and the system bars hide until the user swipes them in. */
     private void setFullscreen(boolean on) {
         if (fullscreen == on) {
             return;
         }
         fullscreen = on;
+        // Whoever calls it decides: the button and back are the user's choice
+        autoFullscreen = false;
         toolbar.setVisibility(on ? View.GONE : View.VISIBLE);
         body.setVisibility(on ? View.GONE : View.VISIBLE);
         ConstraintLayout.LayoutParams video = (ConstraintLayout.LayoutParams) playerView.getLayoutParams();
