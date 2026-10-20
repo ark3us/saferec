@@ -711,6 +711,8 @@ public class MainActivity extends AppCompatActivity {
         boolean online = networkWatcher.isOnline();
         long now = SystemClock.elapsedRealtime();
         boolean networkBack = online && !onlineAtStop;
+        // Used once: a resume without a stop in between keeps the one-minute limit
+        onlineAtStop = online;
         if (online && (networkBack || driveCheckedAt == 0 || now - driveCheckedAt >= DRIVE_CHECK_MS)) {
             driveCheckedAt = now;
             driveConnector.silentCheck(true);
