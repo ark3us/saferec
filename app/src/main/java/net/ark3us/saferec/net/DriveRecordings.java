@@ -21,8 +21,10 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 
 /** The recordings on Drive: list, download, share and move to the trash. */
 public class DriveRecordings {
@@ -49,6 +51,7 @@ public class DriveRecordings {
     private static final String TAG = DriveRecordings.class.getSimpleName();
     // Session folders the gallery looks in, newest first, past ones whose files were trashed
     private static final int LATEST_CANDIDATES = 5;
+    private static final int MANIFEST_THREADS = 4;
     private final GoogleDriveClient driveClient;
     private final Context context;
 
@@ -90,22 +93,45 @@ public class DriveRecordings {
             return;
         }
         Map<String, Set<Integer>> onPhone = chunksOnThisPhone();
-        for (RecordingItem manifest : manifests) {
-            try {
-                ByteArrayOutputStream content = new ByteArrayOutputStream();
-                driveClient.downloadFile(manifest.driveFile.getId(), content);
-                String key = groupKey(manifest.mediaFile);
-                manifest.gaps = SessionManifest.gaps(content.toString("UTF-8"),
-                        onDrive.getOrDefault(key, Collections.emptySet()),
-                        onPhone.getOrDefault(key, Collections.emptySet()));
-                if (manifest.gaps == null) {
-                    Log.w(TAG, "Session " + key + ": the manifest lists no chunk");
-                } else if (!manifest.gaps.isEmpty()) {
-                    Log.w(TAG, "Session " + key + ": on this phone " + manifest.gaps.onPhone + ", lost " + manifest.gaps.lost);
-                }
-            } catch (IOException e) {
-                Log.w(TAG, "Cannot read the manifest of session " + manifest.mediaFile.sessionId, e);
+        // Each manifest is a Drive round trip: a few at once, or 30 sessions take 15 s. Each task
+        // sets only its own item, and get() below makes the results visible here.
+        ExecutorService pool = Executors.newFixedThreadPool(MANIFEST_THREADS);
+        try {
+            List<Future<?>> tasks = new ArrayList<>();
+            for (RecordingItem manifest : manifests) {
+                tasks.add(pool.submit(() -> markManifestGaps(manifest, onDrive, onPhone)));
             }
+            for (Future<?> task : tasks) {
+                try {
+                    task.get();
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    return;
+                } catch (ExecutionException e) {
+                    Log.w(TAG, "Manifest check failed", e.getCause());
+                }
+            }
+        } finally {
+            pool.shutdownNow();
+        }
+    }
+
+    private void markManifestGaps(RecordingItem manifest, Map<String, Set<Integer>> onDrive,
+                                  Map<String, Set<Integer>> onPhone) {
+        try {
+            ByteArrayOutputStream content = new ByteArrayOutputStream();
+            driveClient.downloadFile(manifest.driveFile.getId(), content);
+            String key = groupKey(manifest.mediaFile);
+            manifest.gaps = SessionManifest.gaps(content.toString("UTF-8"),
+                    onDrive.getOrDefault(key, Collections.emptySet()),
+                    onPhone.getOrDefault(key, Collections.emptySet()));
+            if (manifest.gaps == null) {
+                Log.w(TAG, "Session " + key + ": the manifest lists no chunk");
+            } else if (!manifest.gaps.isEmpty()) {
+                Log.w(TAG, "Session " + key + ": on this phone " + manifest.gaps.onPhone + ", lost " + manifest.gaps.lost);
+            }
+        } catch (IOException e) {
+            Log.w(TAG, "Cannot read the manifest of session " + manifest.mediaFile.sessionId, e);
         }
     }
 
