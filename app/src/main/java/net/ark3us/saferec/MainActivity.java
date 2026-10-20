@@ -10,7 +10,6 @@ import android.os.SystemClock;
 import android.util.Log;
 import android.view.TextureView;
 import android.view.View;
-import android.view.ViewGroup;
 import android.widget.Chronometer;
 
 import androidx.activity.EdgeToEdge;
@@ -404,8 +403,9 @@ public class MainActivity extends AppCompatActivity {
         show(btnGallery, !recording);
         show(btnRecordings, !recording);
         show(btnSettings, !recording);
-        // A switch restarts a video recording; an audio-only one has no camera to switch
-        show(btnSwitchCamera, !(recording && audioOnly));
+        // No camera to switch in Audio mode, nor in an audio-only recording (a switch restarts
+        // a video recording only)
+        show(btnSwitchCamera, !audioOnly);
         show(audioOnlySurface, audioOnly);
         renderRecordingInfo();
         renderStatusChip();
