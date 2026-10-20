@@ -43,7 +43,7 @@
     <string name="tutorial_step_share">Generate a public link to your entire recordings folder.</string>
     <string name="tutorial_step_list">Access and manage all your saved recordings here.</string>
     <string name="tutorial_step_settings_title">Advanced Protection</string>
-    <string name="tutorial_step_settings_message">Here you can adjust <b>Video Quality</b>, set <b>Manual Chunk Size</b>, or enable <b>Auto-start</b>.\n\nMost importantly, you can enable <b>Cryptographic Timestamping (TSA)</b>: this proves that your recording existed at a specific time and hasn\'t been tampered with, making it solid legal evidence.</string>
+    <string name="tutorial_step_settings_message">Here you can adjust <b>Video Quality</b> and set <b>Manual Chunk Size</b>.\n\nMost importantly, you can enable <b>Cryptographic Timestamping (TSA)</b>: this proves that your recording existed at a specific time and hasn\'t been tampered with, making it solid legal evidence.</string>
     <string name="settings">Settings</string>
     <string name="show_tutorial">Show Tutorial</string>
     <string name="tutorial_step_tile"><![CDATA[<b>Quick Actions Tile</b><br/><br/>SafeRec includes a shortcut button for your Android system panel. To setup:<br/>1. Open your <b>notification drawer</b> fully by swiping down from the very top of the screen until you see all shortcuts.<br/>2. Tap the <b>Edit</b> (pencil) icon generally found at the bottom or top corner.<br/>3. Look for the <b>SafeRec</b> tile in the list of available shortcuts.<br/>4. Drag and drop it into your main active panel.<br/><br/>Now you can trigger a secure recording instantly, even when the screen is locked!]]></string>
