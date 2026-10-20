@@ -343,7 +343,9 @@ public class SafeRecService extends Service {
             // while idle it records nothing.
             Notification notification = buildNotification(true);
             int type = recordingForegroundType(isRecording ? isRecordingVideo() : includeVideo);
-            if (!enterForeground(type, notification)) {
+            // A recording already in the foreground keeps its type: dataSync would drop the
+            // camera and the microphone (Android needs no new call for a foreground service)
+            if (!enterForeground(type, notification) && (!isRecording || foregroundType == NOT_FOREGROUND)) {
                 enterForeground(dataSyncForegroundType(), notification);
             }
         }
