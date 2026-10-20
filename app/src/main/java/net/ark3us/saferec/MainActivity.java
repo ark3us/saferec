@@ -488,6 +488,8 @@ public class MainActivity extends AppCompatActivity {
         recordingTime.start();
         Integer safe = state.getSafeChunks().getValue();
         int count = safe != null ? safe : 0;
+        // From the first safe piece only: "0 pieces safe" would show a shield with nothing behind it
+        show(safeChip, count > 0);
         safeChip.setText(getResources().getQuantityString(R.plurals.notif_safe_chunks, count, count));
     }
 
