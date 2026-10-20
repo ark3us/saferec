@@ -18,6 +18,10 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
+    <queries>
+        <package android:name="com.android.systemui" />
+    </queries>
+
     <application
         android:allowBackup="true"
         android:dataExtractionRules="@xml/data_extraction_rules"
@@ -48,6 +52,21 @@
             android:launchMode="singleTask"
             android:taskAffinity="net.ark3us.saferec.quickstart"
             android:theme="@style/Theme.SafeRec.QuickStart" />
+        <!-- Off until the owner turns on the camera double press (see CameraGesture) -->
+        <activity-alias
+            android:name=".CameraGestureAlias"
+            android:targetActivity=".QuickStartActivity"
+            android:enabled="false"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.media.action.STILL_IMAGE_CAMERA" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.media.action.STILL_IMAGE_CAMERA_SECURE" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity-alias>
         <activity
             android:name=".RecordingsActivity"
             android:label="@string/my_recordings"

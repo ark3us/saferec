@@ -182,6 +182,11 @@
     <string name="quick_start_camera_back">Back</string>
     <string name="quick_start_camera_front">Front</string>
     <string name="vibrations">Vibrations</string>
+    <string name="camera_gesture">Camera double press opens SafeRec</string>
+    <string name="camera_gesture_choose">When Android asks which app to use, choose SafeRec and Always.</string>
+    <string name="camera_gesture_undo">To undo: Settings → Apps → SafeRec → Open by default.</string>
+    <string name="camera_gesture_try">Try it now</string>
+    <string name="camera_gesture_no_app">No app can open the camera</string>
     <string name="power_gesture">Three presses of the power key</string>
     <string name="power_gesture_off">Off</string>
     <string name="power_gesture_needs_overlay">Needs \"display over other apps\"</string>

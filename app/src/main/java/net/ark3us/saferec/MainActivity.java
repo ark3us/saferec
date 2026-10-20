@@ -297,6 +297,14 @@ public class MainActivity extends AppCompatActivity {
             Settings.setVibrationsEnabled(this, isChecked);
         });
 
+        // Camera double press (not offered when the phone ties it to another camera app)
+        if (CameraGesture.isAvailable(this)) {
+            addToggleRow(container, getString(R.string.camera_gesture), CameraGesture.isEnabled(this), (btn, isChecked) -> {
+                CameraGesture.setEnabled(this, isChecked);
+                if (isChecked) showCameraGestureDialog();
+            });
+        }
+
         // Three presses of the power key (only when the guard module is built in)
         if (BuildConfig.POWER_GESTURE) {
             addSettingRow(container, getString(R.string.power_gesture), guardStatusLabel(), null, v -> {
@@ -309,6 +317,21 @@ public class MainActivity extends AppCompatActivity {
                 populateSettings(container, dialog);
             });
         }
+    }
+
+    private void showCameraGestureDialog() {
+        new AlertDialog.Builder(this)
+            .setTitle(R.string.camera_gesture)
+            .setMessage(getString(R.string.camera_gesture_choose) + "\n\n" + getString(R.string.camera_gesture_undo))
+            .setPositiveButton(R.string.camera_gesture_try, (d, w) -> {
+                try {
+                    startActivity(CameraGesture.tryIntent());
+                } catch (android.content.ActivityNotFoundException e) {
+                    Toast.makeText(this, R.string.camera_gesture_no_app, Toast.LENGTH_SHORT).show();
+                }
+            })
+            .setNegativeButton(android.R.string.ok, null)
+            .show();
     }
 
     private String guardStatusLabel() {
