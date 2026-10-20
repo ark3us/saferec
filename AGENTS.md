@@ -442,7 +442,7 @@ The service remembers the running recording's type (`currentDataType`) and camer
 - **Released in `onStop`, rebuilt in `onStart`** at the saved position in the session (one number, not piece and position), so the player holds no decoder or connection while the screen is hidden.
 - **Sound.** The player takes the audio focus (it pauses for a call or another app's sound) and pauses when earphones are unplugged (`setHandleAudioBecomingNoisy`): evidence audio never moves to the loudspeaker by surprise.
 - **Fullscreen** (the player's button): only the player is left, the system bars hide until the user swipes them in, and back leaves fullscreen first. In landscape a 16:9 player at full width is taller than the screen (≈ 488 dp against ≈ 310 dp on an S10+), with its controls below the fold, so turning the phone sideways while the player shows enters fullscreen by itself, and turning it back leaves it. A fullscreen chosen with the button stays.
-- **Errors** show a bar with Retry in the player (it leaves fullscreen first, since the message sits in the body, and scrolls the bar into view): same position, current token. A piece that answers 404 or 410 (gone from Drive since the load) is skipped: playback goes on from the next piece's start; the last one shows the error. On an HTTP 401 the screen refreshes the token (see Recordings and the session screen) and the player tries again; a refresh that ends while the player is released does nothing (`onStart` rebuilds it). Anything else is the plain error.
+- **Errors** show a bar with Retry in the player (it leaves fullscreen first, since the message sits in the body, and scrolls the bar into view): same position, current token. A piece that answers 404 or 410 (deleted for good since the load; a piece in the Drive trash still plays, since Drive serves it to the app that made it) is skipped: playback goes on from the next piece's start; the last one shows the error. On an HTTP 401 the screen refreshes the token (see Recordings and the session screen) and the player tries again; a refresh that ends while the player is released does nothing (`onStart` rebuilds it). Anything else is the plain error.
 - **Rotation.** `android:configChanges` (orientation, screen size, layout) keeps the activity and the player alive; fullscreen is a layout state, not a new screen.
 
 ## Key Classes
@@ -780,17 +780,27 @@ The list shows sessions, not chunks; one tap opens the session with its video an
 - **Gallery button** (`MainActivity`). The viewfinder's button shows the newest session's thumbnail, from `DriveRecordings.latestSession()`: Drive sorts the session folders and sends the newest five, so the list is never read. A folder whose name is not a session id, or which holds no session (its files trashed: the folders stay), is passed over for the next. It loads at most once a minute, only online with a token, prefers the video folder, and keeps the plain icon on any failure (the viewfinder never reports it; the next resume tries again at once). A badge counts the pieces waiting on the phone, and the content description says so.
 - **The tutorial overlay of the old list is gone** with the list it explained.
 
-To verify on a device:
-- List states: no token, nothing recorded, a failed load (airplane mode) and pull to retry.
-- Playback across pieces of a long session as one time bar, a seek across pieces, a technical row's tap, and a rotation in the middle of it.
-- Fullscreen: enter, leave with back, enter and rotate; turning to landscape enters it by itself and turning back leaves it.
-- A piece removed from Drive while the session screen is open: playback skips it (check whether a trashed file already answers 404, or only one deleted for good).
-- An expired token on the session screen and the list: the screen gets a new one silently and goes on.
-- Airplane mode in the middle of playback, then Retry.
-- Export evidence package, from the session screen.
-- Share the video; Move to trash (the card disappears at once, and stays hidden after a reload).
-- `r8test`: the player, the thumbnails and the technical rows in the shrunk build.
-- TalkBack: the cards, the status, the technical rows and the collapsible header.
+Verified on a Galaxy S10+ (Android 16):
+- **List states.** Offline: the banner "3 pieces waiting on this phone" with Upload now, and "Could not load the recordings…" with Retry. Back online, Retry loaded the cards (status, duration, type, Drive thumbnails on sessions some minutes old, the video/audio icon on new ones).
+- **A recording started while the list was open.** Three presses with the phone locked: after the unlock and a refresh its card read Uploading, and its screen "1 piece is still on this phone…".
+- **Export while recording.** The export reloaded the session first (19 files instead of the 13 it opened with). The open chunk was uploaded during the export, so the dialog said the file is not on this phone either and to export again: correct for that timing.
+- **Playback of a 4:38 session** (about 28 pieces) as one timeline: it played across piece boundaries with no stall, a tap at 45% of the bar landed at 2:07 and played, a technical row tap started at that piece (Piece 2 at 0:20), rotating to landscape went fullscreen by itself and back to portrait left it, Home and back restored the position paused.
+- **A piece trashed on Drive while the screen was open still played**: Drive serves a trashed file to the app that made it, so the 404 skip covers files deleted for good. After a refresh the card and the screen read Incomplete, "1 piece is missing on Drive.", and the timeline left the piece out.
+- **Token.** An invalid stored token with the session screen recreated after a process death gave a 401, "New token from Play services: VALID", and the session loaded. The viewfinder's gallery load hit the same 401 and the silent Drive check replaced the token.
+- **Trash from the session screen.** Confirmation, 28 files to the Drive trash in 21 s, the session gone from the list at once and after a refresh. Its folders stay (they hold trashed files), as the `CMD_DELETE` rule says.
+- **Share.** "Share the video" merged the pieces and opened the share sheet; an audio session reads "Share the audio".
+- **Start path.** With the microphone revoked, a tap on record, the screen recreated under the permission dialog (`cmd uimode night`), then Allow: exactly one start. Denied: no start, the banner "The microphone is needed to record." and a usable button. An external START (`--es command START`) with the microphone revoked showed the dialog, and Allow started exactly once.
+- **`r8test`**: the list, playback across pieces and an evidence export (COMPLETE, shared at once) ran with no crash. Then the debug build went back.
+- **Fixed after this run:**
+  - A session recorded while the list was open was inserted above the viewport, so the list looked unchanged: a load that finds the list at the top now scrolls to the top.
+  - The back arrows of the list and the session screen had no description: they read "Back" like Settings.
+  - The export spinner was a barely visible dot: it is sized by hand (20 dp) and sits before the label.
+  - Landscape fullscreen left a gray strip on the cutout side: fullscreen drops the system-bar and cutout padding.
+  - Technical rows show seconds (the pieces of one minute read the same), in the phone's locale.
+  - An audio session showed a black player: it shows the `ms_graphic_eq` artwork, dimmed.
+  - The list took 14-20 s with 34 sessions, since `DriveRecordings.markGaps` read the manifests one by one: four threads read them now, with the same results (an unreadable manifest still leaves its session unchecked). The session screen and the gallery share it.
+  - To check again on the phone: the new card appearing at the top after a refresh, the spinner while exporting, landscape fullscreen with a cutout, the seconds in the rows, the audio artwork, and the list time with many sessions.
+- **Not verified**: unplugging earphones during playback (cannot be simulated over adb), a rotation in the middle of a recording played upright piece by piece (needs hands), TalkBack's spoken output (content descriptions checked with uiautomator only).
 
 ---
 
@@ -877,14 +887,14 @@ R8 shrinks and optimizes the release (`isMinifyEnabled`, `isShrinkResources` in 
 - **Verified with `r8test` on a Galaxy S10+**, with no crash:
   - the Play services authorization and the Drive token check;
   - a recording uploaded with its TSA timestamps (BouncyCastle);
-  - the recordings list, and playback streamed from Drive;
+  - the session cards, playback of a session as one timeline across its pieces, and the evidence export from the session screen (verified as in Recordings and the session screen);
   - the settings screen;
   - the outbox job;
   - an evidence package and its phone check: signatures and certificate chains (BouncyCastle, `CertPathBuilder`) said COMPLETE, as in the debug build.
 
   Check these again after adding a library or anything that uses reflection.
 - **Media3** (ExoPlayer and its UI, 1.11.1) plays the sessions. It ships its own consumer rules, so `proguard-rules.pro` has nothing for it. Both R8 builds above (normal and guard off) passed with no warning about `androidx.media3`. The `r8test` APK is 4.7 MB with Media3.
-  - To check on the phone with `r8test`: a session plays across its pieces, and an evidence package exports, with no crash.
+  - Checked on the phone with `r8test`: a session plays across its pieces, and an evidence package exports, with no crash.
 - **Before a release**, both green on the build that ships:
   - `bash scripts/check-guard-refs.sh`: no class but `ui/GuardSetup` references the guard, so the build with the switch off cannot crash on a missing guard class;
   - `bash ./gradlew :app:minifyR8testWithR8 -Psaferec.powerGesture=false`: R8 accepts the build without the guard module (the Play build if `specialUse` is refused) and strips `GuardSetup`.
