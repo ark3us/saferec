@@ -88,6 +88,11 @@
             android:label="@string/my_recordings"
             android:theme="@style/Theme.SafeRec.Surface" />
         <activity
+            android:name=".SessionActivity"
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden"
+            android:exported="false"
+            android:theme="@style/Theme.SafeRec.Surface" />
+        <activity
             android:name=".SettingsActivity"
             android:exported="false"
             android:label="@string/settings"

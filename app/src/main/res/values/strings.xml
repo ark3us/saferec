@@ -257,4 +257,19 @@
     <string name="recordings_not_connected">Connect Google Drive to see your recordings. Recordings made meanwhile wait on this phone.</string>
     <string name="recordings_load_failed">Could not load the recordings. Pull down to try again.</string>
     <string name="session_card_description">%1$s, %2$s, %3$s, %4$s</string>
+    <string name="session_explain_complete">Every piece is on Drive.</string>
+    <plurals name="session_explain_uploading">
+        <item quantity="one">%1$d piece is still on this phone and goes to Drive with the network.</item>
+        <item quantity="other">%1$d pieces are still on this phone and go to Drive with the network.</item>
+    </plurals>
+    <plurals name="session_explain_incomplete">
+        <item quantity="one">%1$d piece is missing on Drive.</item>
+        <item quantity="other">%1$d pieces are missing on Drive.</item>
+    </plurals>
+    <string name="session_explain_not_checked">Recorded by an older version of SafeRec: it has no list of its pieces to check.</string>
+    <string name="session_share_video">Share the video</string>
+    <string name="session_trash">Move to trash</string>
+    <string name="session_technical">Technical details</string>
+    <string name="player_error">Cannot play this recording right now. Check the network and try again.</string>
+    <string name="retry_short">Retry</string>
 </resources>

@@ -287,6 +287,6 @@ public class RecordingsActivity extends AppCompatActivity {
 
     /** The one place a card tap goes through. */
     private void openSession(SessionSummary session) {
-        Log.i(TAG, "Open session " + session.sessionId + " " + session.dataType);
+        SessionActivity.start(this, session.sessionId, session.dataType);
     }
 }

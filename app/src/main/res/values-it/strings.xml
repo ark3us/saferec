@@ -265,4 +265,19 @@
     <string name="recordings_not_connected">Collega Google Drive per vedere le tue registrazioni. Quelle fatte nel frattempo aspettano sul telefono.</string>
     <string name="recordings_load_failed">Impossibile caricare le registrazioni. Trascina in basso per riprovare.</string>
     <string name="session_card_description">%1$s, %2$s, %3$s, %4$s</string>
+    <string name="session_explain_complete">Tutti i pezzi sono su Drive.</string>
+    <plurals name="session_explain_uploading">
+        <item quantity="one">%1$d pezzo è ancora sul telefono e andrà su Drive con la rete.</item>
+        <item quantity="other">%1$d pezzi sono ancora sul telefono e andranno su Drive con la rete.</item>
+    </plurals>
+    <plurals name="session_explain_incomplete">
+        <item quantity="one">Manca %1$d pezzo su Drive.</item>
+        <item quantity="other">Mancano %1$d pezzi su Drive.</item>
+    </plurals>
+    <string name="session_explain_not_checked">Registrata da una versione precedente di SafeRec: non ha l\'elenco dei pezzi da verificare.</string>
+    <string name="session_share_video">Condividi il video</string>
+    <string name="session_trash">Sposta nel cestino</string>
+    <string name="session_technical">Dettagli tecnici</string>
+    <string name="player_error">Impossibile riprodurre la registrazione ora. Controlla la rete e riprova.</string>
+    <string name="retry_short">Riprova</string>
 </resources>

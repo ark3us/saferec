@@ -119,6 +119,8 @@ dependencies {
     implementation(libs.constraintlayout)
     implementation(libs.swiperefreshlayout)
     implementation(libs.work.runtime)
+    implementation(libs.media3.exoplayer)
+    implementation(libs.media3.ui)
     if (powerGesture) implementation(project(":guard")) else compileOnly(project(":guard"))
 
     implementation(libs.play.services.auth)
