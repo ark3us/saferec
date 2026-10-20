@@ -48,6 +48,7 @@ import java.util.concurrent.TimeUnit;
 
 public class SafeRecService extends Service {
     public static final String CMD_START = "START";
+    public static final String CMD_SWITCH_CAMERA = "SWITCH_CAMERA";
     public static final String CMD_STOP = "STOP";
     public static final String CMD_DELETE = "DELETE";
     public static final String CMD_UPLOAD_PENDING = "UPLOAD_PENDING";
@@ -273,17 +274,26 @@ public class SafeRecService extends Service {
         Log.i(TAG, "Received command: " + command);
         switch (command) {
             case CMD_START:
-                // Sent with startForegroundService(): the service must enter the foreground
-                // whatever happens next, or Android kills the app
+            case CMD_SWITCH_CAMERA:
+                // CMD_START is sent with startForegroundService(): the service must enter the
+                // foreground whatever happens next, or Android kills the app
                 Notification notification = buildNotification(true);
                 if (!enterForeground(recordingForegroundType(), notification)) {
                     enterForeground(dataSyncForegroundType(), notification);
                 }
-                if (isRecording) {
-                    Log.i(TAG, "Stopping ongoing recording before restart (camera switch)");
-                    stopRecording();
+                switch (StartPolicy.forCommand(command, isRecording)) {
+                    case START:
+                        startRecording();
+                        break;
+                    case RESTART:
+                        Log.i(TAG, "Stopping ongoing recording before restart (camera switch)");
+                        stopRecording();
+                        startRecording();
+                        break;
+                    case IGNORE:
+                        Log.i(TAG, "Already recording: " + command + " ignored");
+                        break;
                 }
-                startRecording();
                 break;
             case CMD_STOP:
                 stopRecording();

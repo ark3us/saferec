@@ -209,7 +209,7 @@ public class MainActivity extends AppCompatActivity {
 
             if (isStarted(ServiceState.getInstance().getStatus().getValue())) {
                 Log.i(TAG, "Recording in progress, restarting service to switch camera");
-                startSafeRecService(SafeRecService.CMD_START);
+                startSafeRecService(SafeRecService.CMD_SWITCH_CAMERA);
             } else {
                 tryStartPreview();
             }

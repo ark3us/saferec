@@ -1,0 +1,22 @@
+package net.ark3us.saferec.services;
+
+/**
+ * What a start or camera switch command does. A start while recording is ignored, so a second
+ * quick start (power key, tile, shortcut) never cuts the recording in progress. Only the explicit
+ * camera switch restarts it. Pure Java, so it is unit tested.
+ */
+public final class StartPolicy {
+    public enum Action { START, RESTART, IGNORE }
+
+    private StartPolicy() {}
+
+    public static Action forCommand(String command, boolean recording) {
+        if (SafeRecService.CMD_START.equals(command)) {
+            return recording ? Action.IGNORE : Action.START;
+        }
+        if (SafeRecService.CMD_SWITCH_CAMERA.equals(command)) {
+            return recording ? Action.RESTART : Action.IGNORE;
+        }
+        return Action.IGNORE;
+    }
+}
