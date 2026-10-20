@@ -43,6 +43,7 @@ import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowCompat;
 import androidx.core.view.WindowInsetsCompat;
 import androidx.core.view.WindowInsetsControllerCompat;
+import androidx.media3.common.AudioAttributes;
 import androidx.media3.common.MediaItem;
 import androidx.media3.common.PlaybackException;
 import androidx.media3.common.Player;
@@ -849,7 +850,12 @@ public class SessionActivity extends AppCompatActivity {
     private void buildPlayer(long position) {
         ProgressiveMediaSource.Factory factory = new ProgressiveMediaSource.Factory(streamSource());
         errorBar.setVisibility(View.GONE);
-        player = new ExoPlayer.Builder(this).build();
+        // Pauses for a call or another app's sound, and when earphones are unplugged: evidence
+        // audio never moves to the loudspeaker by surprise
+        player = new ExoPlayer.Builder(this)
+                .setAudioAttributes(AudioAttributes.DEFAULT, /* handleAudioFocus= */ true)
+                .setHandleAudioBecomingNoisy(true)
+                .build();
         player.addListener(new Player.Listener() {
             @Override
             public void onPlayerError(PlaybackException error) {
