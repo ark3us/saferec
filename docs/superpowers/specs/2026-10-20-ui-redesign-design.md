@@ -1,6 +1,6 @@
 # SafeRec UI redesign: start fast, stop on purpose, see that the evidence is safe
 
-Date: 2026-10-20. Status: draft for review.
+Date: 2026-10-20. Status: for the owner's approval.
 
 ## Intent
 
@@ -124,7 +124,13 @@ No public API reports power key presses. Each press turns the screen on or off, 
 - The guard cannot create a camera/microphone foreground service from the background (Android throws `SecurityException`). It starts an activity instead, which shows over the lock screen, turns the screen on, and asks the recording service to start: a visible activity may create that service. Starting an activity from the background is allowed because the user granted "Display over other apps" (`SYSTEM_ALERT_WINDOW`, the `BAL_ALLOW_SAW` path in the logs).
 - Measured on the S10+, locked with a PIN and the screen off: video recording 0.6 s after the third press; trigger activity visible 30-54 ms after the trigger; the phone stayed locked. With the owner's own presses (~0.4 s apart) it triggered every time.
 - Costs, accepted by the owner: a permanent low-importance notification ("SafeRec ready: press the power key three times to record"), the special permission granted once, and a foreground service of type `specialUse` (`FOREGROUND_SERVICE_SPECIAL_USE`, with `PROPERTY_SPECIAL_USE_FGS_SUBTYPE`).
-- **The guard can die.** On the S10+, the low-memory killer killed the app process twice in a minute ("device is not responding", with 0.5 GB of RAM free), and Android postponed the sticky restart by up to 165 s "for mem-pressure-event". The guard is therefore never the only way in: the tile, the shortcut and the app always work. It restarts on `BOOT_COMPLETED` and `MY_PACKAGE_REPLACED`. The builder must check that Android 15+ lets `specialUse` start from `BOOT_COMPLETED`: its restrictions name other types, but it was not tested.
+- **The guard can die.** On the S10+, the low-memory killer killed the app process twice in a minute ("device is not responding", with 0.5 GB of RAM free), and Android postponed the sticky restart by up to 165 s "for mem-pressure-event". Android 15+ does not let a service restarted in the background return to the foreground, so the guard would stay dead until the app is opened. The owner chose to make it come back:
+  - The setup asks for the **battery-optimization exemption** next to the overlay permission, on the same "turn on three presses" screen. It opens the system settings page (`ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS`), not the direct dialog: the latter needs `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`, the permission Play polices most. The exemption is on the list of exemptions to the background-start restrictions, so a restarted guard can return to the foreground.
+  - A periodic watchdog (WorkManager, at its 15-minute minimum) restarts the guard if it is gone. It also restarts on `BOOT_COMPLETED` and `MY_PACKAGE_REPLACED`.
+  - When the guard is off (killed and not back yet, the exemption or the overlay permission revoked), the app says so plainly: the status chip shows "Three presses off" with a tap to fix it.
+  - The guard is still never the only way in: the tile, the shortcut and the app always work.
+  - The builder checks that Android 15+ lets `specialUse` start from `BOOT_COMPLETED` (its restrictions name other types, but it was not tested), and that the exemption does bring a killed guard back on the S10+.
+- **Google Play** (the owner's decision): the three presses ship on Play, declared as a `specialUse` foreground service for personal safety (start recording with a power key gesture). They sit behind a build switch. If Google refuses the declaration, the Play build ships with the switch off and the rest of the redesign still goes out, while builds outside Play keep the feature. With the switch off, nothing about the guard appears: no setting, no first-run screen, no manifest entries (the `specialUse` service and its permission, and the overlay permission).
 - **Other screen changes** *(designer's call)*. Nothing is filtered, not even during a phone call: an anti-goal forbids blocking a deliberate start, for example during a threatening call. Proximity screen-off during a call and ambient wake (lift or notification) should not emit `ACTION_SCREEN_ON`/`OFF`, since the device stays interactive or dozing. The builder verifies this on the S10+; if they do emit them, this decision comes back to the owner.
 - The trigger screen is discreet: black, no text beyond a small "Recording" for screen readers, gone after ~1.5 s. Vibration confirms (below). The screen then times out as usual, or the owner presses the power key once more. Recording continues with the screen off, as it already does.
 
@@ -180,7 +186,7 @@ Camera lost shows "audio only". Errors appear in the chip or in a slim banner, n
   - *Help*: the guide. The emergency drill stays an idea in `IDEAS.md`, out of scope *(designer's call)*.
 
   "Auto-start on Tile/Notification launch" goes away: the tile always records.
-- **First run:** "Record now" works from the first second. Recording needs only the camera and microphone permissions, plus notifications. Drive can be connected later, and chunks wait on the phone. The 8-step tutorial becomes three screens: what SafeRec does, the permissions, and turning on the three presses (with the overlay permission). The guide stays reachable from settings.
+- **First run:** "Record now" works from the first second. Recording needs only the camera and microphone permissions, plus notifications. Drive can be connected later, and chunks wait on the phone. The 8-step tutorial becomes three screens: what SafeRec does, the permissions, and turning on the three presses (the overlay permission and the battery exemption; the screen is absent when the build switch is off). The guide stays reachable from settings.
 - **Texts:** fix the false ones (no public link; works without Drive), and translate the hard-coded "OK"/"Cancel".
 - **Visual language:** dark theme, Material 3. One icon family (Material Symbols Rounded). Colors with one meaning each: 🔴 recording, 🟢 safe, 🟠 attention.
 
@@ -196,7 +202,9 @@ Camera lost shows "audio only". Errors appear in the chip or in a slim banner, n
 
 ## Verification
 
-- Unit tests (JVM) for the pure rules: the guard's trigger rule (three changes within 2.5 s, a double press never triggers, a burst does), start idempotence, and the status chip's state mapping.
+- Unit tests (JVM) for the pure rules: the guard's trigger rule (three changes within 2.5 s, a double press never triggers, a burst does), start idempotence, and the status chip's state mapping (including "Three presses off").
+- A build with the switch off has no guard in its merged manifest.
+- On the S10+, after a forced low-memory kill of the guard, it is back within the watchdog's period (or sooner with the sticky restart).
 - On the S10+ (`ANDROID_SERIAL` pinned, as `AGENTS.md` requires):
   - three presses with the phone locked and the screen off;
   - the tile from the lock screen;
