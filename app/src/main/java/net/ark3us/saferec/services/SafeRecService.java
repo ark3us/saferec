@@ -366,6 +366,12 @@ public class SafeRecService extends Service {
                 break;
             case IGNORE:
                 Log.i(TAG, command + " ignored (recording " + isRecording + ")");
+                if (quick && !startToConfirm) {
+                    // A quick start finding a recording running: the first confirmation may
+                    // have gone unnoticed, and must not push the owner to unlock and check.
+                    // A start still waiting for its confirmation gets that one.
+                    Haptics.started(this);
+                }
                 break;
         }
     }
