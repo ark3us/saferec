@@ -47,6 +47,9 @@ When a background refresh needs user interaction, the `AuthorizationResult` alre
 ### Idempotent folder creation
 A folder `create` whose response is lost (timeout) can still succeed on Drive. Pre-generate folder IDs with `files.generateIds`, persist them, and create with that ID: a retry then fails with 409 instead of making a duplicate, whatever Drive's search index says.
 
+### A recordings list that opens at once
+The list waits for Drive every time it opens: with 34 sessions it took 14-20 s on the S10+, because each session's manifest is read before any card shows. Keep the last list on the phone (session ids, status, duration, thumbnail links: no media, nothing secret beyond what Drive already holds) and show it at once, marked "updating…", then replace it when Drive answers. A status may only get better or worse after the refresh, never be shown as Complete from the cache alone: a cached card shows its last checked status with the time of that check.
+
 ### Drive repair tool
 One button in the recordings screen that merges duplicate `SafeRec` (and session) folders made by older builds into the oldest one, then deletes the empty duplicates.
 
