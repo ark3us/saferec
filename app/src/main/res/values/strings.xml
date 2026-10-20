@@ -272,4 +272,6 @@
     <string name="session_technical">Technical details</string>
     <string name="player_error">Cannot play this recording right now. Check the network and try again.</string>
     <string name="retry_short">Retry</string>
+    <string name="session_not_found">This recording is no longer on Drive.</string>
+    <string name="session_load_failed">Could not load this recording. Check the network and try again.</string>
 </resources>

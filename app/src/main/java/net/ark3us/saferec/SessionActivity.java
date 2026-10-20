@@ -8,6 +8,7 @@ import android.os.Looper;
 import android.util.Log;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.Button;
 import android.widget.TextView;
 
 import androidx.activity.EdgeToEdge;
@@ -144,9 +145,17 @@ public class SessionActivity extends AppCompatActivity {
         } catch (NumberFormatException | NullPointerException e) {
             // The title comes with the session
         }
-        if (sessionId == null || dataType == null || token == null || token.isEmpty()) {
-            showMissing();
+        if (sessionId == null || dataType == null) {
+            showState(R.string.session_not_found, 0);
             return;
+        }
+        if (token == null || token.isEmpty()) {
+            showState(R.string.recordings_not_connected, R.string.status_connect_drive);
+            return;
+        }
+        hideState();
+        if (drive != null) {
+            drive.shutdown();
         }
         drive = new DriveRecordings(this, token);
         drive.session(sessionId, dataType, new DriveRecordings.Callback<SessionSummary>() {
@@ -157,7 +166,7 @@ public class SessionActivity extends AppCompatActivity {
                         return;
                     }
                     if (result == null) {
-                        showMissing();
+                        showState(R.string.session_not_found, 0);
                     } else {
                         bind(result);
                     }
@@ -169,19 +178,69 @@ public class SessionActivity extends AppCompatActivity {
                 Log.w(TAG, "Session load failed", e);
                 mainHandler.post(() -> {
                     if (!isDestroyed()) {
-                        showMissing();
+                        showState(R.string.session_load_failed, R.string.retry_short);
                     }
                 });
             }
         });
     }
 
-    /** Drive has no such session (trashed meanwhile), or it could not be read. */
-    private void showMissing() {
+    /**
+     * The session cannot be shown: say why, and offer the way forward when there is one
+     * (connect Drive when there is no token, retry after an error).
+     */
+    private void showState(int message, int action) {
         playerHolder.setVisibility(View.GONE);
-        TextView explain = findViewById(R.id.session_explain);
-        explain.setText(R.string.recordings_load_failed);
         findViewById(R.id.session_status).setVisibility(View.GONE);
+        ((TextView) findViewById(R.id.session_explain)).setText(message);
+        Button button = findViewById(R.id.session_state_action);
+        if (action == 0) {
+            button.setVisibility(View.GONE);
+            return;
+        }
+        button.setText(action);
+        button.setEnabled(true);
+        button.setVisibility(View.VISIBLE);
+        button.setOnClickListener(v -> {
+            if (action == R.string.status_connect_drive) {
+                connectDrive(button);
+            } else {
+                loadSession();
+            }
+        });
+    }
+
+    private void hideState() {
+        findViewById(R.id.session_state_action).setVisibility(View.GONE);
+    }
+
+    /** The consent screen if Play services need it, then a check with Drive; then the load. */
+    private void connectDrive(Button button) {
+        button.setEnabled(false);
+        permissionsManager.connectDrive(true, (token, needsUser) -> {
+            if (token == null) {
+                button.setEnabled(true);
+                return;
+            }
+            Context app = getApplicationContext();
+            try {
+                executor.execute(() -> {
+                    DriveConnection.Result result = DriveConnection.accept(app, token);
+                    mainHandler.post(() -> {
+                        if (isDestroyed()) {
+                            return;
+                        }
+                        if (result == DriveConnection.Result.VALID) {
+                            loadSession();
+                        } else {
+                            button.setEnabled(true);
+                        }
+                    });
+                });
+            } catch (RejectedExecutionException e) {
+                Log.w(TAG, "Screen gone, Drive check dropped", e);
+            }
+        });
     }
 
     private void bind(SessionSummary summary) {

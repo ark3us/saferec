@@ -280,4 +280,6 @@
     <string name="session_technical">Dettagli tecnici</string>
     <string name="player_error">Impossibile riprodurre la registrazione ora. Controlla la rete e riprova.</string>
     <string name="retry_short">Riprova</string>
+    <string name="session_not_found">Questa registrazione non è più su Drive.</string>
+    <string name="session_load_failed">Impossibile caricare la registrazione. Controlla la rete e riprova.</string>
 </resources>
