@@ -213,4 +213,8 @@
     <string name="status_three_presses_off">Tre pressioni spente</string>
     <string name="status_waiting_explained">Le registrazioni aspettano sul telefono e vanno su Drive appena c\'è rete.</string>
     <string name="status_audio_only">Solo audio</string>
+    <string name="record_start">Avvia la registrazione</string>
+    <string name="record_recording_description">Registrazione in corso. Tieni premuto per fermare</string>
+    <string name="record_hold_to_stop">Tieni premuto per fermare</string>
+    <string name="record_stop_action">Ferma la registrazione</string>
 </resources>

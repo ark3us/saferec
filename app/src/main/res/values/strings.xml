@@ -206,4 +206,8 @@
     <string name="status_three_presses_off">Three presses off</string>
     <string name="status_waiting_explained">Recordings wait on this phone and go to Drive as soon as there is a network.</string>
     <string name="status_audio_only">Audio only</string>
+    <string name="record_start">Start recording</string>
+    <string name="record_recording_description">Recording. Hold to stop</string>
+    <string name="record_hold_to_stop">Hold to stop</string>
+    <string name="record_stop_action">Stop recording</string>
 </resources>
