@@ -918,9 +918,7 @@ public class SessionActivity extends AppCompatActivity {
 
     private void onPlaybackError(PlaybackException error) {
         Log.w(TAG, "Playback error", error);
-        HttpDataSource.InvalidResponseCodeException response = invalidResponse(error);
-        int code = response != null ? response.responseCode : 0;
-        if (code == 401) {
+        if (DriveTokenRefresh.isUnauthorized(error)) {
             // Released meanwhile (the screen stopped): onStart builds a new player, which tries again
             afterUnauthorized(streamedWith, () -> {
                 if (player != null) {
@@ -933,6 +931,8 @@ public class SessionActivity extends AppCompatActivity {
             });
             return;
         }
+        HttpDataSource.InvalidResponseCodeException response = invalidResponse(error);
+        int code = response != null ? response.responseCode : 0;
         if ((code == 404 || code == 410) && skipPiece(response)) {
             return;
         }
