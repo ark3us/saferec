@@ -12,4 +12,8 @@ public class StartPolicyTest {
     @Test public void startWhileRecordingIsIgnored() { assertEquals(IGNORE, StartPolicy.forCommand(SafeRecService.CMD_START, true)); }
     @Test public void switchWhileRecordingRestarts() { assertEquals(RESTART, StartPolicy.forCommand(SafeRecService.CMD_SWITCH_CAMERA, true)); }
     @Test public void switchWhileIdleIsIgnored() { assertEquals(IGNORE, StartPolicy.forCommand(SafeRecService.CMD_SWITCH_CAMERA, false)); }
+    @Test public void anUnknownCommandIsIgnored() {
+        assertEquals(IGNORE, StartPolicy.forCommand("SOMETHING_ELSE", true));
+        assertEquals(IGNORE, StartPolicy.forCommand("SOMETHING_ELSE", false));
+    }
 }
