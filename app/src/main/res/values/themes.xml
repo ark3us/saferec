@@ -27,6 +27,8 @@
     </style>
 
     <style name="Widget.SafeRec.GlassChip" parent="Widget.Material3.Chip.Assist">
+        <!-- Material 3 paints an opaque colorSurface layer under the background: glass needs none -->
+        <item name="chipSurfaceColor">@android:color/transparent</item>
         <item name="chipBackgroundColor">@color/glass_bg</item>
         <item name="chipStrokeColor">@color/glass_stroke</item>
         <item name="chipStrokeWidth">1dp</item>
