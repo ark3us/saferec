@@ -194,7 +194,11 @@ public class RecordingsActivity extends AppCompatActivity {
                             shown.add(s);
                         }
                     }
-                    adapter.submitList(shown);
+                    // A newer session lands above the anchored first card: stay on top when we were
+                    LinearLayoutManager layout = (LinearLayoutManager) recyclerView.getLayoutManager();
+                    boolean atTop = adapter.getItemCount() == 0
+                            || (layout != null && layout.findFirstVisibleItemPosition() <= 0);
+                    adapter.submitList(shown, atTop ? () -> recyclerView.scrollToPosition(0) : null);
                     if (shown.isEmpty()) {
                         showMessage(R.string.recordings_empty, 0);
                     } else {
