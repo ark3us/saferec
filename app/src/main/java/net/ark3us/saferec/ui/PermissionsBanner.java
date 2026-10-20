@@ -60,12 +60,17 @@ public final class PermissionsBanner {
      */
     public void whenCanRecord(boolean audioOnly, Runnable start) {
         this.audioOnly = audioOnly;
-        if (PermissionsBannerModel.mustAsk(audioOnly, PermissionsManager.canRecord(activity),
-                PermissionsManager.hasCameraPermission(activity), cameraRefused)) {
+        if (mustAsk(audioOnly)) {
             ask(audioOnly, start);
         } else {
             start.run();
         }
+    }
+
+    /** Whether a start of this kind shows the permission dialog first (whenCanRecord then waits for it). */
+    public boolean mustAsk(boolean audioOnly) {
+        return PermissionsBannerModel.mustAsk(audioOnly, PermissionsManager.canRecord(activity),
+                PermissionsManager.hasCameraPermission(activity), cameraRefused);
     }
 
     /**

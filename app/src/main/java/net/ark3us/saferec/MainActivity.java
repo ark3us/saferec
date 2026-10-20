@@ -97,6 +97,7 @@ public class MainActivity extends AppCompatActivity {
     private String galleryDescription;
 
     private StatusChipController statusChip;
+    private PermissionsManager permissionsManager;
     private PermissionsBanner permissionsBanner;
     private DriveConnector driveConnector;
     private NetworkWatcher networkWatcher;
@@ -166,7 +167,7 @@ public class MainActivity extends AppCompatActivity {
         holdHintTextAgain = holdHintText + "\u200B";
         ViewCompat.setAccessibilityLiveRegion(holdHint, ViewCompat.ACCESSIBILITY_LIVE_REGION_POLITE);
 
-        PermissionsManager permissionsManager = new PermissionsManager(this);
+        permissionsManager = new PermissionsManager(this);
         firstRun = new FirstRun(this, findViewById(R.id.first_run_card), permissionsManager);
         permissionsBanner = new PermissionsBanner(this, permissionsManager, findViewById(R.id.permissions_banner),
                 findViewById(R.id.permissions_banner_text), findViewById(R.id.permissions_allow), savedInstanceState);
@@ -361,15 +362,19 @@ public class MainActivity extends AppCompatActivity {
      * no command, need nothing.
      */
     private void launchWhenPermitted() {
-        // Posted on a view so the service starts only once the activity is visible
-        if (launchCommandHandled || !SafeRecService.CMD_START.equals(getCommand())) {
-            btnRecord.post(this::handleLaunchCommand);
-        } else {
-            // Handled from now on: a refused start must never replay after a later grant
+        boolean audioOnly = Settings.onlyAudio(this);
+        if (!launchCommandHandled && SafeRecService.CMD_START.equals(getCommand())
+                && permissionsBanner.mustAsk(audioOnly)) {
+            // The dialog shows: handled from now on, so a refused start never replays after a
+            // later grant and a recreation. The answer starts it.
             launchCommandHandled = true;
-            permissionsBanner.whenCanRecord(Settings.onlyAudio(this),
+            permissionsBanner.whenCanRecord(audioOnly,
                     () -> btnRecord.post(() -> startSafeRecService(SafeRecService.CMD_START)));
+            return;
         }
+        // Nothing to ask. Posted on a view so the service starts only once the activity is
+        // visible; handled only when it runs, so a recreation before then still runs it
+        btnRecord.post(this::handleLaunchCommand);
     }
 
     /** Runs the command the activity was launched with, once per launch. */
@@ -709,6 +714,20 @@ public class MainActivity extends AppCompatActivity {
         if (online && (networkBack || driveCheckedAt == 0 || now - driveCheckedAt >= DRIVE_CHECK_MS)) {
             driveCheckedAt = now;
             driveConnector.silentCheck(true);
+        }
+    }
+
+    /**
+     * The focus, not onResume: a screen recreated behind the permission dialog (a rotation, dark
+     * mode) is resumed for a moment while the dialog is still up, and its answer still to come.
+     * With the focus no dialog covers the screen, and an answer has already come.
+     */
+    @Override
+    public void onWindowFocusChanged(boolean hasFocus) {
+        super.onWindowFocusChanged(hasFocus);
+        if (hasFocus) {
+            // A request still in flight lost its answer: the record button must never stay dead
+            permissionsManager.finishStaleRequest();
         }
     }
 

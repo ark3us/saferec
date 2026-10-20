@@ -163,6 +163,21 @@ public class PermissionsManager {
         pendingPermissions.add(onResult);
     }
 
+    /**
+     * A request still marked in flight while the screen has the window focus is stale: no dialog
+     * covers the screen, and its answer, which comes before the focus, was lost. Finishes it with
+     * the current grants: the waiting callbacks check what they need themselves, so a waiting
+     * start runs only with the microphone granted, and once (the list is emptied first).
+     */
+    public void finishStaleRequest() {
+        if (!permissionsInFlight) {
+            return;
+        }
+        Log.w(TAG, "Permission request still in flight with the screen in front: finishing it");
+        allGranted = hasRecordingPermissions(context);
+        notifyPermissionsResult();
+    }
+
     private void notifyPermissionsResult() {
         permissionsInFlight = false;
         List<Runnable> waiting = new ArrayList<>(pendingPermissions);
