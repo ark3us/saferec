@@ -8,7 +8,15 @@ package net.ark3us.saferec.services;
 public final class StartPolicy {
     public enum Action { START, RESTART, IGNORE }
 
+    /** A quick start ignored this soon after the last "started" pulse does not vibrate again. */
+    static final long REPLAY_GAP_MS = 1000;
+
     private StartPolicy() {}
+
+    /** Whether an ignored quick start replays the "started" pulses. 0 means none played yet. */
+    static boolean replaysStarted(long nowMs, long lastStartedPulseMs) {
+        return lastStartedPulseMs == 0 || nowMs - lastStartedPulseMs >= REPLAY_GAP_MS;
+    }
 
     public static Action forCommand(String command, boolean recording) {
         if (SafeRecService.CMD_START.equals(command)) {

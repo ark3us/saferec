@@ -15,6 +15,7 @@ import android.os.Build;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
+import android.os.SystemClock;
 import android.util.Log;
 
 import androidx.annotation.NonNull;
@@ -68,6 +69,8 @@ public class SafeRecService extends Service {
     private MuxerSink sink;
 
     private boolean isRecording = false;
+    /** When the "started" pulses last played (elapsed realtime), 0 if never. */
+    private long lastStartedPulseMs = 0;
     private static final int NOT_FOREGROUND = -1;
     private int foregroundType = NOT_FOREGROUND; // main thread only
     // Entering the foreground needs the app in front: true once a command came from the UI,
@@ -311,8 +314,11 @@ public class SafeRecService extends Service {
                 startOrSwitch(command, CMD_START.equals(command) && intent.getBooleanExtra(EXTRA_QUICK_START, false));
                 break;
             case CMD_STOP:
+                boolean wasRecording = isRecording;
                 stopRecording();
-                Haptics.stopped(this);
+                if (wasRecording) {
+                    Haptics.stopped(this);
+                }
                 currentSessionId = null;
                 currentSequenceNumber = 0;
                 ServiceState.getInstance().setSession(0, false);
@@ -370,14 +376,20 @@ public class SafeRecService extends Service {
                 break;
             case IGNORE:
                 Log.i(TAG, command + " ignored (recording " + isRecording + ")");
-                if (quick && !startToConfirm) {
+                if (quick && !startToConfirm
+                        && StartPolicy.replaysStarted(SystemClock.elapsedRealtime(), lastStartedPulseMs)) {
                     // A quick start finding a recording running: the first confirmation may
                     // have gone unnoticed, and must not push the owner to unlock and check.
                     // A start still waiting for its confirmation gets that one.
-                    Haptics.started(this);
+                    playStarted();
                 }
                 break;
         }
+    }
+
+    private void playStarted() {
+        lastStartedPulseMs = SystemClock.elapsedRealtime();
+        Haptics.started(this);
     }
 
     /** What the running recording records, video or audio only (the camera may be lost since). */
@@ -479,7 +491,7 @@ public class SafeRecService extends Service {
         }
         startToConfirm = false;
         if (recording) {
-            Haptics.started(this);
+            playStarted();
         } else {
             Haptics.failed(this);
         }
