@@ -671,9 +671,17 @@ public class MainActivity extends AppCompatActivity {
         String command = getCommand();
         Log.i(TAG, "Launch command: " + command);
 
-        if (command != null) {
-            startSafeRecService(command);
+        if (command == null) {
+            return;
         }
+        // This activity is exported: any installed app can launch it with a command. Only Start
+        // is accepted, so no other app can stop a recording. Debug builds accept every command:
+        // scripts/device-tests.sh stops recordings this way.
+        if (!SafeRecService.CMD_START.equals(command) && !BuildConfig.DEBUG) {
+            Log.w(TAG, "Launch command ignored: " + command);
+            return;
+        }
+        startSafeRecService(command);
     }
 
     private void tryStartPreview() {

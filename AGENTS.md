@@ -602,6 +602,7 @@ Recording must start with the phone locked, in a pocket, without looking. Every 
 - **What it records.** The quick-start settings (`quickStartAudioOnly`, `quickStartFrontCamera`: video and back camera by default), not what was last picked on the viewfinder.
 - **Tile and shortcut.** The tile (`SafeRecTileService`) and the static shortcut "Record now" start `QuickStartActivity` with source `tile` / `shortcut`. The tile works from the lock screen without unlocking. Source `power` comes from the guard and `camera` from the double press.
 - **Stopping is deliberate.** Nobody stops a recording from the lock screen: the notification's Stop needs authentication (see the notification above).
+- **Commands from other apps.** `MainActivity` is exported and runs the `command` extra it is launched with. Release builds accept only `CMD_START` there and log any other command as ignored: any installed app could otherwise stop a recording. Debug builds (`BuildConfig.DEBUG`) accept every command, because `scripts/device-tests.sh` stops recordings that way.
 
 ### Three presses of the power key
 
