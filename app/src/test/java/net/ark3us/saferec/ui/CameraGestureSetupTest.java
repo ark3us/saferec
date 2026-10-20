@@ -18,4 +18,10 @@ public class CameraGestureSetupTest {
     @Test public void aLockedOnlyGapIsFoundToo() {
         assertEquals(0, nextTry(new boolean[]{false, true}));
     }
+
+    @Test public void twoFailuresInARowAreStuck() {
+        org.junit.Assert.assertFalse(CameraGestureSetup.isStuck(0));
+        org.junit.Assert.assertFalse(CameraGestureSetup.isStuck(1));
+        org.junit.Assert.assertTrue(CameraGestureSetup.isStuck(2));
+    }
 }

@@ -107,11 +107,12 @@ public class SettingsActivity extends AppCompatActivity {
         guardRechecks = 0;
         boolean continueGuardSetup = overlayStepOpened;
         overlayStepOpened = false;
+        // Before render(): a setup that gives up turns the option off, and the row must say so
+        CameraGestureSetup.onResume(this);
         render();
         if (continueGuardSetup) {
             continueGuardSetup();
         }
-        CameraGestureSetup.onResume(this);
     }
 
     @Override

@@ -7,6 +7,7 @@ import android.widget.Toast;
 
 import androidx.appcompat.app.AlertDialog;
 
+import net.ark3us.saferec.BuildConfig;
 import net.ark3us.saferec.CameraGesture;
 import net.ark3us.saferec.R;
 
@@ -24,6 +25,9 @@ public final class CameraGestureSetup {
      * MainActivity with CLEAR_TOP), so a field would be lost.
      */
     private static int pendingTry = NO_TRY;
+    /** Consecutive "not saved" results of the same try; reset when it is stored or the setup starts over. */
+    private static int notSaved = 0;
+    private static int notSavedTry = NO_TRY;
 
     private CameraGestureSetup() {}
 
@@ -35,8 +39,19 @@ public final class CameraGestureSetup {
         return NO_TRY;
     }
 
+    /** Android's last-choice trap: the same try failed twice in a row, so a third would loop. */
+    public static boolean isStuck(int consecutiveNotSaved) {
+        return consecutiveNotSaved >= 2;
+    }
+
+    private static void resetCount() {
+        notSaved = 0;
+        notSavedTry = NO_TRY;
+    }
+
     /** Starts the setup: explains, then tries the first action not stored yet. */
     public static void begin(Activity activity) {
+        resetCount();
         int next = nextTry(CameraGesture.storedTries(activity));
         if (next == NO_TRY) return;
         showDialog(activity, next);
@@ -50,6 +65,20 @@ public final class CameraGestureSetup {
         if (!CameraGesture.isEnabled(activity)) return;
         boolean[] stored = CameraGesture.storedTries(activity);
         if (tried < stored.length && !stored[tried]) {
+            notSaved = notSavedTry == tried ? notSaved + 1 : 1;
+            notSavedTry = tried;
+            if (isStuck(notSaved)) {
+                resetCount();
+                // Never leave a chooser behind the lock screen: the double press goes back to the camera
+                CameraGesture.setEnabled(activity, false);
+                new AlertDialog.Builder(activity)
+                    .setTitle(R.string.camera_gesture)
+                    .setMessage(BuildConfig.POWER_GESTURE
+                        ? R.string.camera_gesture_stuck : R.string.camera_gesture_stuck_no_guard)
+                    .setPositiveButton(android.R.string.ok, null)
+                    .show();
+                return;
+            }
             new AlertDialog.Builder(activity)
                 .setTitle(R.string.camera_gesture)
                 .setMessage(R.string.camera_gesture_not_saved)
@@ -58,6 +87,7 @@ public final class CameraGestureSetup {
                 .show();
             return;
         }
+        resetCount();
         int next = nextTry(stored);
         if (next == NO_TRY) {
             new AlertDialog.Builder(activity)

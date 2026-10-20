@@ -663,10 +663,13 @@ The double press of the power key opens the default camera app with `STILL_IMAGE
   - Locked, screen off, the double press recorded 0.48 s after the press, and the phone stayed locked.
   - Turned off, both actions went back to the camera app, and the double press opened it.
   - Android plays its own short vibration for the camera gesture, ~0.45 s before SafeRec's two pulses.
-- **Gaps of the setup** (for the settings screen):
-  - When Android remembers another app as the last choice for an action, its chooser reads "Complete action using Camera" and lists SafeRec under "Use a different app". Tapping SafeRec there opens it just once, with no "Always", so a third try is needed (it then reads "Complete action using SafeRec").
-  - The "Always" choices stay stored while the option is off. Turning it back on works at once, and the two tries only start needless recordings.
-  - Fix: after each try, check whether the action now resolves to SafeRec (`resolveActivity`), offer the try again if not, and skip the tries already stored.
+- **The setup checks itself** (`CameraGestureSetup`). Android stores "Always" once per action, and only the user can choose it.
+  - After each try, `CameraGesture.isDefaultFor()` asks `resolveActivity(intent, MATCH_DEFAULT_ONLY)` whether the action now opens the alias. It needs the camera actions in the manifest's `<queries>`, or other camera apps are invisible.
+  - Tries already stored are skipped (the "Always" choices survive turning the option off), so turning it back on can need no try at all.
+  - A try that is not stored gets "Try again". When all are stored the setup says it is done.
+- **The last-choice trap.** When Android keeps another app as its last choice (not an "Always"), the chooser reads "Complete action using Camera" on every try and lists SafeRec under "Use a different app". Tapping SafeRec opens it just once and never moves the suggestion (3 tries on the phone). The camera app's "Open by default, Clear default preferences" removes only "Always" entries, so the user cannot clear it.
+  - The way out: after two "not saved" results in a row for the same try, the option turns itself off (the double press goes back to the camera, no chooser behind the lock screen) and the dialog points to the three presses (or the tile, in a build without the guard).
+- Verified on a Galaxy S10+ (Android 16).
 - On a Pixel with Android 17, SystemUI pins the gesture to Google Camera (`config_cameraGesturePackage`), so the option is not offered there: the row was absent.
 
 ### Google Play declaration
