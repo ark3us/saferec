@@ -18,6 +18,6 @@
     <color name="surface_dark">#FF0F0F10</color>
     <color name="surface_card">#FF1C1C1E</color>
 
-    <!-- Still used by the recordings screens until Plan 3 -->
+    <!-- Used by NotificationHelper only -->
     <color name="primary">#FF00BFA5</color>
 </resources>

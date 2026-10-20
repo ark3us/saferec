@@ -162,7 +162,7 @@ public final class SessionsAdapter extends ListAdapter<SessionSummary, SessionsA
             String titleText = formatTitle(context, session.startMillis);
             String durationText = formatDuration(session.durationMillis());
             String typeText = context.getString(video ? R.string.mode_video : R.string.mode_audio);
-            subtitle.setText(durationText + " · " + typeText);
+            subtitle.setText(context.getString(R.string.session_subtitle, durationText, typeText));
             title.setText(titleText);
             bindStatus(status, session.status);
             itemView.setContentDescription(context.getString(R.string.session_card_description,

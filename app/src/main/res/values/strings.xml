@@ -253,4 +253,5 @@
     <string name="first_run_step">Step %1$d of %2$d</string>
     <string name="session_share_timestamp">Share time stamp</string>
     <string name="session_manifest_row">List of pieces (manifest)</string>
+    <string name="session_subtitle" translatable="false">%1$s · %2$s</string>
 </resources>

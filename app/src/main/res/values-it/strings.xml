@@ -237,10 +237,12 @@
     <string name="session_explain_complete">Tutti i pezzi sono su Drive.</string>
     <plurals name="session_explain_uploading">
         <item quantity="one">%1$d pezzo è ancora sul telefono e andrà su Drive con la rete.</item>
+        <item quantity="many">%1$d pezzi sono ancora sul telefono e andranno su Drive con la rete.</item>
         <item quantity="other">%1$d pezzi sono ancora sul telefono e andranno su Drive con la rete.</item>
     </plurals>
     <plurals name="session_explain_incomplete">
         <item quantity="one">Manca %1$d pezzo su Drive.</item>
+        <item quantity="many">Mancano %1$d pezzi su Drive.</item>
         <item quantity="other">Mancano %1$d pezzi su Drive.</item>
     </plurals>
     <string name="session_explain_not_checked">Registrata da una versione precedente di SafeRec: non ha l\'elenco dei pezzi da verificare.</string>
