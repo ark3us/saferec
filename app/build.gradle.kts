@@ -7,7 +7,13 @@ plugins {
 
 // The three power-key presses live in :guard. With the switch off the module is compileOnly:
 // its manifest entries never reach the app, and BuildConfig.POWER_GESTURE is false
-val powerGesture = providers.gradleProperty("saferec.powerGesture").map { it.toBoolean() }.getOrElse(true)
+val powerGesture = providers.gradleProperty("saferec.powerGesture").map {
+    when (it) {
+        "true" -> true
+        "false" -> false
+        else -> throw GradleException("saferec.powerGesture must be true or false, got '$it'")
+    }
+}.getOrElse(true)
 
 android {
     packaging {
