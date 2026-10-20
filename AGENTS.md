@@ -817,6 +817,11 @@ R8 shrinks and optimizes the release (`isMinifyEnabled`, `isShrinkResources` in 
   - an evidence package and its phone check: signatures and certificate chains (BouncyCastle, `CertPathBuilder`) said COMPLETE, as in the debug build.
 
   Check these again after adding a library or anything that uses reflection.
+- **Before a release**, both green on the build that ships:
+  - `bash scripts/check-guard-refs.sh`: no class but `ui/GuardSetup` references the guard, so the build with the switch off cannot crash on a missing guard class;
+  - `bash ./gradlew :app:minifyR8testWithR8 -Psaferec.powerGesture=false`: R8 accepts the build without the guard module (the Play build if `specialUse` is refused) and strips `GuardSetup`.
+
+  Both build into `app/build/` with the switch off: build the normal variant again afterwards.
 
 ---
 
