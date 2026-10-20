@@ -33,6 +33,7 @@ public class RecordButton extends View {
     private static final float BUSY_ALPHA = 0.4f;
 
     private final HoldToStop hold = new HoldToStop();
+    private final RecordGesture gesture = new RecordGesture();
     private final Paint ringPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint arcPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint fillPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -124,9 +125,14 @@ public class RecordButton extends View {
 
     @Override
     public boolean onTouchEvent(MotionEvent e) {
-        if (busy) return false;
+        if (busy) {
+            // A command is on its way: this touch can no longer act, even once it is done
+            gesture.cancel();
+            return false;
+        }
         switch (e.getActionMasked()) {
             case MotionEvent.ACTION_DOWN:
+                gesture.down(recording);
                 if (recording) {
                     hold.down(now());
                     holding = true;
@@ -140,18 +146,21 @@ public class RecordButton extends View {
             case MotionEvent.ACTION_POINTER_DOWN:
                 cancelHold(true);
                 return true;
-            case MotionEvent.ACTION_UP:
-                if (!recording) {
-                    if (inside(e)) performClick();
-                } else if (holding) {
-                    if (checkStop()) return true;
-                    // Still held and not yet confirmed: an early release, so only a hint.
-                    cancelHold(true);
+            case MotionEvent.ACTION_UP: {
+                // A hold that reached the second by now stops here
+                if (holding) checkStop();
+                boolean stillHolding = holding;
+                // Still held and not confirmed: an early release, the ring animates back
+                if (stillHolding) cancelHold(true);
+                // Judged by the state the touch began in: the end of a stop never starts again
+                if (gesture.release(recording, inside(e), stillHolding) != RecordGesture.Release.NOTHING) {
                     performClick();
                 }
                 return true;
+            }
             case MotionEvent.ACTION_CANCEL:
                 cancelHold(true);
+                gesture.cancel();
                 return true;
             default:
                 return super.onTouchEvent(e);
