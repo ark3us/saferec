@@ -98,3 +98,9 @@ Without the Play Store nothing tells a user about updates. Once a day, online on
 
 ### Reproducible builds
 If two builds of the same tag gave the same unsigned APK, a third party could rebuild SafeRec from source and compare it with the Release, byte for byte apart from the signature. That is what F-Droid's reproducible-build checks need, and it would let the app reach F-Droid while keeping the owner's signature.
+
+### Cross-check the CI build against the local one
+`scripts/release.sh` already builds a signed release on the owner's machine before tagging. Once the Release is out, it could download `SafeRec-<version>.apk` and compare its zip entries with the local build, the signing block left out. R8 gives the same output for the same inputs, so a difference would expose a poisoned dependency on one of the two machines: the release key protects who signs, not what was built.
+
+### "Check this copy" in Settings
+A row in Settings, Help, showing the SHA-256 of the certificate that signed the installed app (`PackageManager.getPackageInfo(…, GET_SIGNING_CERTIFICATES)`) next to the one published in the README, with a plain "This is the official SafeRec" or "This copy was signed by someone else". Users who install APKs by hand would not need `apksigner` to know whether a copy someone handed them is genuine.
