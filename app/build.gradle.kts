@@ -15,6 +15,16 @@ val powerGesture = providers.gradleProperty("saferec.powerGesture").map {
     }
 }.getOrElse(true)
 
+// CI builds the release unsigned and signs it in a job that runs no Gradle: the release key
+// never enters a process that runs third-party build code
+val unsignedRelease = providers.gradleProperty("saferec.unsignedRelease").map {
+    when (it) {
+        "true" -> true
+        "false" -> false
+        else -> throw GradleException("saferec.unsignedRelease must be true or false, got '$it'")
+    }
+}.getOrElse(false)
+
 android {
     packaging {
         resources {
@@ -56,7 +66,7 @@ android {
         release {
             isMinifyEnabled = true
             isShrinkResources = true
-            signingConfig = signingConfigs.getByName("release")
+            signingConfig = if (unsignedRelease) null else signingConfigs.getByName("release")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
