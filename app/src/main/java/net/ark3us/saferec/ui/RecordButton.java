@@ -16,8 +16,8 @@ import androidx.core.view.ViewCompat;
 import net.ark3us.saferec.R;
 
 /**
- * The record button. Ready: one tap starts. Recording: the button must be held for about a
- * second while a ring fills, so a recording is never stopped by accident.
+ * The record button. Ready: one tap starts. Recording: the button must be held for half a
+ * second while a ring fills, so a tap never stops a recording by accident.
  */
 public class RecordButton extends View {
     public interface Listener {

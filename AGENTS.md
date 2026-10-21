@@ -156,7 +156,7 @@ net.ark3us.saferec/
 └── ui/
     ├── StatusModel.java          # Which status chip shows (pure Java)
     ├── StatusChipController.java # Draws the chip
-    ├── RecordButton.java         # The record button; hold 1 s to stop
+    ├── RecordButton.java         # The record button; hold 0.5 s to stop
     ├── HoldToStop.java           # The hold, decided on the clock (pure Java)
     ├── RecordGesture.java        # A touch acts on the state it began in (pure Java)
     ├── NetworkWatcher.java       # Validated default network
@@ -658,12 +658,12 @@ Recording must start with the phone locked, in a pocket, without looking. Every 
 ```
  [status chip]                [switch camera] [recordings] [settings]
  (preview)
- [Video|Audio]      ( record: hold 1 s to stop )      [gallery]
+ [Video|Audio]     ( record: hold 0.5 s to stop )     [gallery]
  recording: red pill with elapsed time, "N pieces safe" chip
 ```
 
 - **Status chip** (`StatusModel`): `CONNECT_DRIVE`, `RECONNECT_DRIVE`, `THREE_PRESSES_OFF`, `WAITING`, `OFFLINE`, `DRIVE_OK`, `HIDDEN`. Recording first, sync later: the chip reports, it never blocks.
-- **Stopping** is a 1 s hold on the record button (`HoldToStop`). A touch acts on the state it began in (`RecordGesture`): releasing a hold once restarted the recording.
+- **Stopping** is a 0.5 s hold on the record button (`HoldToStop`): a tap only shows "Hold to stop". It was 1 s; the owner found that too long, and half a second still sits well above a tap (~100-200 ms). A touch acts on the state it began in (`RecordGesture`): releasing a hold once restarted the recording.
 - **Drive.** `DriveConnector` checks silently, only online with a token, and never opens the account picker by itself. The viewfinder runs the check at most once a minute, and at once when the network came back (while online, or at the resume that follows a stop spent offline). When the outbox holds any file (a lone manifest copy or time stamp counts) a valid check sends `CMD_UPLOAD_PENDING`. `ServiceState` publishes the session start, audio only, the pieces waiting and a sticky Drive-auth flag.
 - **Pieces waiting** counts the chunks (`.mp4`) in the outbox only (`SafeCount.pieces()`, used by the service and by `MainActivity` on resume). A chunk's `.tsa`, the manifest copy and a cut original travel with them but are not pieces: counting every file showed "2 pieces waiting" 17 s into an offline recording. The service keeps the raw file count for its own work and its notification ("N files waiting to be uploaded").
 - **Permissions.** A start needs the microphone only, in every mode (`PermissionsManager.canRecord()`). Video mode asks for the camera with it, in one request, once per screen (`PermissionsBannerModel.mustAsk()`): the recording starts once the microphone is granted, with video if the camera was granted too. A refused camera records sound only, decided by the service, so a quick start does the same. While the camera stays refused in Video mode, the banner reads "No camera permission: recording sound only." and its Allow asks for the camera (the app's settings once Android no longer shows the dialog). A refused microphone shows the banner as before. Recording permissions are separate from Drive (`requestRecordingPermissions`, `connectDrive(interactive, ...)`).
@@ -949,7 +949,7 @@ Unit tests (JVM, no phone, under a second): `./gradlew testDebugUnitTest`. The s
 - `SessionsAdapterTest`: the duration words (minutes and seconds, hours from one hour).
 - `TrashedSessionsTest`: a trashed session hidden right away and for its type only, visible again after the window, one never hidden is visible.
 - `StatusModelTest`: which chip shows for each mix of Drive, network, permissions and guard state.
-- `HoldToStopTest`: the 1 s hold completes or cancels on the clock.
+- `HoldToStopTest`: the 0.5 s hold completes or cancels on the clock.
 - `RecordGestureTest`: a touch acts on the state it began in (releasing a hold never restarts).
 - `CameraGestureSetupTest`: the double press setup steps, including `isStuck`.
 - `FirstRunStepsTest`: which first-run cards show and when they are done.
