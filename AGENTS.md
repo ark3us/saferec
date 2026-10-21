@@ -1,6 +1,7 @@
 # SafeRec — Application Architecture
 
-> **Package:** `net.ark3us.saferec`
+> **Package:** `net.ark3us.saferec` (application id `net.ark3us.saferec.app`)
+> **Distribution:** GitHub Releases, built and signed by GitHub Actions from a tag (see Release Build)
 > **Platform:** Android (Camera2 API, MediaCodec, MediaMuxer)
 > **Purpose:** Background audio/video recording with chunked upload to Google Drive
 
@@ -710,7 +711,7 @@ On the S10+ the low-memory killer killed the app twice in a minute, with 0.5 GB 
 
 ### Build switch
 
-`saferec.powerGesture` in `gradle.properties` (default `true`). With `-Psaferec.powerGesture=false` the `guard` module is `compileOnly`: nothing of it is packaged, so the APK has no guard manifest entries (the `specialUse` service and its permission, the overlay permission, the boot receiver), and the app shows no setting or first-run step for it (`BuildConfig.POWER_GESTURE`). This is the build for Google Play if the `specialUse` declaration is refused.
+`saferec.powerGesture` in `gradle.properties` (default `true`). With `-Psaferec.powerGesture=false` the `guard` module is `compileOnly`: nothing of it is packaged, so the APK has no guard manifest entries (the `specialUse` service and its permission, the overlay permission, the boot receiver), and the app shows no setting or first-run step for it (`BuildConfig.POWER_GESTURE`). It is in standby: no Release ships it, but CI runs `scripts/check-guard-refs.sh` on every push, so it keeps working if a store ever refuses the `specialUse` service.
 
 - App code touches the guard only inside `if (BuildConfig.POWER_GESTURE)`, which javac drops in that build. Two things leak out anyway: a lambda's body, and enum switch maps. One synthetic class (`FirstRun$1`) builds the maps of every enum switch of its class, so any of them loads `Guard.Status`: the first launch of the off build crashed with `NoClassDefFoundError`.
 - So every switch over a guard enum lives in `ui/GuardSetup` (`GuardSetup.state()` gives ints to switch on), the only class allowed to name the guard. `scripts/check-guard-refs.sh` compiles the off build and fails on any other class that references the guard.
@@ -739,14 +740,6 @@ The double press of the power key opens the default camera app with `STILL_IMAGE
   - The way out: after two "not saved" results in a row for the same try, the option turns itself off (the double press goes back to the camera, no chooser behind the lock screen) and the dialog points to the three presses (or the tile, in a build without the guard).
 - Verified on a Galaxy S10+ (Android 16).
 - On a Pixel with Android 17, SystemUI pins the gesture to Google Camera (`config_cameraGesturePackage`), so the option is not offered there: the row was absent.
-
-### Google Play declaration
-
-Foreground service type `specialUse`, to paste in the Play Console. The subtype is the value of `PROPERTY_SPECIAL_USE_FGS_SUBTYPE` in `guard/src/main/AndroidManifest.xml`:
-
-> Personal safety: start a recording with three presses of the power key, with the phone locked
->
-> No other foreground service type fits: none covers listening for a user gesture while idle to start a safety recording, and the camera and microphone types cannot be started from the background, which is where the gesture is heard.
 
 ## Recordings and the session screen
 
@@ -809,7 +802,7 @@ Verified on a Galaxy S10+ (Android 16):
 ### File Storage & Naming
 
 ```
-/data/data/net.ark3us.saferec/files/
+/data/data/net.ark3us.saferec.app/files/
   ├── recording/                                      ← chunk being written, with its sample log (.idx)
   ├── repair/                                         ← cut chunks taken from recording/ for their repair
   ├── manifests/{sessionId}_{video|audio}.txt         ← session manifest masters, kept
@@ -878,7 +871,7 @@ R8 shrinks and optimizes the release (`isMinifyEnabled`, `isShrinkResources` in 
 - **Rules.** The libraries bring their own. google-api-client fills its model classes (Drive `File`, `FileList`, `Permission`, error replies) by reflection on `@Key` fields: those rules ship with play-services-auth. WorkManager creates workers by class name, and Room and androidx.startup are covered too. `app/proguard-rules.pro` adds two things only:
   - line numbers in stack traces;
   - the app's own class names (`-keepnames`). The source is public, so renaming hides nothing, and it would turn the log tags (`Class.getSimpleName()`) into single letters. Unused code is still removed.
-- **Keep each release's `app/build/outputs/mapping/release/mapping.txt`**, e.g. uploaded to the Play Console. Without it, library frames in a crash report cannot be read.
+- **Each Release carries its `mapping.txt`** (`SafeRec-<version>-mapping.txt`, R8's `app/build/outputs/mapping/release/mapping.txt`). Without it, library frames in a crash report cannot be read.
 - **`r8test` build type.** It is the release, shrunk the same way, but signed with the debug key. Because it shares the debug signature:
   - it installs over the debug app (`adb install -r`) and keeps its data;
   - the Google consent still works, since OAuth knows the debug SHA-1. A release-signed build would need the debug app uninstalled first.
@@ -895,11 +888,34 @@ R8 shrinks and optimizes the release (`isMinifyEnabled`, `isShrinkResources` in 
   Check these again after adding a library or anything that uses reflection.
 - **Media3** (ExoPlayer and its UI, 1.11.1) plays the sessions. It ships its own consumer rules, so `proguard-rules.pro` has nothing for it. Both R8 builds above (normal and guard off) passed with no warning about `androidx.media3`. The `r8test` APK is 4.7 MB with Media3.
   - Checked on the phone with `r8test`: a session plays across its pieces, and an evidence package exports, with no crash.
-- **Before a release**, both green on the build that ships:
-  - `bash scripts/check-guard-refs.sh`: no class but `ui/GuardSetup` references the guard, so the build with the switch off cannot crash on a missing guard class;
-  - `bash ./gradlew :app:minifyR8testWithR8 -Psaferec.powerGesture=false`: R8 accepts the build without the guard module (the Play build if `specialUse` is refused) and strips `GuardSetup`.
+- **The build without the guard** (the switch in standby):
+  - `bash scripts/check-guard-refs.sh` runs in CI and before every release (`scripts/ci-checks.sh`): no class but `ui/GuardSetup` references the guard, so that build cannot crash on a missing guard class;
+  - after touching R8 rules or the guard, also run `bash ./gradlew :app:minifyR8testWithR8 -Psaferec.powerGesture=false`: R8 accepts the build without the guard module and strips `GuardSetup`.
 
   Both build into `app/build/` with the switch off: build the normal variant again afterwards.
+
+### Distribution on GitHub
+
+SafeRec left Google Play. A tag `v<versionName>` becomes a GitHub Release with `SafeRec-<version>.apk`, `SafeRec-<version>-mapping.txt` and `SHA256SUMS`.
+
+```
+ scripts/release.sh 1.17                          GitHub Actions
+ ───────────────────────                          ──────────────
+ ci-checks.sh, signed build, certificate  ──►     release.yml, tag v1.17
+ "Version 1.17" + tag v1.17 + push                 build    (no secrets): versionName == tag, tag on main,
+                                                            ci-checks.sh, unsigned assembleRelease
+                                                   publish  (environment "release"): apksigner, certificate,
+                                                            SHA256SUMS, draft Release, then published
+```
+
+- **Application id `net.ark3us.saferec.app`.** Android developer verification binds a package name to the SHA-256 of its signing certificate; from 2027 (Brazil, Indonesia, Singapore and Thailand since 2026-09-30) a certified phone installs only registered apps. `net.ark3us.saferec` was published on Play with Play App Signing, so the only key Android knew for it was Google's, which cannot be downloaded: the Android Developer Console answered "already in use on Android" with no eligible key. The new id is registered there with the release key. `namespace` and the Java packages stay `net.ark3us.saferec`. `shortcuts.xml` holds the id by hand (`ApplicationIdTest` checks it).
+- **The release key** is `keystore.jks` (alias `cert`, not in git), the former Play upload key. SHA-256 `0A:54:1D:9A:8D:FC:3C:06:EE:9E:C2:31:BD:D3:DE:30:7A:D9:32:8C:FA:82:AA:0B:A5:3A:D6:B2:47:EC:52:BC` (Developer Console, `scripts/check-apk-cert.sh`), SHA-1 `EF:74:3F:7A:22:DE:D3:19:8D:55:70:D1:90:55:86:92:1C:C3:5E:9E` (the release Android OAuth client; debug builds use the debug OAuth client of the same id). It cannot be replaced without registering a new id: keep a copy offline.
+- **CI** (`.github/workflows/ci.yml`): `scripts/ci-checks.sh` on every push and pull request, with no secrets. It runs the unit tests, lint, `check-guard-refs.sh` and the Python tests of `scripts/`.
+- **Gradle never sees the key on GitHub.** `-Psaferec.unsignedRelease=true` drops the release signing config; the `publish` job, which runs no Gradle, signs with `apksigner` (`--ks-pass env:`, the keystore decoded into `$RUNNER_TEMP` and deleted even on failure). The secrets `RELEASE_KEYSTORE_BASE64`, `RELEASE_STORE_PASSWORD`, `RELEASE_KEY_PASSWORD` live only in the environment `release`, whose rule admits tags `v*`: a branch, a pull request or a fork never reads them. Locally Gradle signs from `local.properties` as before.
+- **`scripts/release.sh <version>`** (`X.Y` or `X.Y.Z`, greater than the current one) refuses to run off `main`, behind `origin/main`, with anything staged, with local changes to `app/build.gradle.kts`, or when the tag exists. It runs `ci-checks.sh`, a signed `assembleRelease` and `check-apk-cert.sh` before touching anything, so a broken build or a wrong key never burns a version number. Then it commits only `app/build.gradle.kts` ("Version X"), tags `vX` (annotated) and pushes both atomically; a failed push undoes the commit and the tag locally.
+- **A failed release run.** A passing glitch or a fixed secret: re-run the job on GitHub. A fix in the code: commit and push it, then `scripts/release.sh --retag` moves the tag of the current version to `HEAD`, only while GitHub holds no Release or draft for it (`gh release list`; a failing `gh` refuses too). A published Release never moves. The publish job deletes a draft it leaves behind.
+- **Release notes** are the commit subjects since the previous tag (`scripts/release-notes.sh`): GitHub's generated notes list merged pull requests, and changes reach `main` without them.
+- **Actions** are pinned to full commit SHAs, with the tag in a comment: a tag of a third-party action can be moved. Update them by resolving the new tag with `gh api repos/<owner>/<repo>/commits/<tag> --jq .sha`.
 
 ---
 
@@ -924,12 +940,15 @@ R8 shrinks and optimizes the release (`isMinifyEnabled`, `isShrinkResources` in 
 10. **Android decides when the outbox job runs.** The delayed job of an app in the background can be held for over half an hour. The expedited one covers the cases the app sees coming (service stopped, boot), so this matters after a kill without notice: those chunks wait for that delayed job or the next app launch. In Doze jobs wait for a maintenance window, an app the user rarely opens gets fewer runs (App Standby buckets) and less expedited quota, and after repeated failed runs the job waits up to 5 h. A force stop cancels the jobs until the app leaves the stopped state. After a reboot nothing runs before the first unlock, because the outbox is in credential-encrypted storage. While the service lives, none of this applies.
 11. **A sudden power cut still costs the last moment.** Without a clean shutdown (a battery that fails before Android's ~1% shutdown, a kernel crash), the open chunk is cut. It is repaired from its sample log and uploaded after the boot without opening the app, but the last ~0.5 s that MediaMuxer held in memory is lost. On a real power loss, so is what had not reached the flash yet. Without a usable log the cut chunk is uploaded as it is, and plays only after repair tools.
 12. **The three presses depend on the guard being alive.** The guard is off after a reboot until the first unlock (its boot receiver is not direct-boot aware and the app's data is credential-encrypted). The low-memory killer can kill it, and Android postpones its restart. The watchdog brings it back within 15 minutes, only with the battery exemption. The tile, the shortcut and the app always work.
+13. **Updates are manual.** Without a store, nothing updates SafeRec by itself: users download each new APK from GitHub Releases, or use an app that watches them (Obtainium).
 
 ---
 
 ## Testing on a Device
 
-Unit tests (JVM, no phone, under a second): `./gradlew testDebugUnitTest`. The session verifier's tests: `uv run --with pytest --with certifi pytest scripts/test_verify_session.py -q --basetemp=tmp/pytest`.
+Unit tests (JVM, no phone, under a second): `./gradlew testDebugUnitTest`. The session verifier's tests: `uv run --with pytest --with certifi pytest scripts/test_verify_session.py -q --basetemp=tmp/pytest`. Everything CI runs: `bash scripts/ci-checks.sh`.
+- `ApplicationIdTest`: the application id is the registered one, and `shortcuts.xml` targets it.
+- `scripts/test_release.py` (`uv run --with pytest pytest scripts/test_release.py -q --basetemp=tmp/pytest-release`): `release.sh`, `app-version.sh` and `release-notes.sh` in a throwaway clone with a bare origin, with stubs for Gradle, the checks and `gh`. It covers the bump, commit, annotated tag and push; malformed and not-greater versions; a failing check; every refused git state; unrelated local changes left out; a failed push undone; `--retag` with no Release, with one, with a failing `gh`, and with no tag; the notes of a first and of a later release.
 - `VideoOrientationTest`: quadrant snapping with hysteresis, hint for back and front cameras.
 - `ChunkPolicyTest`: 10 s auto chunks whatever the size, manual size only.
 - `MediaFileTest`: chunk, `.tsa`, `.cut` and `.cut.tsa` names, Drive names, foreign names rejected.
@@ -997,7 +1016,7 @@ Unit tests (JVM, no phone, under a second): `./gradlew testDebugUnitTest`. The s
 - `outbox_job` records offline and then ends the service the way Android does. It shortens the `dataSync` time limit to 20 s (`device_config put activity_manager data_sync_fgs_timeout_duration`, removed afterwards), so `onTimeout()` stops the service. The limit must be set before the stop: Android fixes it when `dataSync` starts. Back online, it waits for the job's own run (nothing forced; the expedited job from `onDestroy()` goes within seconds) and checks that the job uploaded every chunk with no service alive.
   - The process is not killed. `run-as kill` is forbidden by SELinux, and `am force-stop` cancels the job.
   - `am kill` is logged as a user request (`REASON_USER_REQUESTED`), and WorkManager takes that for a force stop. Its rescheduling finished the system job while the worker still ran. Android 16 then cut the network of the job-less background process after 5 s ("Software caused connection abort"). A real low-memory kill is logged differently.
-- Reading JobScheduler: WorkManager jobs live in a namespace, so `dumpsys jobscheduler` lists them as `JOB androidx.work.systemjobscheduler:u0aNNN/ID` (no `#`). `cmd jobscheduler get-job-state -n androidx.work.systemjobscheduler net.ark3us.saferec ID` prints `waiting`, `ready` or `running`. The dump also shows the app's network, e.g. `blocked=REASON_APP_BACKGROUND`, which Android 16 applies to a background app without a running job. `am force-stop` cancels every job, so inspect before any cleanup that force-stops.
+- Reading JobScheduler: WorkManager jobs live in a namespace, so `dumpsys jobscheduler` lists them as `JOB androidx.work.systemjobscheduler:u0aNNN/ID` (no `#`). `cmd jobscheduler get-job-state -n androidx.work.systemjobscheduler net.ark3us.saferec.app ID` prints `waiting`, `ready` or `running`. The dump also shows the app's network, e.g. `blocked=REASON_APP_BACKGROUND`, which Android 16 applies to a background app without a running job. `am force-stop` cancels every job, so inspect before any cleanup that force-stops.
 - Media scenarios also check that no frame is dropped at a chunk boundary (`Skipping … frame`), and that the first video frame is 0-1000 ms old on the shared clock (proof that both tracks use one clock).
 - Checks read the host-side logcat capture (`full.log`), not the device buffer: failed uploads log long stack traces and the device buffer silently drops old lines.
 - Drive scenarios (`errors_dont_stop`, `network_drop`, `retry_after_outage`, `tsa`) need a Google consent given once in the app. The OAuth client only accepts builds whose signing SHA-1 is registered in the Cloud Console, so a new dev machine's debug key must be added there first.

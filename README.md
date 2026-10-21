@@ -2,9 +2,7 @@
 
 # SafeRec
 
-<a href="https://play.google.com/store/apps/details?id=net.ark3us.saferec">
-  <img alt="Get it on Google Play" src="https://play.google.com/intl/en_us/badges/static/images/badges/en_badge_web_generic.png" height="60" />
-</a>
+**[Download the latest version](https://github.com/ark3us/saferec/releases/latest)** (APK, see [Install](#install))
 
 Record video or audio in an emergency. Every 10 seconds the recording is saved to your Google Drive, while you record. If the phone is taken or broken, what was recorded is already safe.
 
@@ -54,6 +52,18 @@ A normal camera app saves the video when you stop. Lose the phone before that an
 - Video quality: 360p, 480p or 720p.
 - Front or back camera, for the app and for quick starts.
 
+## Install
+
+SafeRec is distributed here on GitHub, not on the Play Store.
+
+1. On the phone, open the [latest release](https://github.com/ark3us/saferec/releases/latest) and download `SafeRec-<version>.apk`.
+2. Open it. The first time, Android asks to allow installs from your browser: allow it, go back, install.
+3. To update, download the new APK the same way: it installs over the old one and keeps your settings. An app such as [Obtainium](https://github.com/ImranR98/Obtainium) can watch the releases for you.
+
+Check the download (optional, on a computer):
+- `sha256sum -c SHA256SUMS`, with the `SHA256SUMS` file of the same release next to the APK.
+- `apksigner verify --print-certs SafeRec-<version>.apk` must print `certificate SHA-256 digest: 0a541d9a8dfc3c06ee9ec231bdd3de307ad9328cfa82aa0ba53ad6b247ec52bc` (`0A:54:1D:9A:8D:FC:3C:06:EE:9E:C2:31:BD:D3:DE:30:7A:D9:32:8C:FA:82:AA:0B:A5:3A:D6:B2:47:EC:52:BC` in `keytool`'s form). It is the key registered for `net.ark3us.saferec.app` with Android: every update carries the same one.
+
 ## Verify a recording
 
 Anyone (a lawyer, an expert, a court) can check a recording without trusting the app or Google.
@@ -75,20 +85,24 @@ It checks every piece against the list, and the timestamps up to a trusted root.
 
 No servers of ours. Recordings go from your phone to your Google Drive. With certified time on, Sectigo gets only each piece's fingerprint. Details: [privacy policy](privacy_policy.html).
 
-## Build
+## Build it yourself
 
-You need Android Studio, JDK 11 and a Google Cloud project with the Drive API.
+You need Android Studio, JDK 17 or newer and a Google Cloud project with the Drive API.
 
 1. Clone: `git clone https://github.com/ark3us/saferec.git`
 2. In the [Google Cloud Console](https://console.cloud.google.com/):
    - enable the **Google Drive API**;
    - set up the OAuth consent screen (External) with the scope `.../auth/drive.file`;
-   - create an **Android** OAuth client: package `net.ark3us.saferec`, your SHA-1.
+   - create an **Android** OAuth client: your own application id (below), your SHA-1.
 3. Your debug SHA-1:
    ```
    keytool -list -v -keystore ~/.android/debug.keystore -alias androiddebugkey -storepass android -keypass android
    ```
-4. Build: `./gradlew assembleDebug`
+4. Use your own application id. `net.ark3us.saferec.app` is registered with Android to SafeRec's signing key: from 2027, an APK with that id signed with another key does not install on certified phones. Change it in three places together:
+   - `applicationId` in `app/build.gradle.kts`;
+   - `android:targetPackage` in `app/src/main/res/xml/shortcuts.xml`, or the "Record now" shortcut breaks;
+   - `ApplicationIdTest`, which checks the other two.
+5. Build: `./gradlew assembleDebug`
 
 Without the three presses (no special foreground service): add `-Psaferec.powerGesture=false`.
 
