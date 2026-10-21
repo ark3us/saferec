@@ -90,3 +90,14 @@ The phone (`SessionCheck`, Java) and the computer (`verify_session.py`) apply th
 
 ### A refused-camera scenario in the device tests
 `scripts/device-tests.sh` could cover the sound-only start: `pm revoke net.ark3us.saferec android.permission.CAMERA`, then a start from the app and a quick start (`QuickStartActivity` with source `tile`). It would check that the service runs in the foreground as microphone only (`dumpsys activity services`), that the log says "No camera permission: recording sound only", and that the chunks land in the session's `audio/` folder with sound in them. `pm grant` on exit restores the camera. Revoking kills the app, which is what a user revoking it in Settings does too.
+
+## Distribution
+
+### Build provenance for every release
+The release workflow could add `actions/attest-build-provenance` for the APK. Anyone could then run `gh attestation verify SafeRec-1.17.apk --repo ark3us/saferec` and see which commit and which workflow run built it. An app whose purpose is evidence would ship with evidence of its own origin, and a tampered mirror of the APK would fail the check.
+
+### "A new version is out" inside the app
+Without the Play Store nothing tells a user about updates. Once a day, online only, the app could ask GitHub's API for the latest Release (`/repos/ark3us/saferec/releases/latest`, no token needed). When its tag is newer than `versionName`, a quiet row in Settings would link to the Release page. The app would never download or install anything by itself. Obtainium already reads GitHub Releases, so this is for users who never heard of it.
+
+### Reproducible builds
+If two builds of the same tag gave the same unsigned APK, a third party could rebuild SafeRec from source and compare it with the Release, byte for byte apart from the signature. That is what F-Droid's reproducible-build checks need, and it would let the app reach F-Droid while keeping the owner's signature.
