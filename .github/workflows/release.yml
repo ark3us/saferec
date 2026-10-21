@@ -96,20 +96,17 @@ jobs:
         run: |
           cp dist/mapping.txt "SafeRec-$VERSION-mapping.txt"
           sha256sum "SafeRec-$VERSION.apk" "SafeRec-$VERSION-mapping.txt" > SHA256SUMS
-      # A draft until every asset is uploaded: a failed run never leaves a half Release
+      # A tag with a Release or a draft is refused: a re-run after publishing fails, and a
+      # published Release never changes. gh keeps the new Release a draft until its assets are up
       - name: Publish
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" --draft --verify-tag \
-            --title "SafeRec $VERSION" --notes-file dist/notes.md \
+          bash scripts/publish-release.sh publish "$GITHUB_REF_NAME" "SafeRec $VERSION" dist/notes.md \
             "SafeRec-$VERSION.apk" "SafeRec-$VERSION-mapping.txt" SHA256SUMS
-          gh release edit "$GITHUB_REF_NAME" --draft=false
-      - name: Remove a draft left by a failure
-        if: failure()
+      # Drafts by id only: a lookup by tag name could return the published Release
+      - name: Remove drafts left by a failure
+        if: failure() || cancelled()
         env:
           GH_TOKEN: ${{ github.token }}
-        run: |
-          if [[ "$(gh release view "$GITHUB_REF_NAME" --json isDraft --jq .isDraft 2>/dev/null)" == true ]]; then
-            gh release delete "$GITHUB_REF_NAME" --yes
-          fi
+        run: bash scripts/publish-release.sh clean-drafts "$GITHUB_REF_NAME"
