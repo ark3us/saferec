@@ -48,7 +48,9 @@ if ! certs="$(bash "$APKSIGNER" verify --print-certs "$APK" 2>&1)"; then
     exit 1
 fi
 
-digests="$(sed -n 's/^Signer #[0-9]* certificate SHA-256 digest: //p' <<<"$certs")"
+# "Signer #1 certificate SHA-256 digest: …" up to build-tools 36, "V3.0 Signer: certificate
+# SHA-256 digest: …" (one line per scheme) from 37: every distinct digest must be the release key's
+digests="$(sed -n 's/^.*certificate SHA-256 digest: \([0-9a-f]*\)$/\1/p' <<<"$certs" | sort -u)"
 if [[ $digests != "$EXPECTED" ]]; then
     echo "FAIL: $APK is not signed with the release key alone"
     echo "  expected: $EXPECTED"
