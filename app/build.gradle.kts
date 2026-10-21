@@ -42,7 +42,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "net.ark3us.saferec"
+        applicationId = "net.ark3us.saferec.app"
         minSdk = 26
         targetSdk = 36
         versionCode = 17

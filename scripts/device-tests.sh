@@ -18,8 +18,8 @@
 
 set -uo pipefail
 
-PKG=net.ark3us.saferec
-ACTIVITY="$PKG/.MainActivity"
+PKG=net.ark3us.saferec.app
+ACTIVITY="$PKG/net.ark3us.saferec.MainActivity"
 APP_DIR="/data/user/0/$PKG"
 STORE="$APP_DIR/files/data_store" # upload outbox: complete chunks only
 WORK="$APP_DIR/files/recording"    # chunks being written
