@@ -107,3 +107,6 @@ A row in Settings, Help, showing the SHA-256 of the certificate that signed the 
 
 ### Say when Google does not know this copy
 A copy Google has no OAuth client for (the old id `net.ark3us.saferec` signed with the release key, or a build signed with another key) gets `UNREGISTERED_ON_API_CONSOLE` from Play services after the account picker. Seen on a Pixel running 1.16 under the old id: the chip kept reading "Reconnect Drive", each tap opened the picker and failed in silence, and recordings could only wait on the phone. On that status (and `DEVELOPER_ERROR`) the app could say "This copy of SafeRec cannot use Google Drive: install the latest version from GitHub Releases", with a link, instead of asking to reconnect again.
+
+### "Three presses: battery step missing" on the chip
+With the overlay granted and the battery exemption missing, the guard already runs and the presses work, yet the chip reads "Three presses off" (`NEEDS_BATTERY_EXEMPTION` maps to `THREE_PRESSES_OFF`). On a Pixel this made the owner think the overlay grant had failed. A chip of its own, "Three presses: battery step missing", would say what is left and that the presses work until Android closes the app.
