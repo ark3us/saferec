@@ -79,12 +79,13 @@ public final class GuardSetup {
 
     /**
      * Since Android 11 the overlay page ignores the package and lists every app: the dialog says
-     * to find SafeRec there. Below, the page is SafeRec's own switch.
+     * to find SafeRec there. Below, the page is SafeRec's own switch. Each dialog is titled with
+     * its step: with one title for both, the battery step read as the overlay asked again.
      */
     private static void showOverlayDialog(Activity activity) {
         if (activity.isFinishing() || activity.isDestroyed()) return;
         new AlertDialog.Builder(activity)
-            .setTitle(R.string.power_gesture)
+            .setTitle(stepText(STATE_NEEDS_OVERLAY))
             .setMessage(Build.VERSION.SDK_INT >= Build.VERSION_CODES.R
                 ? R.string.three_presses_overlay_help : R.string.three_presses_overlay_help_legacy)
             .setPositiveButton(R.string.open_settings, (d, w) -> open(activity, Guard.overlaySettingsIntent(activity)))
@@ -94,13 +95,14 @@ public final class GuardSetup {
 
     /**
      * The battery optimization list shows every app, and the owner did not find SafeRec there.
-     * The app's own page leads to "App battery usage → Unrestricted" on Android 12+. Below, only
-     * the list exists: "All apps", SafeRec, "Don't optimize".
+     * The app's own page leads to "App battery usage → Unrestricted" on Android 12+; on a Pixel
+     * with Android 17 "Unrestricted" sits behind the words "Allow background usage", not its
+     * switch. Below, only the list exists: "All apps", SafeRec, "Don't optimize".
      */
     private static void showBatteryDialog(Activity activity) {
         if (activity.isFinishing() || activity.isDestroyed()) return;
         new AlertDialog.Builder(activity)
-            .setTitle(R.string.power_gesture)
+            .setTitle(stepText(STATE_NEEDS_BATTERY))
             .setMessage(Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
                 ? R.string.three_presses_battery_help : R.string.three_presses_battery_help_legacy)
             .setPositiveButton(R.string.open_settings, (d, w) -> open(activity, batterySettingsIntent(activity)))
