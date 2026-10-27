@@ -104,3 +104,6 @@ If two builds of the same tag gave the same unsigned APK, a third party could re
 
 ### "Check this copy" in Settings
 A row in Settings, Help, showing the SHA-256 of the certificate that signed the installed app (`PackageManager.getPackageInfo(…, GET_SIGNING_CERTIFICATES)`) next to the one published in the README, with a plain "This is the official SafeRec" or "This copy was signed by someone else". Users who install APKs by hand would not need `apksigner` to know whether a copy someone handed them is genuine.
+
+### Say when Google does not know this copy
+A copy Google has no OAuth client for (the old id `net.ark3us.saferec` signed with the release key, or a build signed with another key) gets `UNREGISTERED_ON_API_CONSOLE` from Play services after the account picker. Seen on a Pixel running 1.16 under the old id: the chip kept reading "Reconnect Drive", each tap opened the picker and failed in silence, and recordings could only wait on the phone. On that status (and `DEVELOPER_ERROR`) the app could say "This copy of SafeRec cannot use Google Drive: install the latest version from GitHub Releases", with a link, instead of asking to reconnect again.
