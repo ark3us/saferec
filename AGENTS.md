@@ -652,6 +652,7 @@ Recording must start with the phone locked, in a pocket, without looking. Every 
   - The shortcut "Record now" (long press on the icon) recorded and opened `MainActivity`.
   - The notification was posted 0.22 s after the start, hidden on the lock screen, with no sound or vibration of its own.
   - The lock screen's quick settings list "Active apps", but opening it asked for the PIN: nothing there stops a recording.
+  - On a Pixel with Android 17 (release build, by hand, locked): the tile from the lock screen recorded without asking for the PIN, microphone 0.22 s and camera 0.27 s after the tap, with two pulses; the trigger screen finished after 1.5 s and the phone stayed locked. The Pixel's lock screen corner shortcuts take only Google's list (no API adds an app), so the tile is the lock screen shortcut there.
   - The shrunk release (`r8test`): three presses recorded, the notification showed its chronometer and safe count, and its Stop (phone unlocked) stopped the recording. No crash.
 
 ## Viewfinder and settings
