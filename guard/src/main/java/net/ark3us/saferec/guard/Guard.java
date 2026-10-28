@@ -8,11 +8,19 @@ import android.os.PowerManager;
 import android.provider.Settings;
 import android.util.Log;
 
-/** The three power-key presses that start a recording. */
+/** The power-key presses that start a recording. */
 public final class Guard {
     private static final String TAG = Guard.class.getSimpleName();
     private static final String PREFS = "saferec_guard";
     private static final String KEY_ENABLED = "enabled";
+    private static final String KEY_PRESSES = "presses";
+
+    // How many presses start a recording, picked by the user. Four by default: lifting a Pixel
+    // lights its screen, and a lift then off and on again made three. Five quick presses call
+    // emergency services on many phones.
+    public static final int MIN_PRESSES = 3;
+    public static final int MAX_PRESSES = 5;
+    public static final int DEFAULT_PRESSES = 4;
 
     /** What the feature is doing, in the order the user has to fix it. */
     public enum Status { DISABLED, NEEDS_OVERLAY, NEEDS_BATTERY_EXEMPTION, STOPPED, ACTIVE }
@@ -41,6 +49,18 @@ public final class Guard {
             app.stopService(new Intent(app, GuardService.class));
             GuardWatchdog.cancel(app);
         }
+    }
+
+    public static int presses(Context context) {
+        return validPresses(prefs(context).getInt(KEY_PRESSES, DEFAULT_PRESSES));
+    }
+
+    public static void setPresses(Context context, int presses) {
+        prefs(context).edit().putInt(KEY_PRESSES, validPresses(presses)).apply();
+    }
+
+    static int validPresses(int presses) {
+        return presses >= MIN_PRESSES && presses <= MAX_PRESSES ? presses : DEFAULT_PRESSES;
     }
 
     public static Status status(Context context) {

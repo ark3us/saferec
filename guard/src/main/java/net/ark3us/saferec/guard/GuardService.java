@@ -18,8 +18,8 @@ import android.util.Log;
 
 /**
  * Counts screen on/off changes, the trace of power-key presses (no public API reports the key
- * itself). Three within {@link TriggerRule#SPAN_MS} open the app's quick-start screen, which shows
- * over the lock screen and starts the recording.
+ * itself). As many as the user picked, within {@link TriggerRule#spanMs(int)}, open the app's
+ * quick-start screen, which shows over the lock screen and starts the recording.
  */
 public class GuardService extends Service {
     private static final String TAG = GuardService.class.getSimpleName();
@@ -41,7 +41,8 @@ public class GuardService extends Service {
     private final BroadcastReceiver screenReceiver = new BroadcastReceiver() {
         @Override
         public void onReceive(Context context, Intent intent) {
-            if (rule.onScreenChange(SystemClock.elapsedRealtime())) {
+            // Read on every change, so a new count in Settings applies at once
+            if (rule.onScreenChange(SystemClock.elapsedRealtime(), Guard.presses(context))) {
                 trigger(context);
             }
         }
