@@ -168,7 +168,7 @@ net.ark3us.saferec/
     ├── CappedScrollView.java     # Scroll view capped at 45% of the screen: the first-run text never reaches the top bar
     ├── FirstRunSteps.java        # Which cards are still due (pure Java)
     ├── SettingsRows.java         # Row builders of the settings screen
-    ├── GuardSetup.java           # Three-presses setup; the only class that may reference the guard
+    ├── GuardSetup.java           # Power key presses setup and count; the only class that may reference the guard
     ├── CameraGestureSetup.java   # Camera double press setup and its self-check
     ├── SessionsAdapter.java      # The session cards; the words shared with the session screen
     ├── SessionPlaylist.java      # What the player plays: the pieces in order, their placeholder lengths, where each starts (pure Java)
@@ -176,7 +176,7 @@ net.ark3us.saferec/
     ├── ThumbnailLoader.java      # Drive thumbnails fetched with the token, cached in memory
     └── TrashedSessions.java      # Sessions just trashed, hidden from the list for 2 minutes (pure Java)
 
-guard/                          # Separate Gradle module: the three power-key presses (see Quick Start)
+guard/                          # Separate Gradle module: the power key presses (see Quick Start)
 └── net/ark3us/saferec/guard/
     ├── TriggerRule.java          # 3, 4 or 5 screen changes (4 by default) within 2.5 s + 1 s per change past three, 5 s cooldown (pure Java)
     ├── GuardService.java         # specialUse foreground service, listens to SCREEN_ON/OFF
@@ -695,8 +695,9 @@ No public API reports power key presses. Each press turns the screen on or off, 
 - **Measured with the app** (same phone, presses by hand): it recorded with the trigger screen 30 ms after the trigger, and a second round during the recording was ignored (two pulses again). Two slow presses did nothing, and a camera double press (two presses 34 ms apart) opened the camera without triggering.
 - **On a Pixel with Android 17** (presses sent over adb, 0.45 s apart, phone locked): the same. Microphone 0.17 s and camera 0.27 s after the trigger, the phone stayed locked, and a second round was ignored with two pulses. Its lock screen showed no SafeRec notification or icon. Presses by hand on a Pixel are not verified.
 - **Screen changes that are not presses.** Nothing is filtered, not even during a phone call: a deliberate start must never be blocked. A camera double press (two presses under 300 ms) gives at most two changes and does not trigger the guard.
-- **Why four by default.** With three, the owner's Pixel (Android 17) started recordings by itself. Its "Lift to check phone" lights the screen when the phone is picked up (`WAKE_REASON_LIFT` in the system log), so a lift, then off and on again, made three changes in 1.5 s. The broadcast carries no wake reason, and an app cannot read the system log, so no rule can tell that lift from a press. The owner's deliberate presses were 0.53 and 0.81 s apart, the same rhythm as that false start: a shorter window would have refused the real presses too. A fourth change is needed at four (the false start is a test case), and four deliberate presses at that rhythm take 2.8 s, the last off included.
-- **Emergency SOS.** Android starts it at five presses, each under 500 ms after the last (`GestureLauncherService`); a gap of 500 ms or more starts the count again. So five presses in SafeRec can also call emergency services, and the choice says so. At four, a fifth quick press still can: SafeRec's two pulses are the sign to stop.
+- **Why four by default.** With three, the owner's Pixel (Android 17) started recordings by itself. Its "Lift to check phone" lights the screen when the phone is picked up (`WAKE_REASON_LIFT` in the system log), so a lift, then off and on again, made three changes in 1.5 s. The broadcast carries no wake reason, and an app cannot read the system log, so no rule can tell that lift from a press. The owner's deliberate presses were 0.53 and 0.81 s apart, the same rhythm as that false start: a shorter window would have refused the real presses too. A fourth change is needed at four (the false start is a test case), and four deliberate presses at that rhythm take 2.8 s, the last off included. Still left: a lift, off and on, then off again within 3.5 s of the lift makes four (a test pins it).
+- **Emergency SOS.** Android starts it at five presses, each under 500 ms after the last (`GestureLauncherService`); a gap of 500 ms or more starts the count again. So five presses in SafeRec can also call emergency services, and the choice says so. At four, a fifth quick press still can: SafeRec's pulses come 0.6-0.9 s after the fourth press, too late to stop a fifth one under 500 ms. Four presses, then stop.
+- **The slowest rhythm.** At an even count from a dark screen the last change is an off, late by the screen-off animation: four presses need to be under about 0.9 s apart (3 × 0.9 s + 0.67 s ≤ 3.5 s). At three and five the last change is an on: up to 1.25 s and 1.1 s apart.
 - **Costs.** A permanent notification, the overlay permission granted once, and a `specialUse` foreground service.
 
 ### Keeping the guard alive
@@ -706,7 +707,7 @@ On the S10+ the low-memory killer killed the app twice in a minute, with 0.5 GB 
 - **Battery exemption.** The setup sends the user to the system page of battery optimization (`ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS`), not the direct dialog: that needs `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`, which Play checks closely. An exempt app may return to the foreground from the background.
 - **Watchdog.** `GuardWatchdog` is a periodic WorkManager job (`guard-watchdog`, 15 minutes, the minimum) that calls `Guard.ensureRunning()`. `ensureRunning()` also re-arms the job, which a restored or reset WorkManager loses.
 - **Boot and update.** `GuardBootReceiver` restarts the guard on `BOOT_COMPLETED` and `MY_PACKAGE_REPLACED`.
-- **Status** (`Guard.status()`): `DISABLED`, `NEEDS_OVERLAY`, `NEEDS_BATTERY_EXEMPTION`, `STOPPED`, `ACTIVE`, in the order the user has to fix them. The app says so when the three presses are off.
+- **Status** (`Guard.status()`): `DISABLED`, `NEEDS_OVERLAY`, `NEEDS_BATTERY_EXEMPTION`, `STOPPED`, `ACTIVE`, in the order the user has to fix them. The app says so when the power key presses are off.
 - **Verified on a Galaxy S10+** (Android 16, with the battery exemption):
   - After a clean reboot the guard stayed off until the first unlock. Then `BOOT_COMPLETED` started it as a `specialUse` foreground service, 3.4 s after the unlock.
   - After an update (`adb install -r`), `MY_PACKAGE_REPLACED` started it in 0.26 s.
@@ -741,7 +742,7 @@ The double press of the power key opens the default camera app with `STILL_IMAGE
   - Tries already stored are skipped (the "Always" choices survive turning the option off), so turning it back on can need no try at all.
   - A try that is not stored gets "Try again". When all are stored the setup says it is done.
 - **The last-choice trap.** When Android keeps another app as its last choice (not an "Always"), the chooser reads "Complete action using Camera" on every try and lists SafeRec under "Use a different app". Tapping SafeRec opens it just once and never moves the suggestion (3 tries on the phone). The camera app's "Open by default, Clear default preferences" removes only "Always" entries, so the user cannot clear it.
-  - The way out: after two "not saved" results in a row for the same try, the option turns itself off (the double press goes back to the camera, no chooser behind the lock screen) and the dialog points to the three presses (or the tile, in a build without the guard).
+  - The way out: after two "not saved" results in a row for the same try, the option turns itself off (the double press goes back to the camera, no chooser behind the lock screen) and the dialog points to the power key presses (or the tile, in a build without the guard).
 - Verified on a Galaxy S10+ (Android 16).
 - On a Pixel with Android 17, SystemUI pins the gesture to Google Camera (`config_cameraGesturePackage`), so the option is not offered there: the row was absent.
 
@@ -950,7 +951,7 @@ SafeRec left Google Play. A tag `v<versionName>` becomes a GitHub Release with `
 9. **Sharing is per person.** The share button grants one Google account read access to the whole `SafeRec` folder, future sessions included, and Google emails that person. The app never creates "anyone with the link" access, and it cannot revoke a share: that is done in Drive.
 10. **Android decides when the outbox job runs.** The delayed job of an app in the background can be held for over half an hour. The expedited one covers the cases the app sees coming (service stopped, boot), so this matters after a kill without notice: those chunks wait for that delayed job or the next app launch. In Doze jobs wait for a maintenance window, an app the user rarely opens gets fewer runs (App Standby buckets) and less expedited quota, and after repeated failed runs the job waits up to 5 h. A force stop cancels the jobs until the app leaves the stopped state. After a reboot nothing runs before the first unlock, because the outbox is in credential-encrypted storage. While the service lives, none of this applies.
 11. **A sudden power cut still costs the last moment.** Without a clean shutdown (a battery that fails before Android's ~1% shutdown, a kernel crash), the open chunk is cut. It is repaired from its sample log and uploaded after the boot without opening the app, but the last ~0.5 s that MediaMuxer held in memory is lost. On a real power loss, so is what had not reached the flash yet. Without a usable log the cut chunk is uploaded as it is, and plays only after repair tools.
-12. **The three presses depend on the guard being alive.** The guard is off after a reboot until the first unlock (its boot receiver is not direct-boot aware and the app's data is credential-encrypted). The low-memory killer can kill it, and Android postpones its restart. The watchdog brings it back within 15 minutes, only with the battery exemption. The tile, the shortcut and the app always work.
+12. **The power key presses depend on the guard being alive.** The guard is off after a reboot until the first unlock (its boot receiver is not direct-boot aware and the app's data is credential-encrypted). The low-memory killer can kill it, and Android postpones its restart. The watchdog brings it back within 15 minutes, only with the battery exemption. The tile, the shortcut and the app always work.
 13. **Updates are manual.** Without a store, nothing updates SafeRec by itself: users download each new APK from GitHub Releases, or use an app that watches them (Obtainium).
 
 ---

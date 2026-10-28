@@ -12,7 +12,7 @@
             android:foregroundServiceType="specialUse">
             <property
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
-                android:value="Personal safety: start a recording with three presses of the power key, with the phone locked" />
+                android:value="Personal safety: start a recording by pressing the power key several times, with the phone locked" />
         </service>
 
         <receiver

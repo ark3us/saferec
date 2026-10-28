@@ -73,6 +73,33 @@ public class TriggerRuleTest {
         expect(feed(new TriggerRule(), 4, 0, 1130, 1340, 2820), false, false, false, true);
     }
 
+    // The limit left at four: the same lift, off and on, then off again soon after
+    @Test public void fourPressesStillTriggerOnALiftThenOffOnOff() {
+        expect(feed(new TriggerRule(), 4, 0, 1490, 1505, 3000), false, false, false, true);
+    }
+
+    // From a dark screen the fourth change is an off, 0.67 s after its press
+    @Test public void fourPressesFromADarkScreenNeedUnderAboutASecondEach() {
+        expect(feed(new TriggerRule(), 4, 0, 1570, 1800, 3370), false, false, false, true);
+        expect(feed(new TriggerRule(), 4, 0, 1670, 2000, 3670), false, false, false, false);
+    }
+
+    @Test public void aBurstTriggersOnceAtFour() {
+        expect(feed(new TriggerRule(), 4, 0, 100, 200, 300, 400, 500),
+            false, false, false, true, false, false);
+    }
+
+    @Test public void theCooldownOutlastsTheLongestSpan() {
+        // Otherwise one long burst could trigger twice
+        assertTrue(TriggerRule.spanMs(Guard.MAX_PRESSES) < TriggerRule.COOLDOWN_MS);
+    }
+
+    @Test public void aRaisedCountWaitsForMoreChanges() {
+        TriggerRule rule = new TriggerRule();
+        expect(feed(rule, 3, 0, 400), false, false);
+        expect(feed(rule, 5, 800, 1200, 1600), false, false, true);
+    }
+
     @Test public void fourPressesSpanIncludesItsEnd() {
         expect(feed(new TriggerRule(), 4, 0, 1000, 2000, 3500), false, false, false, true);
         expect(feed(new TriggerRule(), 4, 0, 1000, 2000, 3501), false, false, false, false);

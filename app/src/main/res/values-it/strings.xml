@@ -154,7 +154,7 @@
     <string name="status_offline">Senza rete</string>
     <string name="status_connect_drive">Collega Drive</string>
     <string name="status_reconnect_drive">Ricollega Drive</string>
-    <string name="status_three_presses_off">Pressioni del tasto spente</string>
+    <string name="status_three_presses_off">Pressioni del tasto disattivate</string>
     <string name="status_waiting_explained">Le registrazioni aspettano sul telefono e vanno su Drive appena c\'è rete.</string>
     <string name="status_audio_only">Solo audio</string>
     <string name="record_start">Avvia la registrazione</string>
@@ -190,7 +190,7 @@
     <string name="three_presses_overlay_help_legacy">Le pressioni del tasto di accensione richiedono \"Mostra sopra altre app\". Nella pagina seguente attiva \"Consenti la visualizzazione sopra altre app\".</string>
     <string name="presses_title">Pressioni necessarie</string>
     <string name="presses_value">%1$d pressioni</string>
-    <string name="presses_choice_few">%1$d pressioni: più veloce, più partenze per sbaglio</string>
+    <string name="presses_choice_few">%1$d pressioni: più veloce, più avvii accidentali</string>
     <string name="presses_choice_default">%1$d pressioni (consigliato)</string>
     <string name="presses_choice_sos">%1$d pressioni: su molti telefoni cinque pressioni veloci chiamano anche i soccorsi</string>
     <string name="three_presses_not_running">Non attivo: tocca per avviarlo</string>
