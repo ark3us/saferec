@@ -25,6 +25,24 @@ Sessions recorded by the emergency drill, or by a test, could carry a marker: a 
 ### Quick-start readiness at a glance
 One list of every way to start a recording, each with ✅/❌ and a one-tap fix. The tile: is it in quick settings? `StatusBarManager.requestAddTileService()` (Android 13+) adds it with one system dialog, no dragging. The three presses: `Guard.status()`. The camera double press: do both camera actions resolve to SafeRec (`resolveActivity`)? A test found that Android's chooser can make "Always" unreachable on the first try. A "Record now" icon on the home screen: `ShortcutManager.requestPinShortcut()`. The owner finds a broken path before the day it is needed, and the drill above can run each path once.
 
+### Protection mode: start before the danger, not during it
+In danger every gesture is unreliable: shaking hands, a phone in a bag, someone watching. The owner usually knows the risky moment beforehand: a walk home at night, a tense meeting, a taxi. "Protect me" starts an audio recording at once, with nothing to do afterwards. A choice of 30 min, 1 h or until stopped, with one vibration and a quiet notification at the end and no automatic stop while something sounds wrong. It could also arm itself: on leaving a chosen place, at a set time, or on connecting to the car's Bluetooth. Audio at 64 kbps costs about 30 MB an hour.
+
+### A Bluetooth button on the keyring
+A press on a small Bluetooth button (an iTag for a few euros, or a Flic) starts a recording, with the phone locked in a pocket or a bag up to ~10 m away and the screen never involved. Two ways in:
+- **No code.** The Flic app's "open app" action points at the "Record now" shortcut (`QuickStartActivity` already shows over the lock screen). To be tested locked.
+- **Built in.** A `connectedDevice` foreground service keeps a GATT connection to an iTag and listens to its button (service `0xFFE0`, characteristic `0xFFE1`). Known weak points: cheap tags drop the connection and sleep, which the app must notice and report ("Button disconnected").
+Commercial panic buttons (Wearsafe, Silent Beacon, React Sidekick) work this way, alerting rather than recording.
+
+### Check-in timer
+For the moments when the owner cannot act at all (grabbed from behind, phone taken): "Check on me in 20 min". If "I'm fine" is not tapped in time, SafeRec starts recording, and could later alert trusted contacts as well (see Dead man's switch). Some vibrations a minute before the deadline give a chance to postpone it. Nothing needs to be done in danger: doing nothing is the trigger.
+
+### The minute before the trigger
+While protection mode is on, keep the last 60 s of audio in a ring buffer on the phone, and upload it in front of the recording when a trigger comes (button, tile, timer). The evidence then shows what led up to the moment the owner reacted, which is often what matters. Wearsafe does this ("rewind"). The buffer never leaves the phone without a trigger.
+
+### A disguised icon
+An extra launcher icon with an ordinary name and picture ("Notes", "Calculator", an activity alias) that starts a recording when opened and shows a plain screen. Opening an app is a normal thing to do in front of someone, unlike a strange gesture. It needs the phone unlocked: it adds to the tile, it does not replace it.
+
 ### The guard keeps its last triggers
 A false start from the three presses can only be explained from the phone's system log, which keeps a few minutes. `GuardService` could keep the times and order of the three screen changes of its last 20 triggers (a small file, three numbers each) and show them in Settings, Help. "Screen on, off 1.5 s later, on again 15 ms after" would then show the rhythm behind each start, whether it was the owner's emergency or a screen lit by lifting the phone followed by two presses.
 
