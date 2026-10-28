@@ -13,8 +13,6 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
 bash ./gradlew testDebugUnitTest lintDebug
-# The power-key presses are off by default: keep the build with them compiling
-bash ./gradlew -q :app:compileDebugJavaWithJavac -Psaferec.powerGesture=true
 bash scripts/check-guard-refs.sh
 mkdir -p tmp
 uv run --with pytest --with certifi pytest scripts -q --basetemp=tmp/pytest

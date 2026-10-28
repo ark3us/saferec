@@ -15,6 +15,7 @@ A normal camera app saves the video when you stop. Lose the phone before that an
 ## Features
 
 **Start fast, even locked**
+- Press the power key 4 times (3 to 5, your choice), with the phone locked and the screen off (optional). Turn off "Lift to check phone": a screen lit by lifting counts as a press.
 - Quick settings tile, also on the lock screen.
 - "Record now" shortcut on the app icon.
 - Double press of the power key, if your phone lets another app take it (optional).
@@ -103,7 +104,7 @@ You need Android Studio, JDK 17 or newer and a Google Cloud project with the Dri
    - `ApplicationIdTest`, which checks the other two.
 5. Build: `./gradlew assembleDebug`
 
-Power key presses are off: on some phones lifting the phone lights the screen, and that counted as a press. To build them in anyway: add `-Psaferec.powerGesture=true`.
+Without the power key presses (no special foreground service): add `-Psaferec.powerGesture=false`.
 
 How it works inside: [AGENTS.md](AGENTS.md).
 

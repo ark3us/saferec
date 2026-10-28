@@ -1,6 +1,7 @@
 package net.ark3us.saferec;
 
 import android.app.StatusBarManager;
+import android.content.ActivityNotFoundException;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
@@ -228,6 +229,18 @@ public class SettingsActivity extends AppCompatActivity {
             }
             SettingsRows.row(container, 0, getString(R.string.presses_title),
                 getString(R.string.presses_value, GuardSetup.presses(this)), v -> choosePresses());
+            // A screen lit by lifting or tapping the phone counts as a press, and no app can tell
+            // it from one: the owner turns those off where the phone keeps them
+            SettingsRows.row(container, 0, getString(R.string.presses_self_wake_title),
+                getString(R.string.presses_self_wake_summary), v -> openDisplaySettings());
+        }
+    }
+
+    private void openDisplaySettings() {
+        try {
+            startActivity(new Intent(android.provider.Settings.ACTION_DISPLAY_SETTINGS));
+        } catch (ActivityNotFoundException e) {
+            Log.w(TAG, "No display settings page", e);
         }
     }
 

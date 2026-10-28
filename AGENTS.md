@@ -636,10 +636,10 @@ Security note:
 Recording must start with the phone locked, in a pocket, without looking. Every way in goes through one screen, `QuickStartActivity`.
 
 ```
- tile (locked too) ──────────────┐
+ power key x4 ──► GuardService ──┐
+ tile (locked too) ──────────────┤
  shortcut "Record now" ──────────┼──► QuickStartActivity ──► CMD_START + EXTRA_QUICK_START ──► SafeRecService
- camera double press (optional) ─┤     (black, over the lock screen)
- power key x4 (switch off) ──────┘
+ camera double press (optional) ─┘     (black, over the lock screen)
 ```
 
 - **`QuickStartActivity`** shows over the lock screen and turns the screen on: `android:showWhenLocked` and `android:turnScreenOn` in the manifest (the camera alias inherits them), plus `setShowWhenLocked()` / `setTurnScreenOn()` at runtime and the window flags on API 26. The manifest attributes are what the tile needs: on Android 14+ it starts the activity through a `PendingIntent`, and SystemUI decides whether to ask for the unlock from the manifest's flags, before the activity runs. With the runtime calls alone, the tile asked for the PIN. It is black, with a "Recording" description for screen readers only, and never shows the camera or any recording. It sends `CMD_START` with `EXTRA_QUICK_START` once: a recreated activity (the screen coming back on) sends nothing, but still finishes like the first one, so its black screen never stays up. A rotation does not recreate it (`configChanges`; a fixed `screenOrientation` is ignored from Android 16 and lint flags it). The start is wrapped in a try/catch: the activity runs in the recording's process, and an unexpected refusal must not crash a recording in progress. Locked, it finishes after 1.5 s. Unlocked, it opens `MainActivity`, already recording. `MainActivity` itself never shows over the lock screen.
@@ -685,8 +685,6 @@ Recording must start with the phone locked, in a pocket, without looking. Every 
 
 ### Power key presses
 
-**Off since 2026-10-28** (`saferec.powerGesture=false`, see Build switch): on the owner's Pixel, screens lit by lifting the phone counted as presses, and recordings started by themselves at three presses and at four (below). The guard module stays in the repository, compiled by CI, and is described as it works with the switch on.
-
 No public API reports power key presses. Each press turns the screen on or off, and Android broadcasts `ACTION_SCREEN_ON` / `ACTION_SCREEN_OFF`.
 
 - **The guard** (`GuardService`, module `guard/`) is a foreground service of type `specialUse` that registers a runtime receiver for both broadcasts. Its notification is permanent, minimum importance and secret on the lock screen.
@@ -699,6 +697,7 @@ No public API reports power key presses. Each press turns the screen on or off, 
 - **On a Pixel with Android 17** (presses sent over adb, 0.45 s apart, phone locked): the same. Microphone 0.17 s and camera 0.27 s after the trigger, the phone stayed locked, and a second round was ignored with two pulses. Its lock screen showed no SafeRec notification or icon. Presses by hand on a Pixel are not verified.
 - **Screen changes that are not presses.** Nothing is filtered, not even during a phone call: a deliberate start must never be blocked. A camera double press (two presses under 300 ms) gives at most two changes and does not trigger the guard.
 - **Why four by default.** With three, the owner's Pixel (Android 17) started recordings by itself. Its "Lift to check phone" lights the screen when the phone is picked up (`WAKE_REASON_LIFT` in the system log), so a lift, then off and on again, made three changes in 1.5 s. The broadcast carries no wake reason, and an app cannot read the system log, so no rule can tell that lift from a press. The owner's deliberate presses were 0.53 and 0.81 s apart, the same rhythm as that false start: a shorter window would have refused the real presses too. A fourth change is needed at four (the false start is a test case), and four deliberate presses at that rhythm take 2.8 s, the last off included. Still left: a lift, off and on, then off again within 3.5 s of the lift makes four (a test pins it).
+- **No app can tell a lift from a press.** At four, a test on the Pixel still started one: a press off, the screen lit by itself 0.26 s later, off again, then lifted, four changes in 3.3 s from two presses. Android knows the reason (`WAKE_REASON_LIFT` against `WAKE_REASON_POWER_BUTTON`) and keeps it: `PowerManager.getLastWakeup()` exists only in `PowerManagerInternal`, inside the system server, `getLastSleepReason()` needs `DEVICE_POWER`, the power key never reaches an accessibility service, and from Android 13 the log needs the user's consent every 60 s, in the foreground only. The presses were switched off in 1.18 for this, and back on in 1.19 with the cure at the source: the setup tells the owner to turn off "Lift to check phone" and "Tap to check phone" (a Settings row under the presses, which opens the display settings, and a sentence on the first-run card). An app cannot read whether they are on: `doze_pick_up_gesture` is unset on the Pixel, so the device's default applies.
 - **Emergency SOS.** Android starts it at five presses, each under 500 ms after the last (`GestureLauncherService`); a gap of 500 ms or more starts the count again. So five presses in SafeRec can also call emergency services, and the choice says so. At four, a fifth quick press still can: SafeRec's pulses come 0.6-0.9 s after the fourth press, too late to stop a fifth one under 500 ms. Four presses, then stop.
 - **The slowest rhythm.** At an even count from a dark screen the last change is an off, late by the screen-off animation: four presses need to be under about 0.9 s apart (3 × 0.9 s + 0.67 s ≤ 3.5 s). At three and five the last change is an on: up to 1.25 s and 1.1 s apart.
 - **Costs.** A permanent notification, the overlay permission granted once, and a `specialUse` foreground service.
@@ -719,7 +718,7 @@ On the S10+ the low-memory killer killed the app twice in a minute, with 0.5 GB 
 
 ### Build switch
 
-`saferec.powerGesture` in `gradle.properties` (default `false` since 2026-10-28, `true` before). With `-Psaferec.powerGesture=false` the `guard` module is `compileOnly`: nothing of it is packaged, so the APK has no guard manifest entries (the `specialUse` service and its permission, the overlay permission, the boot receiver), and the app shows no setting or first-run step for it (`BuildConfig.POWER_GESTURE`). Releases ship this build. CI runs `scripts/check-guard-refs.sh` on every push, and also compiles the build with the switch on, so either keeps working.
+`saferec.powerGesture` in `gradle.properties` (default `true`; `false` in 1.18 only). With `-Psaferec.powerGesture=false` the `guard` module is `compileOnly`: nothing of it is packaged, so the APK has no guard manifest entries (the `specialUse` service and its permission, the overlay permission, the boot receiver), and the app shows no setting or first-run step for it (`BuildConfig.POWER_GESTURE`). It is in standby: no Release ships it since 1.19 (1.18 did), but CI runs `scripts/check-guard-refs.sh` on every push, so it keeps working if a store ever refuses the `specialUse` service.
 - **Upgrading from a build with the guard.** Android drops the guard's service and receiver with the manifest, and resets the overlay grant. Two things would stay: the guard's watchdog job, which would wake the app every 15 minutes to fail on a missing class, and its notification channel. `MainActivity` cancels and deletes them at its start in this build (`clearGuardLeftovers()`, by name).
 
 - App code touches the guard only inside `if (BuildConfig.POWER_GESTURE)`, which javac drops in that build. Two things leak out anyway: a lambda's body, and enum switch maps. One synthetic class (`FirstRun$1`) builds the maps of every enum switch of its class, so any of them loads `Guard.Status`: the first launch of the off build crashed with `NoClassDefFoundError`.
@@ -897,11 +896,11 @@ R8 shrinks and optimizes the release (`isMinifyEnabled`, `isShrinkResources` in 
   Check these again after adding a library or anything that uses reflection.
 - **Media3** (ExoPlayer and its UI, 1.11.1) plays the sessions. It ships its own consumer rules, so `proguard-rules.pro` has nothing for it. Both R8 builds above (normal and guard off) passed with no warning about `androidx.media3`. The `r8test` APK is 4.7 MB with Media3.
   - Checked on the phone with `r8test`: a session plays across its pieces, and an evidence package exports, with no crash.
-- **The build without the guard** (the default since 2026-10-28):
+- **The build without the guard** (the switch in standby):
   - `bash scripts/check-guard-refs.sh` runs in CI and before every release (`scripts/ci-checks.sh`): no class but `ui/GuardSetup` references the guard, so that build cannot crash on a missing guard class;
   - after touching R8 rules or the guard, also run `bash ./gradlew :app:minifyR8testWithR8 -Psaferec.powerGesture=false`: R8 accepts the build without the guard module and strips `GuardSetup`.
 
-  The second builds into `app/build/` with the switch off, the shipped build.
+  Both build into `app/build/` with the switch off: build the normal variant again afterwards.
 
 ### Distribution on GitHub
 

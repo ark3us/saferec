@@ -193,6 +193,8 @@
     <string name="presses_choice_few">%1$d pressioni: più veloce, più avvii accidentali</string>
     <string name="presses_choice_default">%1$d pressioni (consigliato)</string>
     <string name="presses_choice_sos">%1$d pressioni: su molti telefoni cinque pressioni veloci chiamano anche i soccorsi</string>
+    <string name="presses_self_wake_title">Lo schermo si accende da solo?</string>
+    <string name="presses_self_wake_summary">Sollevare o toccare il telefono può accenderne lo schermo, e conta come una pressione. Disattiva \"Solleva per controllare il telefono\" e \"Tocca per controllare il telefono\" nelle impostazioni dello schermo.</string>
     <string name="three_presses_not_running">Non attivo: tocca per avviarlo</string>
     <string name="open_settings">Apri impostazioni</string>
     <string name="camera_gesture_summary_off">Spento: la doppia pressione apre la fotocamera</string>
@@ -223,7 +225,7 @@
     <string name="first_run_permissions_title">Fotocamera e microfono</string>
     <string name="first_run_permissions_text">Servono per registrare, e le notifiche per mostrare che sta registrando.</string>
     <string name="first_run_three_presses_title">Registra senza sbloccare</string>
-    <string name="first_run_three_presses_text">Premi %1$d volte il tasto di accensione, anche col telefono bloccato in tasca. Se le vibrazioni sono attive, due impulsi brevi confermano. Servono due permessi, chiesti subito dopo.</string>
+    <string name="first_run_three_presses_text">Premi %1$d volte il tasto di accensione, anche col telefono bloccato in tasca. Se le vibrazioni sono attive, due impulsi brevi confermano. Servono due permessi, chiesti subito dopo. Se sollevando il telefono lo schermo si accende, disattiva questa funzione nelle impostazioni: conta come una pressione.</string>
     <string name="first_run_next">Avanti</string>
     <string name="first_run_allow">Consenti</string>
     <string name="first_run_turn_on">Attiva</string>

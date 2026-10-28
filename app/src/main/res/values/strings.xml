@@ -186,6 +186,8 @@
     <string name="presses_choice_few">%1$d presses: quicker, more accidental starts</string>
     <string name="presses_choice_default">%1$d presses (recommended)</string>
     <string name="presses_choice_sos">%1$d presses: on many phones, five quick presses also call emergency services</string>
+    <string name="presses_self_wake_title">Screen turning on by itself?</string>
+    <string name="presses_self_wake_summary">Lifting or tapping the phone can turn its screen on, and that counts as a press. Turn off \"Lift to check phone\" and \"Tap to check phone\" in the display settings.</string>
     <string name="three_presses_not_running">Not running: tap to start it</string>
     <string name="open_settings">Open settings</string>
     <string name="camera_gesture_summary_off">Off: the double press opens the camera</string>
@@ -216,7 +218,7 @@
     <string name="first_run_permissions_title">Camera and microphone</string>
     <string name="first_run_permissions_text">SafeRec needs them to record, and notifications to show that it is recording.</string>
     <string name="first_run_three_presses_title">Record without unlocking</string>
-    <string name="first_run_three_presses_text">Press the power key %1$d times, even with the phone locked in a pocket. If vibrations are on, two short pulses confirm. It needs two permissions, asked next.</string>
+    <string name="first_run_three_presses_text">Press the power key %1$d times, even with the phone locked in a pocket. If vibrations are on, two short pulses confirm. It needs two permissions, asked next. If lifting the phone turns its screen on, turn that off in the phone\'s settings: it counts as a press.</string>
     <string name="first_run_next">Next</string>
     <string name="first_run_allow">Allow</string>
     <string name="first_run_turn_on">Turn on</string>
