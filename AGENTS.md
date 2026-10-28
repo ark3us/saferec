@@ -178,7 +178,7 @@ net.ark3us.saferec/
 
 guard/                          # Separate Gradle module: the three power-key presses (see Quick Start)
 └── net/ark3us/saferec/guard/
-    ├── TriggerRule.java          # Three screen changes within 2.5 s, 5 s cooldown (pure Java)
+    ├── TriggerRule.java          # 3, 4 or 5 screen changes (4 by default) within 2.5 s + 1 s per change past three, 5 s cooldown (pure Java)
     ├── GuardService.java         # specialUse foreground service, listens to SCREEN_ON/OFF
     ├── Guard.java                # Status, settings intents, ensureRunning()
     ├── GuardBootReceiver.java    # BOOT_COMPLETED and MY_PACKAGE_REPLACED: starts the guard
@@ -621,6 +621,8 @@ SharedPreferences wrapper. Keys:
 | `shareEmail` | String | "" (last address recordings were shared with) |
 | `timestampingEnabled` | boolean | false |
 
+The guard keeps its own settings (`saferec_guard`: `enabled`, and `presses`, 4 by default), so its module needs nothing from the app.
+
 The old `autoStartOnLaunch` setting is gone: the tile, the shortcut and the power key always record at once.
 
 Security note:
@@ -634,7 +636,7 @@ Security note:
 Recording must start with the phone locked, in a pocket, without looking. Every way in goes through one screen, `QuickStartActivity`.
 
 ```
- power key x3 ──► GuardService ──┐
+ power key x4 ──► GuardService ──┐
  tile (locked too) ──────────────┤
  shortcut "Record now" ──────────┼──► QuickStartActivity ──► CMD_START + EXTRA_QUICK_START ──► SafeRecService
  camera double press (optional) ─┘     (black, over the lock screen)
@@ -680,12 +682,12 @@ Recording must start with the phone locked, in a pocket, without looking. Every 
   - `-Psaferec.powerGesture=false`: no three presses row or first-run step. It first crashed (`NoClassDefFoundError: Guard$Status`, from the synthetic `FirstRun$1` holding every enum switch map). Fixed, and re-tested with no crash.
   - Installing the switch-off build over the normal one resets the "Display over other apps" grant (the manifest no longer declares it); the chip then correctly showed "Three presses off".
 
-### Three presses of the power key
+### Power key presses
 
 No public API reports power key presses. Each press turns the screen on or off, and Android broadcasts `ACTION_SCREEN_ON` / `ACTION_SCREEN_OFF`.
 
 - **The guard** (`GuardService`, module `guard/`) is a foreground service of type `specialUse` that registers a runtime receiver for both broadcasts. Its notification is permanent, minimum importance and secret on the lock screen.
-- **The rule** (`TriggerRule`): three screen changes within 2.5 s trigger, then nothing for 5 s. It counts changes in a window and does not measure the rhythm, because `SCREEN_OFF` arrives ~0.4 s after its press (after the screen-off animation): presses 0.37 s apart were measured as 737 ms and 66 ms.
+- **The rule** (`TriggerRule`): N screen changes within 2.5 s plus 1 s per change past three trigger, then nothing for 5 s. N is the user's pick, 3, 4 or 5 (Settings, Quick start, "Presses needed"), 4 by default, read on every change. It counts changes in a window and does not measure the rhythm, because `SCREEN_OFF` arrives ~0.4 s after its press (after the screen-off animation): presses 0.37 s apart were measured as 737 ms and 66 ms.
 - **Why an activity.** A service cannot enter the foreground with the camera or microphone type from the background (`SecurityException`). A visible activity can start that service, so the guard starts `QuickStartActivity` by component name, with source `power`.
 - **Why it is allowed.** The user grants "Display over other apps" (`SYSTEM_ALERT_WINDOW`). With it, Android lets the guard start an activity from the background (`BAL_ALLOW_SAW` in the system log). Without it, Android does not throw: the guard logs `trigger refused: no overlay permission`.
 - **Logs.** `Guard running`, `Guard stopped`, `Guard cannot start`.
@@ -693,6 +695,8 @@ No public API reports power key presses. Each press turns the screen on or off, 
 - **Measured with the app** (same phone, presses by hand): it recorded with the trigger screen 30 ms after the trigger, and a second round during the recording was ignored (two pulses again). Two slow presses did nothing, and a camera double press (two presses 34 ms apart) opened the camera without triggering.
 - **On a Pixel with Android 17** (presses sent over adb, 0.45 s apart, phone locked): the same. Microphone 0.17 s and camera 0.27 s after the trigger, the phone stayed locked, and a second round was ignored with two pulses. Its lock screen showed no SafeRec notification or icon. Presses by hand on a Pixel are not verified.
 - **Screen changes that are not presses.** Nothing is filtered, not even during a phone call: a deliberate start must never be blocked. A camera double press (two presses under 300 ms) gives at most two changes and does not trigger the guard.
+- **Why four by default.** With three, the owner's Pixel (Android 17) started recordings by itself. Its "Lift to check phone" lights the screen when the phone is picked up (`WAKE_REASON_LIFT` in the system log), so a lift, then off and on again, made three changes in 1.5 s. The broadcast carries no wake reason, and an app cannot read the system log, so no rule can tell that lift from a press. The owner's deliberate presses were 0.53 and 0.81 s apart, the same rhythm as that false start: a shorter window would have refused the real presses too. A fourth change is needed at four (the false start is a test case), and four deliberate presses at that rhythm take 2.8 s, the last off included.
+- **Emergency SOS.** Android starts it at five presses, each under 500 ms after the last (`GestureLauncherService`); a gap of 500 ms or more starts the count again. So five presses in SafeRec can also call emergency services, and the choice says so. At four, a fifth quick press still can: SafeRec's two pulses are the sign to stop.
 - **Costs.** A permanent notification, the overlay permission granted once, and a `specialUse` foreground service.
 
 ### Keeping the guard alive
@@ -984,7 +988,7 @@ Unit tests (JVM, no phone, under a second): `./gradlew testDebugUnitTest`. The s
 - `StartPolicyTest` also covers `replaysStarted` (no replayed "started" within 1 s); `TriggerRuleTest` has more window and cooldown cases.
 - `scripts/check-guard-refs.sh`: compiles the debug classes with `-Psaferec.powerGesture=false` and fails if any class but `ui/GuardSetup` references the guard (a lambda body or an enum switch map loads `Guard$Status` and crashes the off build). Run it after touching code that references the guard.
 - `CameraGestureTest`: the gesture is offered unless another camera app is pinned.
-- Module `guard` (`bash ./gradlew :guard:testDebugUnitTest`): `TriggerRuleTest` (three changes within the window, the cooldown) and `GuardStatusTest` (the order of the statuses).
+- Module `guard` (`bash ./gradlew :guard:testDebugUnitTest`): `TriggerRuleTest` (3, 4 and 5 changes within their window and at its end, the cooldown, the Pixel's lift then off and on ignored at four, the owner's measured presses triggering at four, a new count applied to the changes already seen), `GuardPressesTest` (3 to 5 kept, anything else is the default, 4) and `GuardStatusTest` (the order of the statuses).
 - `SampleJournalTest`: round trip, a record cut short, a foreign file.
 - `EvidencePackageTest`: the zip's layout (Drive's, under `evidence/`), videos stored and the rest deflated, files byte for byte, a package without merged video, the report's lines, day-old files deleted.
 - `SessionCheckTest`: the verifier's cases, with a test authority made with BouncyCastle (a root and a timestamping certificate). It covers:
