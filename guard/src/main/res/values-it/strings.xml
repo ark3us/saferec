@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="guard_channel_name">Tre pressioni del tasto di accensione</string>
+    <string name="guard_channel_name">Pressioni del tasto di accensione</string>
     <string name="guard_ready_title">SafeRec pronto</string>
-    <string name="guard_ready_text">Premi tre volte il tasto di accensione per registrare</string>
+    <string name="guard_ready_text">Le pressioni del tasto di accensione avviano una registrazione</string>
 </resources>

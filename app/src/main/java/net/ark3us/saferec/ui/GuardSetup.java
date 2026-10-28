@@ -16,8 +16,9 @@ import net.ark3us.saferec.R;
 import net.ark3us.saferec.guard.Guard;
 
 /**
- * Leads the user to the next step the three presses still need. References the guard module,
- * which is compileOnly when the build switch is off: callers check BuildConfig.POWER_GESTURE.
+ * Leads the user to the next step the power-key presses still need, and lets them pick how many
+ * start a recording. References the guard module, which is compileOnly when the build switch is
+ * off: callers check BuildConfig.POWER_GESTURE.
  * It is the only app class whose bytecode may name the guard (scripts/check-guard-refs.sh), so
  * every switch over Guard.Status lives here: javac builds the maps of all the enum switches of a
  * class in one synthetic class, and running any of them would load Guard.Status.
@@ -48,6 +49,37 @@ public final class GuardSetup {
             default:
                 return STATE_OFF;
         }
+    }
+
+    /** How many power-key presses start a recording. */
+    public static int presses(Context context) {
+        return Guard.presses(context);
+    }
+
+    /** Lets the user pick how many presses start a recording; onPicked runs after a choice. */
+    public static void choosePresses(Activity activity, Runnable onPicked) {
+        if (activity.isFinishing() || activity.isDestroyed()) return;
+        String[] items = new String[Guard.MAX_PRESSES - Guard.MIN_PRESSES + 1];
+        for (int i = 0; i < items.length; i++) {
+            items[i] = activity.getString(pressesChoice(Guard.MIN_PRESSES + i), Guard.MIN_PRESSES + i);
+        }
+        new AlertDialog.Builder(activity)
+            .setTitle(R.string.presses_title)
+            .setSingleChoiceItems(items, Guard.presses(activity) - Guard.MIN_PRESSES, (d, which) -> {
+                Guard.setPresses(activity, Guard.MIN_PRESSES + which);
+                d.dismiss();
+                onPicked.run();
+            })
+            .setNegativeButton(android.R.string.cancel, null)
+            .show();
+    }
+
+    /** Fewer than the default start by accident more often; more may also call emergency services. */
+    @StringRes
+    private static int pressesChoice(int presses) {
+        if (presses < Guard.DEFAULT_PRESSES) return R.string.presses_choice_few;
+        if (presses > Guard.DEFAULT_PRESSES) return R.string.presses_choice_sos;
+        return R.string.presses_choice_default;
     }
 
     /** The text of a missing step. Below Android 12 the battery page is the optimization list, with other words. */

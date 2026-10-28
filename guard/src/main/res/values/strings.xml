@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="guard_channel_name">Three presses of the power key</string>
+    <string name="guard_channel_name">Power key presses</string>
     <string name="guard_ready_title">SafeRec ready</string>
-    <string name="guard_ready_text">Press the power key three times to record</string>
+    <string name="guard_ready_text">Power key presses start a recording</string>
 </resources>

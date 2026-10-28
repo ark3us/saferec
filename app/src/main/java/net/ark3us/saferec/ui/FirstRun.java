@@ -166,13 +166,15 @@ public class FirstRun {
                     text.setText(R.string.three_presses_starting);
                     return R.string.first_run_done;
                 case GuardSetup.STATE_ACTIVE:
-                    text.setText(R.string.three_presses_on);
+                    text.setText(activity.getString(R.string.three_presses_on, GuardSetup.presses(activity)));
                     return R.string.first_run_done;
                 default:
-                    break;
+                    text.setText(activity.getString(R.string.first_run_three_presses_text,
+                        GuardSetup.presses(activity)));
+                    return R.string.first_run_turn_on;
             }
         }
-        text.setText(R.string.first_run_three_presses_text);
+        // Without the guard module this card is never in the steps
         return R.string.first_run_turn_on;
     }
 

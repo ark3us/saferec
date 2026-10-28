@@ -209,10 +209,10 @@ public class SettingsActivity extends AppCompatActivity {
                     }
                     break;
                 case GuardSetup.STATE_ACTIVE:
-                    summary = getString(R.string.three_presses_on);
+                    summary = getString(R.string.three_presses_on, GuardSetup.presses(this));
                     break;
                 default:
-                    summary = getString(R.string.three_presses_summary_off);
+                    summary = getString(R.string.three_presses_summary_off, GuardSetup.presses(this));
                     break;
             }
             View row = SettingsRows.toggle(container, 0, getString(R.string.power_gesture), summary,
@@ -226,6 +226,15 @@ public class SettingsActivity extends AppCompatActivity {
                 SettingsRows.markAttention(row);
                 row.setOnClickListener(v -> restartGuard());
             }
+            SettingsRows.row(container, 0, getString(R.string.presses_title),
+                getString(R.string.presses_value, GuardSetup.presses(this)), v -> choosePresses());
+        }
+    }
+
+    /** Its own method, not the lambda's body: see setThreePresses(). */
+    private void choosePresses() {
+        if (BuildConfig.POWER_GESTURE) {
+            GuardSetup.choosePresses(this, this::render);
         }
     }
 
