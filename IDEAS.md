@@ -25,6 +25,9 @@ Sessions recorded by the emergency drill, or by a test, could carry a marker: a 
 ### Quick-start readiness at a glance
 One list of every way to start a recording, each with ✅/❌ and a one-tap fix. The tile: is it in quick settings? `StatusBarManager.requestAddTileService()` (Android 13+) adds it with one system dialog, no dragging. The three presses: `Guard.status()`. The camera double press: do both camera actions resolve to SafeRec (`resolveActivity`)? A test found that Android's chooser can make "Always" unreachable on the first try. A "Record now" icon on the home screen: `ShortcutManager.requestPinShortcut()`. The owner finds a broken path before the day it is needed, and the drill above can run each path once.
 
+### The guard keeps its last triggers
+A false start from the three presses can only be explained from the phone's system log, which keeps a few minutes. `GuardService` could keep the times and order of the three screen changes of its last 20 triggers (a small file, three numbers each) and show them in Settings, Help. "Screen on, off 1.5 s later, on again 15 ms after" would then show the rhythm behind each start, whether it was the owner's emergency or a screen lit by lifting the phone followed by two presses.
+
 ## Evidence integrity
 
 ### Hash chain for timestamps
