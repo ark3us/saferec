@@ -24,6 +24,7 @@ A normal camera app saves the video when you stop. Lose the phone before that an
 **Stop on purpose**
 - Hold the record button for half a second. A tap does not stop.
 - Stopping from the notification needs the unlocked phone.
+- Or press the power key 4 times again, if you use the presses: one long vibration.
 
 **Safe on Drive**
 - Pieces of 10 seconds, uploaded while recording.

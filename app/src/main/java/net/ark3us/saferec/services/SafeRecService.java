@@ -59,6 +59,8 @@ public class SafeRecService extends Service {
     public static final String EXTRA_COMMAND = "command";
     /** Boolean extra on CMD_START: record with the quick-start defaults, not the viewfinder's choices. */
     public static final String EXTRA_QUICK_START = "quick_start";
+    /** With CMD_START: a running recording stops instead (the power key presses toggle). */
+    public static final String EXTRA_TOGGLE = "toggle";
     public static final String EXTRA_FILE_IDS = "file_ids";
     public static final String EXTRA_FOLDER_IDS = "folder_ids";
     public static final String STATUS_READY = "READY";
@@ -314,17 +316,12 @@ public class SafeRecService extends Service {
         switch (command) {
             case CMD_START:
             case CMD_SWITCH_CAMERA:
-                startOrSwitch(command, CMD_START.equals(command) && intent.getBooleanExtra(EXTRA_QUICK_START, false));
+                boolean start = CMD_START.equals(command);
+                startOrSwitch(command, start && intent.getBooleanExtra(EXTRA_QUICK_START, false),
+                        start && intent.getBooleanExtra(EXTRA_TOGGLE, false));
                 break;
             case CMD_STOP:
-                boolean wasRecording = isRecording;
-                stopRecording();
-                if (wasRecording) {
-                    Haptics.stopped(this);
-                }
-                currentSessionId = null;
-                currentSequenceNumber = 0;
-                ServiceState.getInstance().setSession(0, false);
+                stopSession();
                 break;
             case CMD_UPLOAD_PENDING:
                 // Safe while recording: the outbox only ever holds complete chunks
@@ -343,7 +340,7 @@ public class SafeRecService extends Service {
      * what the running recording records, which may come from a quick start with settings of
      * its own, and changes only its camera.
      */
-    private void startOrSwitch(String command, boolean quick) {
+    private void startOrSwitch(String command, boolean quick, boolean toggles) {
         boolean videoWanted = quick ? !Settings.isQuickStartAudioOnly(this) : !Settings.onlyAudio(this);
         // A refused camera never blocks a recording, from the app or a quick start: it records
         // sound only, in the foreground as microphone alone. Android 14+ refuses the camera type
@@ -364,7 +361,7 @@ public class SafeRecService extends Service {
                 enterForeground(dataSyncForegroundType(), notification);
             }
         }
-        switch (StartPolicy.forCommand(command, isRecording)) {
+        switch (StartPolicy.forCommand(command, isRecording, toggles)) {
             case START:
                 if (videoWanted && !includeVideo) {
                     Log.w(TAG, "No camera permission: recording sound only");
@@ -384,6 +381,10 @@ public class SafeRecService extends Service {
                 stopRecording();
                 startRecording(true, front);
                 break;
+            case STOP:
+                Log.i(TAG, "Quick start while recording: stopping (toggle)");
+                stopSession();
+                break;
             case IGNORE:
                 Log.i(TAG, command + " ignored (recording " + isRecording + ")");
                 if (quick && !startToConfirm
@@ -395,6 +396,18 @@ public class SafeRecService extends Service {
                 }
                 break;
         }
+    }
+
+    /** Stops the recording, with the long pulse when one ran, and ends its session. */
+    private void stopSession() {
+        boolean wasRecording = isRecording;
+        stopRecording();
+        if (wasRecording) {
+            Haptics.stopped(this);
+        }
+        currentSessionId = null;
+        currentSequenceNumber = 0;
+        ServiceState.getInstance().setSession(0, false);
     }
 
     private void playStarted() {

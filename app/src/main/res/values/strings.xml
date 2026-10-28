@@ -175,7 +175,7 @@
     <string name="three_presses_step_overlay">Step 1 of 2: allow \"Display over other apps\"</string>
     <string name="three_presses_step_battery">Step 2 of 2: set battery use to \"Unrestricted\"</string>
     <string name="three_presses_starting">Starting…</string>
-    <string name="three_presses_on">On: press the power key %1$d times, even with the phone locked</string>
+    <string name="three_presses_on">On: press the power key %1$d times to record, and %1$d times again to stop, even with the phone locked</string>
     <string name="three_presses_battery_help">Android may close SafeRec to save battery, and the power key presses would stop working. On the next page, open the app\'s battery usage and choose \"Unrestricted\". On some phones it appears only after tapping the words \"Allow background usage\", not its switch.</string>
     <string name="three_presses_step_battery_legacy">Step 2 of 2: turn off battery optimization for SafeRec</string>
     <string name="three_presses_battery_help_legacy">Android may close SafeRec to save battery, and the power key presses would stop working. On the next page, choose \"All apps\", find SafeRec and choose \"Don\'t optimize\".</string>
@@ -218,7 +218,7 @@
     <string name="first_run_permissions_title">Camera and microphone</string>
     <string name="first_run_permissions_text">SafeRec needs them to record, and notifications to show that it is recording.</string>
     <string name="first_run_three_presses_title">Record without unlocking</string>
-    <string name="first_run_three_presses_text">Press the power key %1$d times, even with the phone locked in a pocket. If vibrations are on, two short pulses confirm. It needs two permissions, asked next. If lifting the phone turns its screen on, turn that off in the phone\'s settings: it counts as a press.</string>
+    <string name="first_run_three_presses_text">Press the power key %1$d times, even with the phone locked in a pocket. If vibrations are on, two short pulses confirm. The same presses again stop the recording, with one long pulse. It needs two permissions, asked next. If lifting the phone turns its screen on, turn that off in the phone\'s settings: it counts as a press.</string>
     <string name="first_run_next">Next</string>
     <string name="first_run_allow">Allow</string>
     <string name="first_run_turn_on">Turn on</string>

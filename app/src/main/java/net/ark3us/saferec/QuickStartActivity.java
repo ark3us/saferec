@@ -81,6 +81,8 @@ public class QuickStartActivity extends Activity {
     private void startRecording() {
         Intent start = SafeRecService.createCommandIntent(this, SafeRecService.CMD_START);
         start.putExtra(SafeRecService.EXTRA_QUICK_START, true);
+        // The power key presses toggle: the same presses again stop the recording
+        start.putExtra(SafeRecService.EXTRA_TOGGLE, SOURCE_POWER.equals(source()));
         try {
             ContextCompat.startForegroundService(this, start);
         } catch (RuntimeException e) {
