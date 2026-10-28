@@ -1,5 +1,6 @@
 package net.ark3us.saferec;
 
+import android.app.NotificationManager;
 import android.content.Intent;
 import android.content.res.Configuration;
 import android.graphics.SurfaceTexture;
@@ -25,6 +26,7 @@ import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.graphics.Insets;
 import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowInsetsCompat;
+import androidx.work.WorkManager;
 
 import com.google.android.material.button.MaterialButtonToggleGroup;
 import com.google.android.material.chip.Chip;
@@ -144,6 +146,9 @@ public class MainActivity extends AppCompatActivity {
                 || (getIntent().getFlags() & Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY) != 0;
         EdgeToEdge.enable(this);
         setContentView(R.layout.activity_main);
+        if (!BuildConfig.POWER_GESTURE) {
+            clearGuardLeftovers();
+        }
         padWithInsets(findViewById(R.id.top_bar), true);
         padWithInsets(findViewById(R.id.bottom_controls), false);
 
@@ -690,6 +695,16 @@ public class MainActivity extends AppCompatActivity {
     protected void onStart() {
         super.onStart();
         networkWatcher.start();
+    }
+
+    /**
+     * A build without the guard installed over one with it: the guard's watchdog job would wake
+     * the app every 15 minutes to fail (its class is gone), and its notification channel would
+     * stay in the system settings. The names match GuardWatchdog and GuardService.
+     */
+    private void clearGuardLeftovers() {
+        WorkManager.getInstance(this).cancelUniqueWork("guard-watchdog");
+        getSystemService(NotificationManager.class).deleteNotificationChannel("guard");
     }
 
     @Override

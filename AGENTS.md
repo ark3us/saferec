@@ -636,10 +636,10 @@ Security note:
 Recording must start with the phone locked, in a pocket, without looking. Every way in goes through one screen, `QuickStartActivity`.
 
 ```
- power key x4 ──► GuardService ──┐
- tile (locked too) ──────────────┤
+ tile (locked too) ──────────────┐
  shortcut "Record now" ──────────┼──► QuickStartActivity ──► CMD_START + EXTRA_QUICK_START ──► SafeRecService
- camera double press (optional) ─┘     (black, over the lock screen)
+ camera double press (optional) ─┤     (black, over the lock screen)
+ power key x4 (switch off) ──────┘
 ```
 
 - **`QuickStartActivity`** shows over the lock screen and turns the screen on: `android:showWhenLocked` and `android:turnScreenOn` in the manifest (the camera alias inherits them), plus `setShowWhenLocked()` / `setTurnScreenOn()` at runtime and the window flags on API 26. The manifest attributes are what the tile needs: on Android 14+ it starts the activity through a `PendingIntent`, and SystemUI decides whether to ask for the unlock from the manifest's flags, before the activity runs. With the runtime calls alone, the tile asked for the PIN. It is black, with a "Recording" description for screen readers only, and never shows the camera or any recording. It sends `CMD_START` with `EXTRA_QUICK_START` once: a recreated activity (the screen coming back on) sends nothing, but still finishes like the first one, so its black screen never stays up. A rotation does not recreate it (`configChanges`; a fixed `screenOrientation` is ignored from Android 16 and lint flags it). The start is wrapped in a try/catch: the activity runs in the recording's process, and an unexpected refusal must not crash a recording in progress. Locked, it finishes after 1.5 s. Unlocked, it opens `MainActivity`, already recording. `MainActivity` itself never shows over the lock screen.
@@ -684,6 +684,8 @@ Recording must start with the phone locked, in a pocket, without looking. Every 
 
 ### Power key presses
 
+**Off since 2026-10-28** (`saferec.powerGesture=false`, see Build switch): on the owner's Pixel, screens lit by lifting the phone counted as presses, and recordings started by themselves at three presses and at four (below). The guard module stays in the repository, compiled by CI, and is described as it works with the switch on.
+
 No public API reports power key presses. Each press turns the screen on or off, and Android broadcasts `ACTION_SCREEN_ON` / `ACTION_SCREEN_OFF`.
 
 - **The guard** (`GuardService`, module `guard/`) is a foreground service of type `specialUse` that registers a runtime receiver for both broadcasts. Its notification is permanent, minimum importance and secret on the lock screen.
@@ -716,7 +718,8 @@ On the S10+ the low-memory killer killed the app twice in a minute, with 0.5 GB 
 
 ### Build switch
 
-`saferec.powerGesture` in `gradle.properties` (default `true`). With `-Psaferec.powerGesture=false` the `guard` module is `compileOnly`: nothing of it is packaged, so the APK has no guard manifest entries (the `specialUse` service and its permission, the overlay permission, the boot receiver), and the app shows no setting or first-run step for it (`BuildConfig.POWER_GESTURE`). It is in standby: no Release ships it, but CI runs `scripts/check-guard-refs.sh` on every push, so it keeps working if a store ever refuses the `specialUse` service.
+`saferec.powerGesture` in `gradle.properties` (default `false` since 2026-10-28, `true` before). With `-Psaferec.powerGesture=false` the `guard` module is `compileOnly`: nothing of it is packaged, so the APK has no guard manifest entries (the `specialUse` service and its permission, the overlay permission, the boot receiver), and the app shows no setting or first-run step for it (`BuildConfig.POWER_GESTURE`). Releases ship this build. CI runs `scripts/check-guard-refs.sh` on every push, and also compiles the build with the switch on, so either keeps working.
+- **Upgrading from a build with the guard.** Android drops the guard's service and receiver with the manifest, and resets the overlay grant. Two things would stay: the guard's watchdog job, which would wake the app every 15 minutes to fail on a missing class, and its notification channel. `MainActivity` cancels and deletes them at its start in this build (`clearGuardLeftovers()`, by name).
 
 - App code touches the guard only inside `if (BuildConfig.POWER_GESTURE)`, which javac drops in that build. Two things leak out anyway: a lambda's body, and enum switch maps. One synthetic class (`FirstRun$1`) builds the maps of every enum switch of its class, so any of them loads `Guard.Status`: the first launch of the off build crashed with `NoClassDefFoundError`.
 - So every switch over a guard enum lives in `ui/GuardSetup` (`GuardSetup.state()` gives ints to switch on), the only class allowed to name the guard. `scripts/check-guard-refs.sh` compiles the off build and fails on any other class that references the guard.
@@ -893,11 +896,11 @@ R8 shrinks and optimizes the release (`isMinifyEnabled`, `isShrinkResources` in 
   Check these again after adding a library or anything that uses reflection.
 - **Media3** (ExoPlayer and its UI, 1.11.1) plays the sessions. It ships its own consumer rules, so `proguard-rules.pro` has nothing for it. Both R8 builds above (normal and guard off) passed with no warning about `androidx.media3`. The `r8test` APK is 4.7 MB with Media3.
   - Checked on the phone with `r8test`: a session plays across its pieces, and an evidence package exports, with no crash.
-- **The build without the guard** (the switch in standby):
+- **The build without the guard** (the default since 2026-10-28):
   - `bash scripts/check-guard-refs.sh` runs in CI and before every release (`scripts/ci-checks.sh`): no class but `ui/GuardSetup` references the guard, so that build cannot crash on a missing guard class;
   - after touching R8 rules or the guard, also run `bash ./gradlew :app:minifyR8testWithR8 -Psaferec.powerGesture=false`: R8 accepts the build without the guard module and strips `GuardSetup`.
 
-  Both build into `app/build/` with the switch off: build the normal variant again afterwards.
+  The second builds into `app/build/` with the switch off, the shipped build.
 
 ### Distribution on GitHub
 
